@@ -1,0 +1,87 @@
+name: 🚀 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy to prod (e.g. v1.2.3). Leave empty to skip prod deploy."
+        type: string
+        required: false
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: Release Please
+    if: ${{ github.event_name == 'push' }}
+    uses: equinor/ops-actions/.github/workflows/release-please-manifest.yml@a98fb1dafcfb1acdeea610e70eb8c1a2be6b59cd # v9.39.2
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+  deploy-dev:
+    name: Deploy Dev
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/docker.yml
+    secrets:
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    with:
+      tag: dev
+      environment: dev
+      tag_latest: false
+
+  get-tag:
+    name: Get Release Tag
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.releases_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.get-tag.outputs.tag }}
+    steps:
+      - name: Get release tag
+        id: get-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            tag=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name')
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-prod:
+    name: Deploy Prod
+    needs: [release-please, get-tag]
+    if: ${{ always() && needs.get-tag.result == 'success' }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/docker.yml
+    secrets:
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    with:
+      tag: ${{ needs.get-tag.outputs.tag }}
+      environment: prod
+      tag_latest: true
+
+  update-chart:
+    name: Update Chart
+    needs: [release-please, deploy-prod, get-tag]
+    if: ${{ always() && needs.get-tag.result == 'success' && needs.deploy-prod.result == 'success' }}
+    uses: sondresjolyst/tumogroup-charts/.github/workflows/update-chart.yml@main
+    permissions:
+      contents: read
+    secrets:
+      CHARTS_PAT: ${{ secrets.CHARTS_PAT }}
+    with:
+      chart_name: altinnendata-api
+      tag: ${{ needs.get-tag.outputs.tag }}

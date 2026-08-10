@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="altinnendata-api.csproj" />
+  <Project Path="altinnendata-api.Tests/altinnendata-api.Tests.csproj" />
+</Solution>

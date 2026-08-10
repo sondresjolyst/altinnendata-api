@@ -1,0 +1,62 @@
+name: 🔨 Build and Push Docker Image
+
+on:
+  pull_request:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag for the Docker image"
+        type: string
+        required: true
+      environment:
+        description: "Deployment environment (dev or prod)"
+        type: string
+        required: true
+      tag_latest:
+        description: "Also tag the image as latest"
+        type: boolean
+        default: false
+    secrets:
+      DOCKER_PASSWORD:
+        required: true
+
+permissions: {}
+
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test
+        run: dotnet test --no-build --verbosity normal
+
+  build-and-push:
+    if: inputs.tag != ''
+    permissions:
+      contents: read
+      packages: read
+    uses: equinor/ops-actions/.github/workflows/docker.yml@a98fb1dafcfb1acdeea610e70eb8c1a2be6b59cd # v9.39.2
+    secrets:
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    with:
+      environment: ${{ inputs.environment }}
+      registry: registry.hub.docker.com
+      username: sondresjo
+      repository: sondresjo/altinnendata-api
+      tag: ${{ inputs.tag }}
+      tag_latest: ${{ inputs.tag_latest }}

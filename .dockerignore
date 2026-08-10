@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/_storage/
+**/*.user
+.git/
+.github/
