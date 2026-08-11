@@ -14,7 +14,7 @@ namespace altinnendata_api.Features.Auth
         private const string RequestGeneric = "If this email is registered, a reset code has been sent.";
         private const string InvalidGeneric = "Invalid or expired reset code.";
 
-        public static async Task<IResult> Request(RequestPasswordResetDto dto, ApplicationDbContext db, UserManager<User> users, IEmailService email, CancellationToken ct)
+        public static async Task<IResult> Request(RequestPasswordResetDto dto, ApplicationDbContext db, UserManager<User> users, IEmailService email, IConfiguration config, CancellationToken ct)
         {
             var user = await users.FindByEmailAsync(dto.Email);
             if (user != null && !user.IsDeleted)
@@ -26,8 +26,9 @@ namespace altinnendata_api.Features.Auth
                 await users.UpdateAsync(user);
 
                 var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
-                await email.SendEmailAsync(user.Email!, "Password reset code",
-                    AuthEmailTemplates.PasswordReset(settings.CompanyName, user.FirstName, code));
+                var link = SiteLinks.SetPassword(config, user.Email!, code);
+                await email.SendEmailAsync(user.Email!, "Tilbakestill passordet",
+                    AuthEmailTemplates.PasswordReset(settings.CompanyName, user.FirstName, code, link));
             }
 
             return TypedResults.Ok(new MessageResponse(RequestGeneric));

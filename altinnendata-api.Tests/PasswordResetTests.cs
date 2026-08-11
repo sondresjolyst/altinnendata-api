@@ -23,7 +23,7 @@ public class PasswordResetTests : TestBase
         var email = new Mock<IEmailService>();
         MockUserManager.Setup(m => m.FindByEmailAsync("nobody@example.com")).ReturnsAsync((User?)null);
 
-        var result = await PasswordReset.Request(new RequestPasswordResetDto("nobody@example.com"), db, MockUserManager.Object, email.Object, default);
+        var result = await PasswordReset.Request(new RequestPasswordResetDto("nobody@example.com"), db, MockUserManager.Object, email.Object, Configuration, default);
 
         Assert.IsType<Ok<MessageResponse>>(result);
         email.Verify(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
@@ -38,7 +38,7 @@ public class PasswordResetTests : TestBase
         MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
         MockUserManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Request(new RequestPasswordResetDto(user.Email!), db, MockUserManager.Object, email.Object, default));
+        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Request(new RequestPasswordResetDto(user.Email!), db, MockUserManager.Object, email.Object, Configuration, default));
 
         Assert.NotNull(user.PasswordResetCodeHash);
         Assert.NotNull(user.PasswordResetCodeExpiration);

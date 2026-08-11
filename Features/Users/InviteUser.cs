@@ -30,7 +30,7 @@ namespace altinnendata_api.Features.Users
     /// </summary>
     public static class InviteUser
     {
-        public static async Task<IResult> Handle(InviteUserDto dto, ApplicationDbContext db, UserManager<User> users, IEmailService email, IMapper mapper, CancellationToken ct)
+        public static async Task<IResult> Handle(InviteUserDto dto, ApplicationDbContext db, UserManager<User> users, IEmailService email, IMapper mapper, IConfiguration config, CancellationToken ct)
         {
             if (await users.FindByEmailAsync(dto.Email) != null)
                 return TypedResults.Problem("That email already has an account.", statusCode: StatusCodes.Status409Conflict);
@@ -54,8 +54,9 @@ namespace altinnendata_api.Features.Users
             await users.UpdateAsync(user);
 
             var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
-            await email.SendEmailAsync(user.Email!, $"You have been invited to {settings.CompanyName}",
-                AuthEmailTemplates.Invite(settings.CompanyName, user.FirstName, code));
+            var link = SiteLinks.SetPassword(config, user.Email!, code);
+            await email.SendEmailAsync(user.Email!, $"Sett passordet ditt hos {settings.CompanyName}",
+                AuthEmailTemplates.Invite(settings.CompanyName, user.FirstName, code, link));
 
             return TypedResults.Ok(new MessageResponse("Invitation sent."));
         }
