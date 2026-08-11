@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.0.1...v1.1.0) (2026-08-11)
+
+
+### Features
+
+* link password emails back to the site ([#10](https://github.com/sondresjolyst/altinnendata-api/issues/10)) ([795f051](https://github.com/sondresjolyst/altinnendata-api/commit/795f051a6ee821437283d9c45f8f5972f4a33a15))
+
+
+### Dependencies
+
+* **nuget:** bump `SkiaSharp` from 4.150.1 to 4.151.0 ([#3](https://github.com/sondresjolyst/altinnendata-api/issues/3)) ([7840fa5](https://github.com/sondresjolyst/altinnendata-api/commit/7840fa5aed68eeaf8220a76ecb25b298d11d7867))
+
 ## [1.0.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.0.0...v1.0.1) (2026-08-10)
 
 
