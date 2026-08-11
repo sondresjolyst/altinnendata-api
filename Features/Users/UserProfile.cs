@@ -70,6 +70,15 @@ namespace altinnendata_api.Features.Users
             var user = await users.FindByIdAsync(id);
             if (user == null || user.IsDeleted) return TypedResults.NotFound();
 
+            // There is no public sign-up, so losing the last admin locks everyone out for good.
+            if (await users.IsInRoleAsync(user, RoleNames.Admin))
+            {
+                var admins = await users.GetUsersInRoleAsync(RoleNames.Admin);
+                if (admins.Count(a => !a.IsDeleted) <= 1)
+                    return TypedResults.Problem("This is the last admin account; give someone else the Admin role first.",
+                        statusCode: StatusCodes.Status400BadRequest);
+            }
+
             user.IsDeleted = true;
             user.DeletedAt = DateTime.UtcNow;
             user.FirstName = "Deleted";

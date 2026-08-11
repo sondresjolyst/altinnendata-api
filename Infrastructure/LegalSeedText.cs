@@ -30,25 +30,26 @@ Ved å bruke Altinnendata godtar du disse vilkårene. Er du uenig, bør du ikke 
 
 ## 3. Bruk av tjenesten
 
-Altinnendata viser informasjon om PC-bygging og tidligere leverte maskiner, og lar deg ta kontakt for
-et tilbud. Innlogging er forbeholdt oss som drifter siden.
+Altinnendata viser datamaskiner vi har bygget — både maskiner som er til salgs og maskiner som er
+solgt — og lar deg ta kontakt for å få et tilbud. Det er bare vi som drifter nettsiden som kan logge
+inn.
 
 ## 4. Immaterielle rettigheter
 
 Alt innhold på siden — tekst, bilder, spesifikasjoner og navnet og logoen til Altinnendata — eies av
-Altinnendata. Du kan se på innholdet til privat, ikke-kommersielt bruk. Innholdet kan ikke publiseres
-på nytt, selges videre eller distribueres uten skriftlig samtykke fra oss.
+Altinnendata. Innholdet kan ikke kopieres, publiseres på nytt eller brukes i egen markedsføring uten
+skriftlig samtykke fra oss.
 
 ## 5. Henvendelser og bestilling
 
-Å sende inn kontaktskjemaet er en forespørsel, ikke en bindende avtale. Omfang, spesifikasjon og pris
-avtales direkte mellom deg og Altinnendata.
+Å sende inn kontaktskjemaet er en forespørsel, ikke en bindende avtale. Hva som skal leveres, hvilke
+deler som inngår og hva det koster, avtaler du direkte med oss.
 
 ## 6. Priser og spesifikasjoner
 
-Priser og delelister som vises for et bygg, gjelder den maskinen slik den ble satt sammen på det
-tidspunktet. Delepriser endrer seg, og tilsvarende maskin kan derfor koste noe annet i dag. Et bygg
-merket som solgt er ikke lenger tilgjengelig.
+Prisen og delelisten som står oppført på en datamaskin, gjelder maskinen slik den var satt sammen da
+den ble lagt ut. Delepriser endrer seg, så en tilsvarende maskin kan koste noe annet i dag. En
+datamaskin som er merket som solgt, er ikke lenger til salgs.
 
 ## 7. Tilgjengelighet
 
@@ -67,8 +68,7 @@ norske domstoler.
 
 ## 10. Endringer
 
-Vi kan oppdatere vilkårene. Den til enhver tid gjeldende versjonen er den som vises her, med datoen
-over.
+Vi kan oppdatere vilkårene. Det er versjonen som står her, med datoen øverst, som gjelder.
 
 ## 11. Kontakt
 
@@ -93,8 +93,8 @@ get in touch for a quote. Sign-in is reserved for the people who run the site.
 ## 4. Intellectual property
 
 All content on this site — text, images, specifications, and the Altinnendata name and logo — is owned
-by Altinnendata. You may view it for personal, non-commercial use. You may not republish, resell, or
-redistribute it without our written permission.
+by Altinnendata. It may not be copied, republished, or used in your own marketing without our written
+permission.
 
 ## 5. Enquiries and orders
 

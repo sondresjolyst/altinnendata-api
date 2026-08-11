@@ -27,7 +27,7 @@ public class InviteUserTests : TestBase
         MockUserManager.Setup(m => m.AddToRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
         MockUserManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-        var result = await InviteUser.Handle(Dto(), db, MockUserManager.Object, email.Object, MockMapper.Object, default);
+        var result = await InviteUser.Handle(Dto(), db, MockUserManager.Object, email.Object, MockMapper.Object, Configuration, default);
 
         Assert.IsType<Ok<MessageResponse>>(result);
         MockUserManager.Verify(m => m.AddToRoleAsync(user, "Admin"), Times.Once);
@@ -42,7 +42,7 @@ public class InviteUserTests : TestBase
         MockUserManager.Setup(m => m.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync(MakeUser());
 
         var problem = Assert.IsType<ProblemHttpResult>(
-            await InviteUser.Handle(Dto(), db, MockUserManager.Object, Mock.Of<IEmailService>(), MockMapper.Object, default));
+            await InviteUser.Handle(Dto(), db, MockUserManager.Object, Mock.Of<IEmailService>(), MockMapper.Object, Configuration, default));
 
         Assert.Equal(StatusCodes.Status409Conflict, problem.StatusCode);
         MockUserManager.Verify(m => m.CreateAsync(It.IsAny<User>()), Times.Never);
