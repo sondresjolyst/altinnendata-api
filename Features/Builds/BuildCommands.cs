@@ -21,6 +21,7 @@ namespace altinnendata_api.Features.Builds
                 PriceNok = dto.PriceNok,
                 BuiltOn = dto.BuiltOn,
                 CoverImageId = dto.CoverImageId,
+                FinnUrl = Trimmed(dto.FinnUrl),
                 Published = dto.Published,
                 SortOrder = dto.SortOrder,
                 CreatedAt = DateTime.UtcNow,
@@ -29,6 +30,7 @@ namespace altinnendata_api.Features.Builds
 
             ApplyTranslations(build, dto);
             ApplyComponents(build, dto);
+            ApplyImages(build, dto);
 
             db.PcBuilds.Add(build);
             await db.SaveChangesAsync(ct);
@@ -42,6 +44,7 @@ namespace altinnendata_api.Features.Builds
             var build = await db.PcBuilds
                 .Include(b => b.Translations)
                 .Include(b => b.Components)
+                .Include(b => b.Images)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
             if (build == null) return TypedResults.NotFound();
 
@@ -54,6 +57,7 @@ namespace altinnendata_api.Features.Builds
             build.Availability = ParseAvailability(dto.Availability);
             build.PriceNok = dto.PriceNok;
             build.BuiltOn = dto.BuiltOn;
+            build.FinnUrl = Trimmed(dto.FinnUrl);
             build.Published = dto.Published;
             build.SortOrder = dto.SortOrder;
             build.UpdatedAt = DateTime.UtcNow;
@@ -67,6 +71,10 @@ namespace altinnendata_api.Features.Builds
             db.PcBuildComponents.RemoveRange(build.Components);
             build.Components.Clear();
             ApplyComponents(build, dto);
+
+            db.PcBuildImages.RemoveRange(build.Images);
+            build.Images.Clear();
+            ApplyImages(build, dto);
 
             await db.SaveChangesAsync(ct);
 
@@ -94,6 +102,7 @@ namespace altinnendata_api.Features.Builds
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Manufacturer)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Category).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentCategory).ThenInclude(c => c!.Translations)
+                .Include(b => b.Images)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
 
         private static string DefaultTitle(CreateBuildDto dto) =>
@@ -101,6 +110,9 @@ namespace altinnendata_api.Features.Builds
 
         private static BuildAvailability ParseAvailability(string value) =>
             Enum.Parse<BuildAvailability>(value, ignoreCase: true);
+
+        private static string? Trimmed(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
         private static void ApplyTranslations(PcBuild build, CreateBuildDto dto)
         {
@@ -110,9 +122,18 @@ namespace altinnendata_api.Features.Builds
                 {
                     Locale = Locales.Normalize(input.Locale),
                     Title = input.Title.Trim(),
-                    Summary = string.IsNullOrWhiteSpace(input.Summary) ? null : input.Summary.Trim(),
-                    SectionsJson = input.Sections?.ToJsonString() ?? "[]"
+                    Summary = Trimmed(input.Summary),
+                    Description = Trimmed(input.Description)
                 });
+            }
+        }
+
+        private static void ApplyImages(PcBuild build, CreateBuildDto dto)
+        {
+            var order = 0;
+            foreach (var imageId in dto.ImageIds.Distinct())
+            {
+                build.Images.Add(new PcBuildImage { ContentImageId = imageId, SortOrder = order++ });
             }
         }
 
@@ -132,7 +153,6 @@ namespace altinnendata_api.Features.Builds
             }
         }
 
-        /// <summary>Swaps the cover image, deleting the replaced one so it does not linger on disk.</summary>
         private static async Task ApplyCoverImageAsync(PcBuild build, string? newImageId, ApplicationDbContext db, IImageStorageService images, CancellationToken ct)
         {
             if (build.CoverImageId == newImageId) return;
@@ -141,6 +161,7 @@ namespace altinnendata_api.Features.Builds
             build.CoverImageId = newImageId;
 
             if (oldImageId == null) return;
+            if (await db.PcBuildImages.AnyAsync(i => i.ContentImageId == oldImageId, ct)) return;
 
             var old = await db.ContentImages.Include(i => i.Variants).FirstOrDefaultAsync(i => i.Id == oldImageId, ct);
             if (old != null)

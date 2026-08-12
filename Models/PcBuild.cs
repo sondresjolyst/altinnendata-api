@@ -33,6 +33,9 @@ namespace altinnendata_api.Models
 
         public ContentImage? CoverImage { get; set; }
 
+        [MaxLength(400)]
+        public string? FinnUrl { get; set; }
+
         public bool Published { get; set; }
 
         public int SortOrder { get; set; }
@@ -42,5 +45,6 @@ namespace altinnendata_api.Models
 
         public ICollection<PcBuildTranslation> Translations { get; set; } = [];
         public ICollection<PcBuildComponent> Components { get; set; } = [];
+        public ICollection<PcBuildImage> Images { get; set; } = [];
     }
 }

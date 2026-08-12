@@ -70,7 +70,6 @@ namespace altinnendata_api.Features.Users
             var user = await users.FindByIdAsync(id);
             if (user == null || user.IsDeleted) return TypedResults.NotFound();
 
-            // There is no public sign-up, so losing the last admin locks everyone out for good.
             if (await users.IsInRoleAsync(user, RoleNames.Admin))
             {
                 var admins = await users.GetUsersInRoleAsync(RoleNames.Admin);

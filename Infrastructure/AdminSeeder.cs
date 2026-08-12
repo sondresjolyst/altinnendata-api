@@ -4,11 +4,7 @@ using altinnendata_api.Models;
 
 namespace altinnendata_api.Infrastructure
 {
-    /// <summary>
-    /// Creates the very first admin from configuration, because there is no public sign-up.
-    /// Runs only while no admin exists — once one does, the configured values are ignored, so the
-    /// password can be rotated or removed afterwards without changing anything.
-    /// </summary>
+    /// <summary>Creates the first admin from configuration while none exists.</summary>
     public static class AdminSeeder
     {
         public static async Task EnsureFirstAdminAsync(IServiceProvider services, IConfiguration config, ILogger logger)

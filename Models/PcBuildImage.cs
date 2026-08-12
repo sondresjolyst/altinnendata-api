@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace altinnendata_api.Models
 {
-    public class PcBuildTranslation
+    public class PcBuildImage
     {
         [Key]
         public int Id { get; set; }
@@ -15,16 +15,12 @@ namespace altinnendata_api.Models
         public PcBuild? PcBuild { get; set; }
 
         [Required]
-        [MaxLength(10)]
-        public required string Locale { get; set; }
+        [MaxLength(32)]
+        public required string ContentImageId { get; set; }
 
-        [Required]
-        [MaxLength(200)]
-        public required string Title { get; set; }
+        [ForeignKey(nameof(ContentImageId))]
+        public ContentImage? ContentImage { get; set; }
 
-        [MaxLength(400)]
-        public string? Summary { get; set; }
-
-        public string? Description { get; set; }
+        public int SortOrder { get; set; }
     }
 }

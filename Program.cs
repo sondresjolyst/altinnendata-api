@@ -73,6 +73,8 @@ namespace altinnendata_api
 
             builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddSingleton<IImageStorageService, ImageStorageService>();
+            builder.Services.AddHttpClient("finn")
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
             builder.Services.AddHostedService<StatsSnapshotService>();
 
             builder.Services.AddProblemDetails();
@@ -161,8 +163,6 @@ namespace altinnendata_api
                 var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
                 var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-                // Applies pending migrations so a rollout brings its own schema. Seeding below
-                // assumes the tables exist.
                 var pending = (await context.Database.GetPendingMigrationsAsync()).ToList();
                 if (pending.Count > 0)
                 {
