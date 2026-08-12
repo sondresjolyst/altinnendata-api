@@ -1,5 +1,9 @@
 using System.Net;
+using System.Text;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using altinnendata_api.Constants;
+using altinnendata_api.Features.Builds;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
@@ -33,33 +37,62 @@ namespace altinnendata_api.Features.Contact
     /// <summary>Sends a contact / build enquiry to the configured recipient.</summary>
     public static class SendEnquiry
     {
-        public static async Task<IResult> Handle(ContactRequest req, ApplicationDbContext db, IEmailService email, CancellationToken ct)
+        public static async Task<IResult> Handle(
+            ContactRequest req,
+            ApplicationDbContext db,
+            IEmailService email,
+            IConfiguration config,
+            CancellationToken ct)
         {
             var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
+
+            var build = string.IsNullOrWhiteSpace(req.BuildSlug)
+                ? null
+                : await db.PcBuilds
+                    .Include(b => b.Translations)
+                    .FirstOrDefaultAsync(b => b.Slug == req.BuildSlug, ct);
 
             await email.SendEmailAsync(
                 settings.ContactRecipientEmail,
                 $"New enquiry from {req.Name}",
-                BuildBody(req),
+                BuildBody(req, build, config),
                 replyTo: req.Email);
 
             return TypedResults.Ok(new MessageResponse("Thanks — we'll be in touch."));
         }
 
-        private static string BuildBody(ContactRequest req)
+        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config)
         {
             string Enc(string? v) => WebUtility.HtmlEncode(v ?? string.Empty);
-            var budget = req.BudgetNok.HasValue ? $"{req.BudgetNok} NOK" : string.Empty;
-            return $@"
-<h2>New enquiry</h2>
-<p><strong>Name:</strong> {Enc(req.Name)}</p>
-<p><strong>Email:</strong> {Enc(req.Email)}</p>
-<p><strong>Phone:</strong> {Enc(req.Phone)}</p>
-<p><strong>Use case:</strong> {Enc(req.UseCase)}</p>
-<p><strong>Budget:</strong> {Enc(budget)}</p>
-<p><strong>Build:</strong> {Enc(req.BuildSlug)}</p>
-<p><strong>Message:</strong></p>
-<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>";
+
+            var body = new StringBuilder("<h2>New enquiry</h2>");
+
+            void Row(string label, string? value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    body.Append($"<p><strong>{label}:</strong> {value}</p>");
+            }
+
+            Row("Name", Enc(req.Name));
+            Row("Email", Enc(req.Email));
+            Row("Phone", Enc(req.Phone));
+            Row("Use case", Enc(req.UseCase));
+            Row("Budget", req.BudgetNok.HasValue ? $"{req.BudgetNok} NOK" : null);
+            Row("Build", BuildLink(req.BuildSlug, build, config));
+
+            body.Append("<p><strong>Message:</strong></p>");
+            body.Append($"<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>");
+            return body.ToString();
+        }
+
+        private static string? BuildLink(string? slug, PcBuild? build, IConfiguration config)
+        {
+            if (string.IsNullOrWhiteSpace(slug)) return null;
+            if (build == null) return WebUtility.HtmlEncode(slug);
+
+            var title = BuildMapping.PickTranslation(build, Locales.Default)?.Title ?? build.Slug;
+            var url = SiteLinks.Build(config, build.Slug);
+            return $"<a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(title)}</a> ({WebUtility.HtmlEncode(build.Slug)})";
         }
 
         public class Endpoint : IEndpoint
