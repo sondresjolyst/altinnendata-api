@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.1.0...v1.2.0) (2026-08-12)
+
+
+### Features
+
+* add build gallery and FINN import ([#11](https://github.com/sondresjolyst/altinnendata-api/issues/11)) ([d199cdd](https://github.com/sondresjolyst/altinnendata-api/commit/d199cdd29dbbefb30a31c4873e50c5b5909b9cfb))
+
 ## [1.1.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.0.1...v1.1.0) (2026-08-11)
 
 
