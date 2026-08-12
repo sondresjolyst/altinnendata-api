@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.2.0...v1.3.0) (2026-08-12)
+
+
+### Features
+
+* name and link the machine an enquiry is about ([#13](https://github.com/sondresjolyst/altinnendata-api/issues/13)) ([2dfe6f5](https://github.com/sondresjolyst/altinnendata-api/commit/2dfe6f5d1062018d489a0b743de1d2ca005eb359))
+
 ## [1.2.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.1.0...v1.2.0) (2026-08-12)
 
 
