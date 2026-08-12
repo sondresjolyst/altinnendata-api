@@ -51,12 +51,6 @@ namespace altinnendata_api.Models
                 .HasConversion<string>()
                 .HasMaxLength(20);
 
-            modelBuilder.Entity<PcBuild>()
-                .HasOne(b => b.CoverImage)
-                .WithMany()
-                .HasForeignKey(b => b.CoverImageId)
-                .OnDelete(DeleteBehavior.SetNull);
-
             modelBuilder.Entity<PcBuildTranslation>()
                 .HasIndex(t => new { t.PcBuildId, t.Locale })
                 .IsUnique();

@@ -67,7 +67,7 @@ namespace altinnendata_api.Features.Finn
                 return TypedResults.Problem("Could not reach finn.no.", statusCode: StatusCodes.Status502BadGateway);
             }
 
-            var ad = FinnAdParser.Parse(html);
+            var ad = FinnAdParser.Parse(html, request.Url);
 
             var stored = new List<string>();
             var skipped = 0;
@@ -81,9 +81,7 @@ namespace altinnendata_api.Features.Finn
             }
 
             var description = ad.Description;
-            var summary = description != null && description.Length > SummaryLength
-                ? description[..SummaryLength].TrimEnd()
-                : description;
+            var summary = Shorten(description);
 
             return TypedResults.Ok(new FinnImportResponse(
                 request.Url,
@@ -94,6 +92,15 @@ namespace altinnendata_api.Features.Finn
                 stored.FirstOrDefault(),
                 stored,
                 skipped));
+        }
+
+        private static string? Shorten(string? description)
+        {
+            if (description == null || description.Length <= SummaryLength) return description;
+
+            var cut = description[..(SummaryLength - 1)];
+            var lastBreak = cut.LastIndexOfAny([' ', '\n']);
+            return (lastBreak > 0 ? cut[..lastBreak] : cut).TrimEnd() + "…";
         }
 
         private static HttpClient CreateClient(IHttpClientFactory clients)
@@ -166,7 +173,7 @@ namespace altinnendata_api.Features.Finn
 
                 return image.Id;
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UriFormatException)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UriFormatException or AppValidationException)
             {
                 return null;
             }

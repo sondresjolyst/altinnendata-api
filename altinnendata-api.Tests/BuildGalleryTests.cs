@@ -63,27 +63,39 @@ public class BuildGalleryTests : TestBase
     }
 
     [Fact]
-    public async Task Update_KeepsACoverImageThatIsAlsoInTheGallery()
+    public async Task TheFirstImageIsTheCover()
     {
         await using var db = CreateDbContext();
-        db.ContentImages.Add(Image("a"));
+        db.ContentImages.AddRange(Image("a"), Image("b"));
         await db.SaveChangesAsync();
 
-        var create = Dto("a");
-        create.CoverImageId = "a";
-        var created = Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(create, db, default));
+        var created = Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(Dto("b", "a"), db, default));
+
+        Assert.Equal("b", created.Value!.CoverImageId);
+
+        var http = MakeControllerContext(isAdmin: true).HttpContext;
+        var listed = Assert.IsType<Ok<IEnumerable<BuildSummaryDto>>>(await BuildQueries.GetAll(http, db, default, all: true));
+        Assert.Equal("b", listed.Value!.Single().CoverImageId);
+    }
+
+    [Fact]
+    public async Task Update_DeletesAnImageDroppedFromTheGallery()
+    {
+        await using var db = CreateDbContext();
+        db.ContentImages.AddRange(Image("a"), Image("b"));
+        await db.SaveChangesAsync();
+        var created = Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(Dto("a", "b"), db, default));
 
         var dto = new UpdateBuildDto
         {
             Availability = "Available",
-            CoverImageId = null,
             Translations = [new BuildTranslationInput { Locale = "no", Title = "Gaming-PC" }],
             ImageIds = ["a"],
         };
         var storage = new FakeImageStorage();
         Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, storage, default));
 
-        Assert.Equal(0, storage.DeleteCount);
+        Assert.Null(await db.ContentImages.FindAsync("b"));
         Assert.NotNull(await db.ContentImages.FindAsync("a"));
     }
 

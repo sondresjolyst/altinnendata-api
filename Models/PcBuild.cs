@@ -28,11 +28,6 @@ namespace altinnendata_api.Models
 
         public DateOnly? BuiltOn { get; set; }
 
-        [MaxLength(32)]
-        public string? CoverImageId { get; set; }
-
-        public ContentImage? CoverImage { get; set; }
-
         [MaxLength(400)]
         public string? FinnUrl { get; set; }
 

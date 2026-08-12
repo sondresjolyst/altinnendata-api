@@ -44,6 +44,8 @@ namespace altinnendata_api.Features.Builds
         private static List<string> GalleryIds(PcBuild build) =>
             build.Images.OrderBy(i => i.SortOrder).Select(i => i.ContentImageId).ToList();
 
+        private static string? CoverId(PcBuild build) => GalleryIds(build).FirstOrDefault();
+
         public static BuildSummaryDto ToSummary(PcBuild build, string locale)
         {
             var translation = PickTranslation(build, locale);
@@ -54,7 +56,7 @@ namespace altinnendata_api.Features.Builds
                 build.Availability.ToString(),
                 build.PriceNok,
                 build.BuiltOn,
-                build.CoverImageId,
+                CoverId(build),
                 build.Published,
                 build.SortOrder,
                 translation?.Locale ?? locale,
@@ -74,7 +76,7 @@ namespace altinnendata_api.Features.Builds
                 build.Availability.ToString(),
                 build.PriceNok,
                 build.BuiltOn,
-                build.CoverImageId,
+                CoverId(build),
                 build.FinnUrl,
                 build.Published,
                 build.SortOrder,
@@ -96,7 +98,7 @@ namespace altinnendata_api.Features.Builds
             build.Availability.ToString(),
             build.PriceNok,
             build.BuiltOn,
-            build.CoverImageId,
+            CoverId(build),
             build.FinnUrl,
             build.Published,
             build.SortOrder,

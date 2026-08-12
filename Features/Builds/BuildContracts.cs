@@ -26,7 +26,6 @@ namespace altinnendata_api.Features.Builds
         public string Availability { get; set; } = nameof(Models.BuildAvailability.Available);
         public int? PriceNok { get; set; }
         public DateOnly? BuiltOn { get; set; }
-        public string? CoverImageId { get; set; }
         public string? FinnUrl { get; set; }
         public bool Published { get; set; }
         public int SortOrder { get; set; }
@@ -111,7 +110,6 @@ namespace altinnendata_api.Features.Builds
         protected BuildValidator()
         {
             RuleFor(x => x.Category).MaximumLength(60);
-            RuleFor(x => x.CoverImageId).MaximumLength(32);
             RuleFor(x => x.PriceNok).GreaterThanOrEqualTo(0).When(x => x.PriceNok.HasValue);
 
             RuleFor(x => x.FinnUrl)
