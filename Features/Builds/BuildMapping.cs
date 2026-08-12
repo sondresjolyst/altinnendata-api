@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using altinnendata_api.Constants;
 using altinnendata_api.Models;
 
@@ -7,20 +6,6 @@ namespace altinnendata_api.Features.Builds
     /// <summary>Turns a build plus its translations into the locale-resolved shapes the API returns.</summary>
     public static class BuildMapping
     {
-        public static JsonNode ParseSections(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json)) return new JsonArray();
-            try
-            {
-                return JsonNode.Parse(json) as JsonArray ?? new JsonArray();
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                return new JsonArray();
-            }
-        }
-
-        /// <summary>Requested locale, else the default locale, else whatever exists.</summary>
         public static PcBuildTranslation? PickTranslation(PcBuild build, string locale) =>
             build.Translations.FirstOrDefault(t => t.Locale == locale)
             ?? build.Translations.FirstOrDefault(t => t.Locale == Locales.Default)
@@ -56,6 +41,11 @@ namespace altinnendata_api.Features.Builds
                 component.SortOrder);
         }
 
+        private static List<string> GalleryIds(PcBuild build) =>
+            build.Images.OrderBy(i => i.SortOrder).Select(i => i.ContentImageId).ToList();
+
+        private static string? CoverId(PcBuild build) => GalleryIds(build).FirstOrDefault();
+
         public static BuildSummaryDto ToSummary(PcBuild build, string locale)
         {
             var translation = PickTranslation(build, locale);
@@ -66,7 +56,7 @@ namespace altinnendata_api.Features.Builds
                 build.Availability.ToString(),
                 build.PriceNok,
                 build.BuiltOn,
-                build.CoverImageId,
+                CoverId(build),
                 build.Published,
                 build.SortOrder,
                 translation?.Locale ?? locale,
@@ -86,13 +76,15 @@ namespace altinnendata_api.Features.Builds
                 build.Availability.ToString(),
                 build.PriceNok,
                 build.BuiltOn,
-                build.CoverImageId,
+                CoverId(build),
+                build.FinnUrl,
                 build.Published,
                 build.SortOrder,
                 translation?.Locale ?? locale,
                 translation?.Title ?? build.Slug,
                 translation?.Summary,
-                ParseSections(translation?.SectionsJson),
+                translation?.Description,
+                GalleryIds(build),
                 build.Components.OrderBy(c => c.SortOrder).Select(c => ToComponentDto(c, locale)).ToList(),
                 build.Translations.Select(t => t.Locale).OrderBy(l => l).ToList(),
                 build.CreatedAt,
@@ -106,15 +98,17 @@ namespace altinnendata_api.Features.Builds
             build.Availability.ToString(),
             build.PriceNok,
             build.BuiltOn,
-            build.CoverImageId,
+            CoverId(build),
+            build.FinnUrl,
             build.Published,
             build.SortOrder,
             build.Translations
                 .OrderBy(t => t.Locale == Locales.Default ? 0 : 1)
                 .ThenBy(t => t.Locale)
-                .Select(t => new BuildTranslationDto(t.Locale, t.Title, t.Summary, ParseSections(t.SectionsJson)))
+                .Select(t => new BuildTranslationDto(t.Locale, t.Title, t.Summary, t.Description))
                 .ToList(),
             build.Components.OrderBy(c => c.SortOrder).Select(c => ToComponentDto(c, Locales.Default)).ToList(),
+            GalleryIds(build),
             build.CreatedAt,
             build.UpdatedAt);
     }

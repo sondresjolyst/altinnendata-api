@@ -17,6 +17,7 @@ namespace altinnendata_api.Models
         public DbSet<PcBuild> PcBuilds { get; set; }
         public DbSet<PcBuildTranslation> PcBuildTranslations { get; set; }
         public DbSet<PcBuildComponent> PcBuildComponents { get; set; }
+        public DbSet<PcBuildImage> PcBuildImages { get; set; }
         public DbSet<ComponentCategory> ComponentCategories { get; set; }
         public DbSet<ComponentCategoryTranslation> ComponentCategoryTranslations { get; set; }
         public DbSet<ComponentManufacturer> ComponentManufacturers { get; set; }
@@ -50,12 +51,6 @@ namespace altinnendata_api.Models
                 .HasConversion<string>()
                 .HasMaxLength(20);
 
-            modelBuilder.Entity<PcBuild>()
-                .HasOne(b => b.CoverImage)
-                .WithMany()
-                .HasForeignKey(b => b.CoverImageId)
-                .OnDelete(DeleteBehavior.SetNull);
-
             modelBuilder.Entity<PcBuildTranslation>()
                 .HasIndex(t => new { t.PcBuildId, t.Locale })
                 .IsUnique();
@@ -70,6 +65,22 @@ namespace altinnendata_api.Models
                 .HasOne(c => c.PcBuild)
                 .WithMany(b => b.Components)
                 .HasForeignKey(c => c.PcBuildId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PcBuildImage>()
+                .HasIndex(i => new { i.PcBuildId, i.ContentImageId })
+                .IsUnique();
+
+            modelBuilder.Entity<PcBuildImage>()
+                .HasOne(i => i.PcBuild)
+                .WithMany(b => b.Images)
+                .HasForeignKey(i => i.PcBuildId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PcBuildImage>()
+                .HasOne(i => i.ContentImage)
+                .WithMany()
+                .HasForeignKey(i => i.ContentImageId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<PcBuildComponent>()

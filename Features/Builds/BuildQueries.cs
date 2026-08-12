@@ -16,7 +16,8 @@ namespace altinnendata_api.Features.Builds
                 .Include(b => b.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Manufacturer)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Category).ThenInclude(c => c!.Translations)
-                .Include(b => b.Components).ThenInclude(c => c.ComponentCategory).ThenInclude(c => c!.Translations);
+                .Include(b => b.Components).ThenInclude(c => c.ComponentCategory).ThenInclude(c => c!.Translations)
+                .Include(b => b.Images);
 
         public static async Task<IResult> GetAll(HttpContext http, ApplicationDbContext db, CancellationToken ct,
             string? locale = null, string? availability = null, string? category = null, bool all = false)

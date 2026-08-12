@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Features.Builds;
@@ -22,7 +21,7 @@ public class BuildSlicesTests : TestBase
                 Locale = "no",
                 Title = title,
                 Summary = "Rask gaming-PC",
-                Sections = JsonNode.Parse("""[{"id":"s1","type":"text","heading":"Om byggen","body":"Satt sammen etter kundens behov."}]""")
+                Description = "Satt sammen etter kundens behov."
             }
         ],
         Components =
@@ -40,8 +39,8 @@ public class BuildSlicesTests : TestBase
             Availability = BuildAvailability.Available,
             Translations =
             [
-                new PcBuildTranslation { Locale = "no", Title = "Gaming-PC", Summary = "Rask", SectionsJson = """[{"id":"s1","type":"text","body":"Norsk"}]""" },
-                new PcBuildTranslation { Locale = "en", Title = "Gaming PC", Summary = "Fast", SectionsJson = """[{"id":"s1","type":"text","body":"English"}]""" }
+                new PcBuildTranslation { Locale = "no", Title = "Gaming-PC", Summary = "Rask", Description = "Norsk" },
+                new PcBuildTranslation { Locale = "en", Title = "Gaming PC", Summary = "Fast", Description = "English" }
             ]
         };
         db.PcBuilds.Add(build);
@@ -126,7 +125,7 @@ public class BuildSlicesTests : TestBase
         var en = Assert.IsType<Ok<BuildDetailDto>>(await BuildQueries.GetBySlug("gaming-pc", http, db, default, "en"));
 
         Assert.Equal("Gaming PC", en.Value!.Title);
-        Assert.Contains("English", en.Value.Sections.ToJsonString());
+        Assert.Equal("English", en.Value.Description);
         Assert.Equal(["en", "no"], en.Value.AvailableLocales);
     }
 
@@ -166,8 +165,8 @@ public class BuildSlicesTests : TestBase
             Published = true,
             Translations =
             [
-                new BuildTranslationInput { Locale = "no", Title = "Kontor-PC", Sections = JsonNode.Parse("[]") },
-                new BuildTranslationInput { Locale = "en", Title = "Office PC", Sections = JsonNode.Parse("[]") }
+                new BuildTranslationInput { Locale = "no", Title = "Kontor-PC" },
+                new BuildTranslationInput { Locale = "en", Title = "Office PC" }
             ]
         };
 
