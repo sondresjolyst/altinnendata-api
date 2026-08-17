@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.3.0...v1.3.1) (2026-08-17)
+
+
+### Dependencies
+
+* **github-actions:** bump `equinor/ops-actions/.github/workflows/docker.yml` from 9.39.5 to 9.39.6 ([#15](https://github.com/sondresjolyst/altinnendata-api/issues/15)) ([21730e5](https://github.com/sondresjolyst/altinnendata-api/commit/21730e5618ae8bebc8f16f8ba71650f9b0af710c))
+* **github-actions:** bump `equinor/ops-actions/.github/workflows/release-please-manifest.yml` from 9.39.5 to 9.39.6 ([#16](https://github.com/sondresjolyst/altinnendata-api/issues/16)) ([45e0af6](https://github.com/sondresjolyst/altinnendata-api/commit/45e0af675fdec59cf7aa245938d8071ae0eb063d))
+* **nuget:** bump `SkiaSharp.NativeAssets.Linux.NoDependencies` from 4.151.0 to 4.151.1 ([#18](https://github.com/sondresjolyst/altinnendata-api/issues/18)) ([0a3f2c9](https://github.com/sondresjolyst/altinnendata-api/commit/0a3f2c90306886c3be5b43c4fa58ffbbc360b887))
+* **nuget:** bump `SkiaSharp` from 4.151.0 to 4.151.1 ([#17](https://github.com/sondresjolyst/altinnendata-api/issues/17)) ([a146b71](https://github.com/sondresjolyst/altinnendata-api/commit/a146b71579b3ea7c01b4b45559416a343925e6b9))
+
 ## [1.3.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.2.0...v1.3.0) (2026-08-12)
 
 
