@@ -59,8 +59,8 @@ namespace altinnendata_api.Services
                 var info = codec.Info;
                 if (info.Width == 0 || info.Height == 0) return null;
 
-                // A quarter-turn origin is applied when the image is decoded, so the displayed
-                // dimensions are the stored ones with the axes swapped.
+                // Decoding applies a quarter-turn origin, so the displayed dimensions are the
+                // stored ones with the axes swapped.
                 return IsQuarterTurn(codec.EncodedOrigin)
                     ? (info.Height, info.Width)
                     : (info.Width, info.Height);

@@ -22,7 +22,7 @@ namespace altinnendata_api.Features.ContentImages
         private const string ImmutableCache = "public, max-age=31536000, immutable";
         // Short cache for the pre-backfill original fallback, so it can upgrade to webp later.
         private const string ShortCache = "public, max-age=3600";
-        // A page references a handful of images; the cap only bounds a hostile request.
+        // A page references a handful of images; the cap is only a bound on a hostile request.
         private const int MaxDimensionIds = 100;
 
         public static async Task<IResult> Get(string id, int? w, HttpContext http, ApplicationDbContext db, IImageStorageService storage, CancellationToken ct)
@@ -94,15 +94,9 @@ namespace altinnendata_api.Features.ContentImages
         }
 
         /// <summary>
-        /// Intrinsic dimensions for a set of images, so a page can reserve their space before they
-        /// load. Batched because a page references many images and a request each would serialise
-        /// behind one another during server rendering.
-        ///
-        /// The literal path segment is unambiguous against the id route: ids are 32 hex characters.
-        ///
-        /// Images uploaded before the dimensions were recorded are measured on first request and
-        /// the result kept. Ids that are unknown, or whose file cannot be decoded, are left out —
-        /// the caller renders those without reserved space rather than with a guess.
+        /// Intrinsic dimensions for a set of images, batched so a page needs one request for all
+        /// of its own. An image with no dimensions recorded yet is measured here and the result
+        /// kept; ids that are unknown, or whose file will not decode, are left out.
         /// </summary>
         public static async Task<IResult> Dimensions(string? ids, ApplicationDbContext db, IImageStorageService storage, CancellationToken ct)
         {
