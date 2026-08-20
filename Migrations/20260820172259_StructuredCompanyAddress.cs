@@ -39,10 +39,9 @@ namespace altinnendata_api.Migrations
                 nullable: false,
                 defaultValue: "");
 
-            // Addresses entered before these columns existed are a single line, "<street>,
-            // <4 digits> <place>". Split them here so structured data can expose the postcode
-            // and place as their own fields. Every SET below reads the pre-update value of
-            // StreetAddress, and a line that does not match the shape is left whole.
+            // Splits the single-line addresses entered before these columns existed. Every SET
+            // reads the pre-update value of StreetAddress; a line not matching the shape stays
+            // whole, which the WHERE clause takes care of.
             migrationBuilder.Sql("""
                 UPDATE "AppSettings"
                 SET "PostalCode"      = substring("StreetAddress" from '(\d{4})\s+[^\d,]+$'),

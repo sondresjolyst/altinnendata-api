@@ -7,9 +7,8 @@ using Xunit;
 namespace altinnendata_api.Tests;
 
 /// <summary>
-/// Exercises the real decoder. The dimensions reported here become the width and height a page
-/// reserves for an image, so a quarter-turn orientation that is not applied would size every
-/// rotated photo wrongly.
+/// Exercises the real decoder. These dimensions become the width and height a page reserves for
+/// an image, so an unapplied quarter-turn orientation would size every rotated photo wrongly.
 /// </summary>
 public class ImageProbeTests : IDisposable
 {

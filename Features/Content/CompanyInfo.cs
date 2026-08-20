@@ -5,8 +5,8 @@ using altinnendata_api.Models.Admin;
 namespace altinnendata_api.Features.Content
 {
     /// <summary>
-    /// <paramref name="Address"/> is the one-line form for display; the parts beside it are what
-    /// structured data needs, since a search engine cannot split a free-text line reliably.
+    /// <paramref name="Address"/> is the one-line form, for display. The parts beside it are what
+    /// structured data needs — a search engine cannot split a free-text line reliably.
     /// </summary>
     public record CompanyInfoResponse(
         string Name,

@@ -1,11 +1,9 @@
 namespace altinnendata_api.Helpers
 {
     /// <summary>
-    /// Norwegian postal addresses, kept as separate parts.
-    ///
-    /// Structured data and address lookups need the postcode and locality as their own fields;
-    /// a single free-text line cannot be read that way. The display string is derived from the
-    /// parts rather than stored, so the two can never disagree.
+    /// Norwegian postal addresses, kept as separate parts because structured data needs the
+    /// postcode and locality as their own fields. The one-line form is derived, never stored,
+    /// so it cannot disagree with the parts.
     /// </summary>
     public static class PostalAddress
     {
