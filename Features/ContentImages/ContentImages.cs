@@ -10,6 +10,8 @@ namespace altinnendata_api.Features.ContentImages
 {
     public record UploadedImage(string Id, string Url);
 
+    public record ImageDimensions(string Id, int Width, int Height);
+
     /// <summary>Upload / serve / delete owner images used in site content.</summary>
     public static class ContentImages
     {
@@ -20,6 +22,8 @@ namespace altinnendata_api.Features.ContentImages
         private const string ImmutableCache = "public, max-age=31536000, immutable";
         // Short cache for the pre-backfill original fallback, so it can upgrade to webp later.
         private const string ShortCache = "public, max-age=3600";
+        // A page references a handful of images; the cap only bounds a hostile request.
+        private const int MaxDimensionIds = 100;
 
         public static async Task<IResult> Get(string id, int? w, HttpContext http, ApplicationDbContext db, IImageStorageService storage, CancellationToken ct)
         {
@@ -55,6 +59,7 @@ namespace altinnendata_api.Features.ContentImages
         public static async Task<IResult> Upload(IFormFile file, HttpContext http, ApplicationDbContext db, IImageStorageService storage, CancellationToken ct)
         {
             var (storedPath, contentType, sizeBytes) = await storage.SaveAsync(file, ct);
+            var dimensions = storage.Probe(storedPath);
 
             var image = new ContentImage
             {
@@ -62,6 +67,8 @@ namespace altinnendata_api.Features.ContentImages
                 ContentType = contentType,
                 SizeBytes = sizeBytes,
                 StoredPath = storedPath,
+                Width = dimensions?.Width ?? 0,
+                Height = dimensions?.Height ?? 0,
                 UploadedByUserId = http.User.UserId()
             };
             db.ContentImages.Add(image);
@@ -84,6 +91,45 @@ namespace altinnendata_api.Features.ContentImages
             db.ContentImages.Remove(image); // cascade removes variant rows
             await db.SaveChangesAsync(ct);
             return TypedResults.NoContent();
+        }
+
+        /// <summary>
+        /// Intrinsic dimensions for a set of images, so a page can reserve their space before they
+        /// load. Batched because a page references many images and a request each would serialise
+        /// behind one another during server rendering.
+        ///
+        /// The literal path segment is unambiguous against the id route: ids are 32 hex characters.
+        ///
+        /// Images uploaded before the dimensions were recorded are measured on first request and
+        /// the result kept. Ids that are unknown, or whose file cannot be decoded, are left out —
+        /// the caller renders those without reserved space rather than with a guess.
+        /// </summary>
+        public static async Task<IResult> Dimensions(string? ids, ApplicationDbContext db, IImageStorageService storage, CancellationToken ct)
+        {
+            var requested = (ids ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct()
+                .Take(MaxDimensionIds)
+                .ToList();
+
+            if (requested.Count == 0) return TypedResults.Ok(Array.Empty<ImageDimensions>());
+
+            var images = await db.ContentImages.Where(i => requested.Contains(i.Id)).ToListAsync(ct);
+
+            var measured = images.Where(i => i.Width == 0 || i.Height == 0).ToList();
+            foreach (var image in measured)
+            {
+                var measurement = storage.Exists(image.StoredPath) ? storage.Probe(image.StoredPath) : null;
+                if (measurement == null) continue;
+                image.Width = measurement.Value.Width;
+                image.Height = measurement.Value.Height;
+            }
+            if (measured.Count > 0) await db.SaveChangesAsync(ct);
+
+            return TypedResults.Ok(images
+                .Where(i => i.Width > 0 && i.Height > 0)
+                .Select(i => new ImageDimensions(i.Id, i.Width, i.Height))
+                .ToArray());
         }
 
         private static ContentImageVariant? PickVariant(IReadOnlyCollection<ContentImageVariant> variants, int? w)
@@ -132,6 +178,7 @@ namespace altinnendata_api.Features.ContentImages
             public void Map(IEndpointRouteBuilder app)
             {
                 app.MapGet("/api/content-images/{id}", Get);
+                app.MapGet("/api/content-images/dimensions", Dimensions).AllowAnonymous();
                 app.MapPost("/api/content-images", Upload).RequireAuthorization(Policies.Admin).DisableAntiforgery();
                 app.MapDelete("/api/content-images/{id}", Delete).RequireAuthorization(Policies.Admin);
             }

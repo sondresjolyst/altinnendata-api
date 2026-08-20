@@ -13,10 +13,14 @@ public class SettingsSliceTests : TestBase
         string legalName = "",
         string orgNumber = "999 888 777",
         bool vat = false,
-        string address = "New St 1, 0001 Oslo",
+        string streetAddress = "New St 1",
+        string postalCode = "0001",
+        string addressLocality = "Oslo",
+        string addressRegion = "",
         string email = "post@altinnendata.no",
         string phone = "+47 473 88 759") =>
-        new(recipient, name, legalName, orgNumber, vat, address, email, phone);
+        new(recipient, name, legalName, orgNumber, vat, streetAddress, postalCode, addressLocality,
+            addressRegion, email, phone);
 
     [Fact]
     public async Task Get_DefaultsWhenNoRow()
@@ -36,11 +40,13 @@ public class SettingsSliceTests : TestBase
 
         var ok = Assert.IsType<Ok<SettingsBody>>(await Settings.Update(Body(), db, default));
         Assert.Equal("shop@altinnendata.no", ok.Value!.ContactRecipientEmail);
-        Assert.Equal("New St 1, 0001 Oslo", ok.Value.Address);
+        Assert.Equal("New St 1", ok.Value.StreetAddress);
 
         var stored = await db.AppSettings.FindAsync(1);
         Assert.Equal("shop@altinnendata.no", stored!.ContactRecipientEmail);
-        Assert.Equal("New St 1, 0001 Oslo", stored.Address);
+        Assert.Equal("New St 1", stored.StreetAddress);
+        Assert.Equal("0001", stored.PostalCode);
+        Assert.Equal("Oslo", stored.AddressLocality);
         Assert.Equal("My Shop", stored.CompanyName);
         Assert.Equal("999 888 777", stored.OrgNumber);
         Assert.Equal("post@altinnendata.no", stored.PublicEmail);
@@ -67,5 +73,31 @@ public class SettingsSliceTests : TestBase
 
         Assert.False(validator.Validate(Body(orgNumber: "", vat: true)).IsValid);
         Assert.True(validator.Validate(Body(orgNumber: "", vat: false)).IsValid);
+    }
+
+    [Fact]
+    public void Validator_AcceptsAStreetWithNoPostalCodeYet()
+    {
+        var validator = new SettingsValidator();
+
+        Assert.True(validator.Validate(Body(postalCode: "", addressLocality: "")).IsValid);
+    }
+
+    [Fact]
+    public void Validator_RejectsAPostalCodeThatIsNotFourDigits()
+    {
+        var validator = new SettingsValidator();
+
+        Assert.False(validator.Validate(Body(postalCode: "43")).IsValid);
+        Assert.False(validator.Validate(Body(postalCode: "N-4347")).IsValid);
+        Assert.True(validator.Validate(Body(postalCode: "4347")).IsValid);
+    }
+
+    [Fact]
+    public void Validator_RequiresAPlaceNameAlongsideAPostalCode()
+    {
+        var validator = new SettingsValidator();
+
+        Assert.False(validator.Validate(Body(postalCode: "4347", addressLocality: "")).IsValid);
     }
 }

@@ -48,6 +48,34 @@ namespace altinnendata_api.Services
             return (storedName, file.ContentType, file.Length);
         }
 
+        public (int Width, int Height)? Probe(string storedPath)
+        {
+            try
+            {
+                using var input = OpenRead(storedPath);
+                using var codec = SKCodec.Create(input);
+                if (codec == null) return null;
+
+                var info = codec.Info;
+                if (info.Width == 0 || info.Height == 0) return null;
+
+                // A quarter-turn origin is applied when the image is decoded, so the displayed
+                // dimensions are the stored ones with the axes swapped.
+                return IsQuarterTurn(codec.EncodedOrigin)
+                    ? (info.Height, info.Width)
+                    : (info.Width, info.Height);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not read dimensions of {StoredPath}", storedPath);
+                return null;
+            }
+        }
+
+        private static bool IsQuarterTurn(SKEncodedOrigin origin) =>
+            origin is SKEncodedOrigin.LeftTop or SKEncodedOrigin.RightTop
+                   or SKEncodedOrigin.RightBottom or SKEncodedOrigin.LeftBottom;
+
         public async Task<IReadOnlyList<(int Width, string StoredPath, long SizeBytes)>> GenerateWebpVariantsAsync(string originalStoredPath, CancellationToken ct = default)
         {
             try

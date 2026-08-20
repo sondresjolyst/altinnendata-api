@@ -12,7 +12,7 @@ namespace altinnendata_api.Features.Content
     {
         private const string Empty = "[]";
 
-        public static async Task<IResult> Get(ApplicationDbContext db, CancellationToken ct, string? locale = null)
+        public static async Task<IResult> Get(HttpContext http, ApplicationDbContext db, CancellationToken ct, string? locale = null)
         {
             var resolved = Locales.Normalize(locale);
             var content = await db.HomePageContents.AsNoTracking().FirstOrDefaultAsync(c => c.Locale == resolved, ct);
@@ -21,6 +21,12 @@ namespace altinnendata_api.Features.Content
             content ??= resolved == Locales.Default
                 ? null
                 : await db.HomePageContents.AsNoTracking().FirstOrDefaultAsync(c => c.Locale == Locales.Default, ct);
+
+            // The sections are a bare JSON array, with nowhere to carry an edit timestamp. The
+            // standard header is the right place for it: the site's sitemap needs to know when
+            // the front page last changed, and the value is the one this response was built from.
+            if (content != null)
+                http.Response.Headers.LastModified = content.UpdatedAt.ToUniversalTime().ToString("R");
 
             var json = string.IsNullOrWhiteSpace(content?.SectionsJson) ? Empty : content!.SectionsJson;
             return TypedResults.Content(json, "application/json");

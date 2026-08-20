@@ -17,14 +17,35 @@ public class CompanyInfoTests : TestBase
     }
 
     [Fact]
-    public async Task Get_ReturnsStoredAddress()
+    public async Task Get_ReturnsAddressAsPartsAndAsOneLine()
     {
         await using var db = CreateDbContext();
-        db.AppSettings.Add(new AppSettings { Address = "New St 1, 0001 Oslo" });
+        db.AppSettings.Add(new AppSettings
+        {
+            StreetAddress = "New St 1",
+            PostalCode = "0001",
+            AddressLocality = "Oslo",
+            AddressRegion = "Oslo",
+        });
         await db.SaveChangesAsync();
 
         var ok = Assert.IsType<Ok<CompanyInfoResponse>>(await CompanyInfo.Get(db, default));
         Assert.Equal("New St 1, 0001 Oslo", ok.Value!.Address);
+        Assert.Equal("New St 1", ok.Value.StreetAddress);
+        Assert.Equal("0001", ok.Value.PostalCode);
+        Assert.Equal("Oslo", ok.Value.AddressLocality);
+        Assert.Equal("Oslo", ok.Value.AddressRegion);
+    }
+
+    [Fact]
+    public async Task Get_OmitsThePlaceFromTheOneLineWhenItIsNotSet()
+    {
+        await using var db = CreateDbContext();
+        db.AppSettings.Add(new AppSettings { StreetAddress = "New St 1", PostalCode = "", AddressLocality = "" });
+        await db.SaveChangesAsync();
+
+        var ok = Assert.IsType<Ok<CompanyInfoResponse>>(await CompanyInfo.Get(db, default));
+        Assert.Equal("New St 1", ok.Value!.Address);
     }
 
     [Fact]

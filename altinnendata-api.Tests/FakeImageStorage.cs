@@ -31,6 +31,17 @@ public class FakeImageStorage : IImageStorageService
         return Task.FromResult(variants);
     }
 
+    /// <summary>Dimensions reported for any stored file; set to null to act as an undecodable image.</summary>
+    public (int Width, int Height)? Dimensions { get; set; } = (1600, 900);
+
+    public int ProbeCount { get; private set; }
+
+    public (int Width, int Height)? Probe(string storedPath)
+    {
+        ProbeCount++;
+        return Files.ContainsKey(storedPath) ? Dimensions : null;
+    }
+
     public Stream OpenRead(string storedPath) => new MemoryStream(Files[storedPath]);
 
     public void Delete(string storedPath)
