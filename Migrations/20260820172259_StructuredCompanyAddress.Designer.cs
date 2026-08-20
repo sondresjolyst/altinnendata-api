@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using altinnendata_api.Models;
@@ -11,9 +12,11 @@ using altinnendata_api.Models;
 namespace altinnendata_api.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820172259_StructuredCompanyAddress")]
+    partial class StructuredCompanyAddress
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -501,9 +504,6 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(260)
                         .HasColumnType("character varying(260)");
 
-                    b.Property<int>("Height")
-                        .HasColumnType("integer");
-
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
 
@@ -515,9 +515,6 @@ namespace altinnendata_api.Migrations
                     b.Property<string>("UploadedByUserId")
                         .HasMaxLength(450)
                         .HasColumnType("character varying(450)");
-
-                    b.Property<int>("Width")
-                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 

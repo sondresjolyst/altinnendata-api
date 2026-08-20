@@ -22,6 +22,98 @@ public class ContentImagesSlicesTests : TestBase
     }
 
     [Fact]
+    public async Task Upload_RecordsTheImageDimensions()
+    {
+        await using var db = CreateDbContext();
+        var storage = new FakeImageStorage { Dimensions = (1600, 1200) };
+
+        await ContentImages.Upload(FakeImageStorage.MakeImage(), new DefaultHttpContext(), db, storage, default);
+
+        var stored = db.ContentImages.Single();
+        Assert.Equal(1600, stored.Width);
+        Assert.Equal(1200, stored.Height);
+    }
+
+    [Fact]
+    public async Task Upload_LeavesDimensionsAtZeroWhenTheImageCannotBeRead()
+    {
+        await using var db = CreateDbContext();
+        var storage = new FakeImageStorage { Dimensions = null };
+
+        await ContentImages.Upload(FakeImageStorage.MakeImage(), new DefaultHttpContext(), db, storage, default);
+
+        var stored = db.ContentImages.Single();
+        Assert.Equal(0, stored.Width);
+        Assert.Equal(0, stored.Height);
+    }
+
+    [Fact]
+    public async Task Dimensions_ReturnsDimensionsForTheRequestedImages()
+    {
+        await using var db = CreateDbContext();
+        var storage = new FakeImageStorage();
+        storage.Files["a.png"] = [1];
+        storage.Files["b.png"] = [1];
+        db.ContentImages.AddRange(
+            new ContentImage { FileName = "a.png", ContentType = "image/png", StoredPath = "a.png", Width = 800, Height = 600 },
+            new ContentImage { FileName = "b.png", ContentType = "image/png", StoredPath = "b.png", Width = 400, Height = 300 });
+        await db.SaveChangesAsync();
+        var ids = db.ContentImages.Select(i => i.Id).ToList();
+
+        var ok = Assert.IsType<Ok<ImageDimensions[]>>(await ContentImages.Dimensions(string.Join(',', ids), db, storage, default));
+
+        Assert.Equal(2, ok.Value!.Length);
+        Assert.Contains(ok.Value, m => m.Width == 800 && m.Height == 600);
+        Assert.Equal(0, storage.ProbeCount);
+    }
+
+    [Fact]
+    public async Task Dimensions_MeasuresAndKeepsDimensionsForOlderImages()
+    {
+        await using var db = CreateDbContext();
+        var storage = new FakeImageStorage { Dimensions = (1024, 768) };
+        storage.Files["old.png"] = [1];
+        db.ContentImages.Add(new ContentImage { FileName = "old.png", ContentType = "image/png", StoredPath = "old.png" });
+        await db.SaveChangesAsync();
+        var id = db.ContentImages.Single().Id;
+
+        var ok = Assert.IsType<Ok<ImageDimensions[]>>(await ContentImages.Dimensions(id, db, storage, default));
+
+        Assert.Equal(1024, ok.Value!.Single().Width);
+        Assert.Equal(768, db.ContentImages.Single().Height);
+
+        // Measured once: the second request reads what was stored.
+        Assert.IsType<Ok<ImageDimensions[]>>(await ContentImages.Dimensions(id, db, storage, default));
+        Assert.Equal(1, storage.ProbeCount);
+    }
+
+    [Fact]
+    public async Task Dimensions_OmitsImagesItCannotMeasure()
+    {
+        await using var db = CreateDbContext();
+        var storage = new FakeImageStorage { Dimensions = null };
+        storage.Files["bad.png"] = [1];
+        db.ContentImages.Add(new ContentImage { FileName = "bad.png", ContentType = "image/png", StoredPath = "bad.png" });
+        await db.SaveChangesAsync();
+
+        var ok = Assert.IsType<Ok<ImageDimensions[]>>(
+            await ContentImages.Dimensions(db.ContentImages.Single().Id, db, storage, default));
+
+        Assert.Empty(ok.Value!);
+    }
+
+    [Fact]
+    public async Task Dimensions_IgnoresUnknownIdsAndAnEmptyRequest()
+    {
+        await using var db = CreateDbContext();
+        var storage = new FakeImageStorage();
+
+        Assert.Empty(Assert.IsType<Ok<ImageDimensions[]>>(await ContentImages.Dimensions("nope,alsonope", db, storage, default)).Value!);
+        Assert.Empty(Assert.IsType<Ok<ImageDimensions[]>>(await ContentImages.Dimensions("", db, storage, default)).Value!);
+        Assert.Empty(Assert.IsType<Ok<ImageDimensions[]>>(await ContentImages.Dimensions(null, db, storage, default)).Value!);
+    }
+
+    [Fact]
     public async Task Get_Existing_ReturnsFile()
     {
         await using var db = CreateDbContext();

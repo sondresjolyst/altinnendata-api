@@ -12,7 +12,10 @@ namespace altinnendata_api.Features.Settings
         string CompanyLegalName,
         string OrgNumber,
         bool VatRegistered,
-        string Address,
+        string StreetAddress,
+        string PostalCode,
+        string AddressLocality,
+        string AddressRegion,
         string PublicEmail,
         string PublicPhone);
 
@@ -24,7 +27,16 @@ namespace altinnendata_api.Features.Settings
             RuleFor(x => x.CompanyName).NotEmpty().MaximumLength(100);
             RuleFor(x => x.CompanyLegalName).MaximumLength(200);
             RuleFor(x => x.OrgNumber).MaximumLength(50);
-            RuleFor(x => x.Address).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.StreetAddress).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.PostalCode).MaximumLength(20).Matches(@"^\d{4}$")
+                .When(x => !string.IsNullOrWhiteSpace(x.PostalCode))
+                .WithMessage("A Norwegian postal code is four digits.");
+            RuleFor(x => x.AddressLocality).MaximumLength(100);
+            RuleFor(x => x.AddressRegion).MaximumLength(100);
+            RuleFor(x => x.AddressLocality)
+                .NotEmpty()
+                .When(x => !string.IsNullOrWhiteSpace(x.PostalCode))
+                .WithMessage("A postal code needs the place name that goes with it.");
             RuleFor(x => x.PublicEmail).NotEmpty().EmailAddress().MaximumLength(200);
             RuleFor(x => x.PublicPhone).NotEmpty().MaximumLength(40);
             RuleFor(x => x.OrgNumber)
@@ -57,7 +69,10 @@ namespace altinnendata_api.Features.Settings
             settings.CompanyLegalName = body.CompanyLegalName;
             settings.OrgNumber = body.OrgNumber;
             settings.VatRegistered = body.VatRegistered;
-            settings.Address = body.Address;
+            settings.StreetAddress = body.StreetAddress;
+            settings.PostalCode = body.PostalCode;
+            settings.AddressLocality = body.AddressLocality;
+            settings.AddressRegion = body.AddressRegion;
             settings.PublicEmail = body.PublicEmail;
             settings.PublicPhone = body.PublicPhone;
 
@@ -67,7 +82,8 @@ namespace altinnendata_api.Features.Settings
 
         private static SettingsBody ToBody(AppSettings s) => new(
             s.ContactRecipientEmail, s.CompanyName, s.CompanyLegalName, s.OrgNumber,
-            s.VatRegistered, s.Address, s.PublicEmail, s.PublicPhone);
+            s.VatRegistered, s.StreetAddress, s.PostalCode, s.AddressLocality, s.AddressRegion,
+            s.PublicEmail, s.PublicPhone);
 
         public class Endpoints : IEndpoint
         {

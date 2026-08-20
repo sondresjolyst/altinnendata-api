@@ -18,6 +18,12 @@ namespace altinnendata_api.Models
 
         public long SizeBytes { get; set; }
 
+        /// <summary>Intrinsic width in pixels, or 0 while unknown. Lets pages reserve space before the image loads.</summary>
+        public int Width { get; set; }
+
+        /// <summary>Intrinsic height in pixels, or 0 while unknown.</summary>
+        public int Height { get; set; }
+
         [Required]
         [MaxLength(400)]
         public required string StoredPath { get; set; }
