@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.3.1...v1.4.0) (2026-08-20)
+
+
+### Features
+
+* **seo:** expose company address, edit times and image sizes ([#20](https://github.com/sondresjolyst/altinnendata-api/issues/20)) ([2aaf9c6](https://github.com/sondresjolyst/altinnendata-api/commit/2aaf9c65ae246b3925cf39afa0be6cc3093fc195))
+
 ## [1.3.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.3.0...v1.3.1) (2026-08-17)
 
 
