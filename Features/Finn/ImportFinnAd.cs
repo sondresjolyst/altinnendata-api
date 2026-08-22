@@ -10,6 +10,7 @@ namespace altinnendata_api.Features.Finn
 {
     public record FinnImportRequest(string Url);
 
+    /// <summary><paramref name="Url"/> is the advert itself, which a short link redirects to.</summary>
     public record FinnImportResponse(
         string Url,
         string? Title,
@@ -36,6 +37,7 @@ namespace altinnendata_api.Features.Finn
     public static class ImportFinnAd
     {
         private const int MaxHtmlBytes = 4 * 1024 * 1024;
+        private const int MaxRedirects = 5;
         private const int MaxImageBytes = 8 * 1024 * 1024;
         private const int SummaryLength = 400;
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
@@ -53,12 +55,16 @@ namespace altinnendata_api.Features.Finn
             using var client = CreateClient(clients);
 
             string html;
+            string adUrl;
             try
             {
-                using var response = await client.GetAsync(request.Url, HttpCompletionOption.ResponseHeadersRead, ct);
+                using var response = await FollowAsync(client, request.Url, ct);
+                if (response == null)
+                    return TypedResults.Problem("That link does not lead to an advert on finn.no.", statusCode: StatusCodes.Status400BadRequest);
                 if (!response.IsSuccessStatusCode)
                     return TypedResults.Problem($"finn.no answered {(int)response.StatusCode}.", statusCode: StatusCodes.Status502BadGateway);
 
+                adUrl = response.RequestMessage?.RequestUri?.ToString() ?? request.Url;
                 html = await ReadCappedAsync(response, MaxHtmlBytes, ct);
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
@@ -67,7 +73,7 @@ namespace altinnendata_api.Features.Finn
                 return TypedResults.Problem("Could not reach finn.no.", statusCode: StatusCodes.Status502BadGateway);
             }
 
-            var ad = FinnAdParser.Parse(html, request.Url);
+            var ad = FinnAdParser.Parse(html, adUrl);
 
             var stored = new List<string>();
             var skipped = 0;
@@ -84,7 +90,7 @@ namespace altinnendata_api.Features.Finn
             var summary = Shorten(description);
 
             return TypedResults.Ok(new FinnImportResponse(
-                request.Url,
+                adUrl,
                 ad.Title,
                 summary,
                 description,
@@ -101,6 +107,34 @@ namespace altinnendata_api.Features.Finn
             var cut = description[..(SummaryLength - 1)];
             var lastBreak = cut.LastIndexOfAny([' ', '\n']);
             return (lastBreak > 0 ? cut[..lastBreak] : cut).TrimEnd() + "…";
+        }
+
+        /// <summary>
+        /// Fetches the advert, following redirects one hop at a time. The handler does not follow
+        /// them, so that every hop can be checked against the host allowlist — an advert link
+        /// copied from the finn.no app is a short one that redirects to the advert itself.
+        /// Returns null when a hop leaves finn.no or the chain runs too long.
+        /// </summary>
+        public static async Task<HttpResponseMessage?> FollowAsync(HttpClient client, string url, CancellationToken ct)
+        {
+            var current = url;
+
+            for (var hop = 0; hop <= MaxRedirects; hop++)
+            {
+                var response = await client.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, ct);
+
+                var location = response.Headers.Location;
+                if (location == null || (int)response.StatusCode is < 300 or > 399)
+                    return response;
+
+                response.Dispose();
+
+                var next = location.IsAbsoluteUri ? location : new Uri(new Uri(current), location);
+                if (!FinnUrls.IsAdUrl(next.ToString())) return null;
+                current = next.ToString();
+            }
+
+            return null;
         }
 
         private static HttpClient CreateClient(IHttpClientFactory clients)
