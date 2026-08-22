@@ -22,8 +22,7 @@ namespace altinnendata_api.Features.Content
                 ? null
                 : await db.HomePageContents.AsNoTracking().FirstOrDefaultAsync(c => c.Locale == Locales.Default, ct);
 
-            // The sections are a bare JSON array with nowhere to carry an edit time, so it goes
-            // in the header. Reports the row actually served, which may be the fallback locale.
+            // Reports the row actually served, which may be the fallback locale's.
             if (content != null)
                 http.Response.Headers.LastModified = content.UpdatedAt.ToUniversalTime().ToString("R");
 

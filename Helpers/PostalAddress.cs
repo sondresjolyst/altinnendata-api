@@ -1,9 +1,8 @@
 namespace altinnendata_api.Helpers
 {
     /// <summary>
-    /// Norwegian postal addresses, kept as separate parts because structured data needs the
-    /// postcode and locality as their own fields. The one-line form is derived, never stored,
-    /// so it cannot disagree with the parts.
+    /// Norwegian postal addresses, kept as separate parts. The one-line form is derived, never
+    /// stored, so it cannot disagree with them.
     /// </summary>
     public static class PostalAddress
     {
