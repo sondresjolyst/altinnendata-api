@@ -94,9 +94,8 @@ namespace altinnendata_api.Features.ContentImages
         }
 
         /// <summary>
-        /// Intrinsic dimensions for a set of images, batched so a page needs one request for all
-        /// of its own. An image with no dimensions recorded yet is measured here and the result
-        /// kept; ids that are unknown, or whose file will not decode, are left out.
+        /// Intrinsic dimensions for a set of images, in one request. An image with none recorded
+        /// yet is measured here and the result kept; ids that will not decode are left out.
         /// </summary>
         public static async Task<IResult> Dimensions(string? ids, ApplicationDbContext db, IImageStorageService storage, CancellationToken ct)
         {
