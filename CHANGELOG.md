@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.4.0...v1.5.0) (2026-08-22)
+
+
+### Features
+
+* **finn:** accept the short links the finn app produces ([#26](https://github.com/sondresjolyst/altinnendata-api/issues/26)) ([78ff083](https://github.com/sondresjolyst/altinnendata-api/commit/78ff083c8bda86d5dccab92e7bb748cb4c1fcd5c))
+* **seo:** tell crawlers to leave the api host alone ([#23](https://github.com/sondresjolyst/altinnendata-api/issues/23)) ([609e356](https://github.com/sondresjolyst/altinnendata-api/commit/609e35672faae9b522709da9f6dbb61373ad4773))
+
 ## [1.4.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.3.1...v1.4.0) (2026-08-20)
 
 
