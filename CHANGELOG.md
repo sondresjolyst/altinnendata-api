@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.0...v1.5.1) (2026-08-24)
+
+
+### Dependencies
+
+* **github-actions:** bump `equinor/ops-actions/.github/workflows/docker.yml` from 9.39.6 to 9.40.0 ([#28](https://github.com/sondresjolyst/altinnendata-api/issues/28)) ([856f043](https://github.com/sondresjolyst/altinnendata-api/commit/856f0433f1feeb048f429f140bd343297fb3cc9d))
+* **github-actions:** bump `equinor/ops-actions/.github/workflows/release-please-manifest.yml` from 9.39.6 to 9.40.0 ([#27](https://github.com/sondresjolyst/altinnendata-api/issues/27)) ([01e5669](https://github.com/sondresjolyst/altinnendata-api/commit/01e5669aa8677b0e1f4b20beffacaa5ee685df26))
+* **nuget:** bump `Microsoft.AspNetCore.Authentication.JwtBearer` from 10.0.10 to 10.0.11 ([#29](https://github.com/sondresjolyst/altinnendata-api/issues/29)) ([bfcb174](https://github.com/sondresjolyst/altinnendata-api/commit/bfcb17445cb61ee11f055d9042cfa924f9e773de))
+* **nuget:** bump `Microsoft.AspNetCore.Identity.EntityFrameworkCore` from 10.0.10 to 10.0.11 ([#30](https://github.com/sondresjolyst/altinnendata-api/issues/30)) ([1e80a6c](https://github.com/sondresjolyst/altinnendata-api/commit/1e80a6cd11c493fa4453dca62af7cac84035a6e6))
+* **nuget:** bump `Microsoft.AspNetCore.OpenApi` from 10.0.10 to 10.0.11 ([#31](https://github.com/sondresjolyst/altinnendata-api/issues/31)) ([c18e2a2](https://github.com/sondresjolyst/altinnendata-api/commit/c18e2a272c19a5a901e4dd0314f92de0b889db72))
+* **nuget:** bump `Microsoft.EntityFrameworkCore` from 10.0.10 to 10.0.11 ([#32](https://github.com/sondresjolyst/altinnendata-api/issues/32)) ([9d851a4](https://github.com/sondresjolyst/altinnendata-api/commit/9d851a4781fc5a89595397a9d0296f5e743325a6))
+* **nuget:** Bump Microsoft.EntityFrameworkCore.Design and Microsoft.EntityFrameworkCore.Tools ([#34](https://github.com/sondresjolyst/altinnendata-api/issues/34)) ([826fd36](https://github.com/sondresjolyst/altinnendata-api/commit/826fd36c04a62e42037b65f27a521abba7c5463a))
+
 ## [1.5.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.4.0...v1.5.0) (2026-08-22)
 
 
