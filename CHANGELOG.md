@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.1...v1.5.2) (2026-08-29)
+
+
+### Dependencies
+
+* **nuget:** bump `Microsoft.EntityFrameworkCore.InMemory` from 10.0.10 to 10.0.11 ([#38](https://github.com/sondresjolyst/altinnendata-api/issues/38)) ([9a29fa2](https://github.com/sondresjolyst/altinnendata-api/commit/9a29fa2b3918086761c2d212a1a1b39b7b2f8c3f))
+* **nuget:** bump `Microsoft.Extensions.Logging.Abstractions` from 10.0.10 to 10.0.11 ([#39](https://github.com/sondresjolyst/altinnendata-api/issues/39)) ([63fa71e](https://github.com/sondresjolyst/altinnendata-api/commit/63fa71ec439de6652091713aa3ab6e98f6fdb2d4))
+* **nuget:** bump `Microsoft.NET.Test.Sdk` from 18.8.1 to 18.9.0 ([#40](https://github.com/sondresjolyst/altinnendata-api/issues/40)) ([18a3ebb](https://github.com/sondresjolyst/altinnendata-api/commit/18a3ebbf764e81818457ba277f8cd7e275dbe609))
+* **nuget:** bump `xunit.runner.visualstudio` from 3.1.5 to 4.0.0 ([#41](https://github.com/sondresjolyst/altinnendata-api/issues/41)) ([d966b6a](https://github.com/sondresjolyst/altinnendata-api/commit/d966b6a9f0fc9ac7822bd639adcb8563ebcc7ae6))
+* **nuget:** bump `xunit.v3` from 3.2.2 to 4.0.0 ([#42](https://github.com/sondresjolyst/altinnendata-api/issues/42)) ([530220f](https://github.com/sondresjolyst/altinnendata-api/commit/530220f8691515e6cf7444bd5f1e4e4827eec454))
+
 ## [1.5.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.0...v1.5.1) (2026-08-24)
 
 
