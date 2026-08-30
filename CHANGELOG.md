@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.2...v1.5.3) (2026-08-30)
+
+
+### Dependencies
+
+* **nuget:** Bump Mapster and Mapster.DependencyInjection ([#47](https://github.com/sondresjolyst/altinnendata-api/issues/47)) ([a5eb3c6](https://github.com/sondresjolyst/altinnendata-api/commit/a5eb3c6eb53c9a765c6ecc2594bc10f593a580d5))
+
 ## [1.5.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.1...v1.5.2) (2026-08-29)
 
 
