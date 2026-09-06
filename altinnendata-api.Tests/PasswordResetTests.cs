@@ -61,6 +61,39 @@ public class PasswordResetTests : TestBase
     }
 
     [Fact]
+    public async Task Reset_ValidCode_LiftsTheLockoutFailedLoginsCaused()
+    {
+        var user = MakeUser();
+        user.PasswordResetCodeHash = Hash("ABC123");
+        user.PasswordResetCodeExpiration = DateTime.UtcNow.AddMinutes(10);
+        user.LockoutEnd = DateTimeOffset.UtcNow.AddMinutes(15);
+        user.AccessFailedCount = 5;
+        MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
+        MockUserManager.Setup(m => m.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("tok");
+        MockUserManager.Setup(m => m.ResetPasswordAsync(user, "tok", "newpass1")).ReturnsAsync(IdentityResult.Success);
+
+        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object));
+        Assert.Null(user.LockoutEnd);
+        Assert.Equal(0, user.AccessFailedCount);
+    }
+
+    [Fact]
+    public async Task Reset_BadCode_LeavesTheLockoutInPlace()
+    {
+        var user = MakeUser();
+        DateTimeOffset lockedUntil = DateTimeOffset.UtcNow.AddMinutes(15);
+        user.PasswordResetCodeHash = Hash("ABC123");
+        user.PasswordResetCodeExpiration = DateTime.UtcNow.AddMinutes(10);
+        user.LockoutEnd = lockedUntil;
+        MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
+        MockUserManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+        await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG", "newpass1"), MockUserManager.Object);
+
+        Assert.Equal(lockedUntil, user.LockoutEnd);
+    }
+
+    [Fact]
     public async Task Reset_BadCode_BumpsAttemptsAndReturns400()
     {
         var user = MakeUser();
