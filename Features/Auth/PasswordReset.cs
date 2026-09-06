@@ -61,6 +61,10 @@ namespace altinnendata_api.Features.Auth
             user.PasswordResetCodeHash = null;
             user.PasswordResetCodeExpiration = null;
             user.PasswordResetAttempts = 0;
+            // Failed logins are what sends most people here, and those lock the account. Whoever
+            // proved the code from their mailbox gets to log in with the new password right away.
+            user.LockoutEnd = null;
+            user.AccessFailedCount = 0;
             await users.UpdateAsync(user);
 
             return TypedResults.Ok(new MessageResponse("Password reset successfully."));
