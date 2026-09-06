@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.3...v1.5.4) (2026-09-06)
+
+
+### Dependencies
+
+* **nuget:** bump `brevo_csharp` from 1.1.2 to 1.1.3 ([#50](https://github.com/sondresjolyst/altinnendata-api/issues/50)) ([c5af3b7](https://github.com/sondresjolyst/altinnendata-api/commit/c5af3b7e00cc74fc5dfb9a6dd3f67e796e730cb1))
+
 ## [1.5.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.2...v1.5.3) (2026-08-30)
 
 
