@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.5](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.4...v1.5.5) (2026-09-06)
+
+
+### Bug Fixes
+
+* lift lockout on password reset ([#52](https://github.com/sondresjolyst/altinnendata-api/issues/52)) ([973e503](https://github.com/sondresjolyst/altinnendata-api/commit/973e503727f09354d9f48e9d9db0889f95848163))
+
 ## [1.5.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.3...v1.5.4) (2026-09-06)
 
 
