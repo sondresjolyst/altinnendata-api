@@ -20,6 +20,7 @@ namespace altinnendata_api.Features.Builds
                 Availability = ParseAvailability(dto.Availability),
                 PriceNok = dto.PriceNok,
                 BuiltOn = dto.BuiltOn,
+                SoldOn = SoldDate(ParseAvailability(dto.Availability), dto.SoldOn, null, wasSold: false),
                 FinnUrl = Trimmed(dto.FinnUrl),
                 Published = dto.Published,
                 SortOrder = dto.SortOrder,
@@ -53,7 +54,9 @@ namespace altinnendata_api.Features.Builds
                 build.Slug = await UniqueSlugAsync(defaultTitle, build.Id, db, ct);
 
             build.Category = dto.Category;
-            build.Availability = ParseAvailability(dto.Availability);
+            var availability = ParseAvailability(dto.Availability);
+            build.SoldOn = SoldDate(availability, dto.SoldOn, build.SoldOn, build.Availability == BuildAvailability.Sold);
+            build.Availability = availability;
             build.PriceNok = dto.PriceNok;
             build.BuiltOn = dto.BuiltOn;
             build.FinnUrl = Trimmed(dto.FinnUrl);
@@ -105,6 +108,19 @@ namespace altinnendata_api.Features.Builds
 
         private static string DefaultTitle(CreateBuildDto dto) =>
             dto.Translations.First(t => string.Equals(t.Locale, Locales.Default, StringComparison.OrdinalIgnoreCase)).Title;
+
+        /// <summary>
+        /// A date from the admin always wins. Today is stamped only on the edit that turns a build
+        /// Sold, so a build that was already Sold - including one sold before this field existed -
+        /// is never given an invented date by an unrelated edit. The date survives a build leaving
+        /// Sold, so moving it back does not lose when it was sold; only Sold builds are counted.
+        /// </summary>
+        private static DateOnly? SoldDate(BuildAvailability availability, DateOnly? given, DateOnly? current, bool wasSold)
+        {
+            if (given != null) return given;
+            if (availability == BuildAvailability.Sold && !wasSold) return DateOnly.FromDateTime(DateTime.UtcNow);
+            return current;
+        }
 
         private static BuildAvailability ParseAvailability(string value) =>
             Enum.Parse<BuildAvailability>(value, ignoreCase: true);

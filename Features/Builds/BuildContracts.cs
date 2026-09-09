@@ -26,6 +26,9 @@ namespace altinnendata_api.Features.Builds
         public string Availability { get; set; } = nameof(Models.BuildAvailability.Available);
         public int? PriceNok { get; set; }
         public DateOnly? BuiltOn { get; set; }
+
+        /// <summary>Left null on a build turning Sold, the API stamps today.</summary>
+        public DateOnly? SoldOn { get; set; }
         public string? FinnUrl { get; set; }
         public bool Published { get; set; }
         public int SortOrder { get; set; }
@@ -55,6 +58,7 @@ namespace altinnendata_api.Features.Builds
         string Availability,
         int? PriceNok,
         DateOnly? BuiltOn,
+        DateOnly? SoldOn,
         string? CoverImageId,
         bool Published,
         int SortOrder,
@@ -71,6 +75,7 @@ namespace altinnendata_api.Features.Builds
         string Availability,
         int? PriceNok,
         DateOnly? BuiltOn,
+        DateOnly? SoldOn,
         string? CoverImageId,
         string? FinnUrl,
         bool Published,
@@ -93,6 +98,7 @@ namespace altinnendata_api.Features.Builds
         string Availability,
         int? PriceNok,
         DateOnly? BuiltOn,
+        DateOnly? SoldOn,
         string? CoverImageId,
         string? FinnUrl,
         bool Published,
@@ -117,6 +123,11 @@ namespace altinnendata_api.Features.Builds
                 .Must(BeAFinnLink)
                 .When(x => !string.IsNullOrWhiteSpace(x.FinnUrl))
                 .WithMessage("The advert link must point at finn.no.");
+
+            RuleFor(x => x.SoldOn)
+                .LessThanOrEqualTo(_ => DateOnly.FromDateTime(DateTime.UtcNow))
+                .When(x => x.SoldOn.HasValue)
+                .WithMessage("The sale date cannot be in the future.");
 
             RuleFor(x => x.Availability)
                 .Must(a => Enum.TryParse<Models.BuildAvailability>(a, ignoreCase: true, out _))

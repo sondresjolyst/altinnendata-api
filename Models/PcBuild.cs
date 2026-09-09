@@ -28,6 +28,9 @@ namespace altinnendata_api.Models
 
         public DateOnly? BuiltOn { get; set; }
 
+        /// <summary>Date the build was sold. Set when availability turns Sold, cleared when it turns back.</summary>
+        public DateOnly? SoldOn { get; set; }
+
         [MaxLength(400)]
         public string? FinnUrl { get; set; }
 
