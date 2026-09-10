@@ -26,11 +26,22 @@ namespace altinnendata_api.Features.Admin
                 loggerFactory.CreateLogger("Admin").LogWarning("Disk info unavailable: {Error}", ex.Message);
             }
 
+            var sold = await db.PcBuilds
+                .Where(b => b.Availability == BuildAvailability.Sold)
+                .Select(b => new { b.PriceNok, b.SoldOn })
+                .ToListAsync(ct);
+
             return TypedResults.Ok(new AdminStatsDto
             {
                 TotalUsers = await db.Users.CountAsync(u => !u.IsDeleted, ct),
                 PublishedBuilds = await db.PcBuilds.CountAsync(b => b.Published, ct),
                 DraftBuilds = await db.PcBuilds.CountAsync(b => !b.Published, ct),
+                SoldBuilds = sold.Count,
+                ReservedBuilds = await db.PcBuilds.CountAsync(b => b.Availability == BuildAvailability.Reserved, ct),
+                AvailableBuilds = await db.PcBuilds.CountAsync(b => b.Availability == BuildAvailability.Available, ct),
+                RevenueNok = sold.Where(b => b.PriceNok.HasValue).Sum(b => (long)b.PriceNok!.Value),
+                SoldWithoutPrice = sold.Count(b => !b.PriceNok.HasValue),
+                SoldWithoutDate = sold.Count(b => !b.SoldOn.HasValue),
                 CatalogParts = await db.ComponentParts.CountAsync(ct),
                 ContentImages = await db.ContentImages.CountAsync(ct),
                 StorageUsedBytes = DirectorySize(imagesPath),
@@ -42,12 +53,22 @@ namespace altinnendata_api.Features.Admin
         public static async Task<IResult> GetStatsHistory(ApplicationDbContext db, CancellationToken ct)
         {
             var snapshots = await StatsSnapshotService.GetHistoryAsync(db, ct);
+
+            // Sold counts are not snapshotted but derived from each sale's own date, so a sale
+            // dated before the snapshot table existed still lands on the right day. The flip side:
+            // unlike the frozen series, past days move when a build is deleted or un-sold.
+            var soldDates = await db.PcBuilds
+                .Where(b => b.Availability == BuildAvailability.Sold && b.SoldOn != null)
+                .Select(b => b.SoldOn!.Value)
+                .ToListAsync(ct);
+
             var result = snapshots.Select(s => new DailyStatDto
             {
                 Date = s.Date.ToString("yyyy-MM-dd"),
                 TotalUsers = s.TotalUsers,
                 PublishedBuilds = s.PublishedBuilds,
                 DraftBuilds = s.DraftBuilds,
+                SoldBuilds = soldDates.Count(d => d <= s.Date),
                 CatalogParts = s.CatalogParts,
                 ContentImages = s.ContentImages
             }).ToList();

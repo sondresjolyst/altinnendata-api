@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using altinnendata_api.Models;
@@ -11,9 +12,11 @@ using altinnendata_api.Models;
 namespace altinnendata_api.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909170741_BuildSoldOn")]
+    partial class BuildSoldOn
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -300,66 +303,6 @@ namespace altinnendata_api.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
-            modelBuilder.Entity("altinnendata_api.Models.BuildClass", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Key")
-                        .IsUnique();
-
-                    b.ToTable("BuildClasses");
-                });
-
-            modelBuilder.Entity("altinnendata_api.Models.BuildClassTranslation", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BuildClassId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("Locale")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BuildClassId", "Locale")
-                        .IsUnique();
-
-                    b.ToTable("BuildClassTranslations");
-                });
-
             modelBuilder.Entity("altinnendata_api.Models.ComponentCategory", b =>
                 {
                     b.Property<int>("Id")
@@ -626,9 +569,6 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
-                    b.Property<int?>("BuildClassId")
-                        .HasColumnType("integer");
-
                     b.Property<DateOnly?>("BuiltOn")
                         .HasColumnType("date");
 
@@ -664,8 +604,6 @@ namespace altinnendata_api.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("BuildClassId");
 
                     b.HasIndex("Slug")
                         .IsUnique();
@@ -931,17 +869,6 @@ namespace altinnendata_api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("altinnendata_api.Models.BuildClassTranslation", b =>
-                {
-                    b.HasOne("altinnendata_api.Models.BuildClass", "BuildClass")
-                        .WithMany("Translations")
-                        .HasForeignKey("BuildClassId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("BuildClass");
-                });
-
             modelBuilder.Entity("altinnendata_api.Models.ComponentCategoryTranslation", b =>
                 {
                     b.HasOne("altinnendata_api.Models.ComponentCategory", "ComponentCategory")
@@ -980,16 +907,6 @@ namespace altinnendata_api.Migrations
                         .IsRequired();
 
                     b.Navigation("ContentImage");
-                });
-
-            modelBuilder.Entity("altinnendata_api.Models.PcBuild", b =>
-                {
-                    b.HasOne("altinnendata_api.Models.BuildClass", "BuildClass")
-                        .WithMany()
-                        .HasForeignKey("BuildClassId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("BuildClass");
                 });
 
             modelBuilder.Entity("altinnendata_api.Models.PcBuildComponent", b =>
@@ -1045,11 +962,6 @@ namespace altinnendata_api.Migrations
                         .IsRequired();
 
                     b.Navigation("PcBuild");
-                });
-
-            modelBuilder.Entity("altinnendata_api.Models.BuildClass", b =>
-                {
-                    b.Navigation("Translations");
                 });
 
             modelBuilder.Entity("altinnendata_api.Models.ComponentCategory", b =>

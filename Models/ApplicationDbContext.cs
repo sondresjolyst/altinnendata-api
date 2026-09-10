@@ -18,6 +18,8 @@ namespace altinnendata_api.Models
         public DbSet<PcBuildTranslation> PcBuildTranslations { get; set; }
         public DbSet<PcBuildComponent> PcBuildComponents { get; set; }
         public DbSet<PcBuildImage> PcBuildImages { get; set; }
+        public DbSet<BuildClass> BuildClasses { get; set; }
+        public DbSet<BuildClassTranslation> BuildClassTranslations { get; set; }
         public DbSet<ComponentCategory> ComponentCategories { get; set; }
         public DbSet<ComponentCategoryTranslation> ComponentCategoryTranslations { get; set; }
         public DbSet<ComponentManufacturer> ComponentManufacturers { get; set; }
@@ -93,6 +95,27 @@ namespace altinnendata_api.Models
                 .HasOne(c => c.ComponentCategory)
                 .WithMany()
                 .HasForeignKey(c => c.ComponentCategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<BuildClass>()
+                .HasIndex(c => c.Key)
+                .IsUnique();
+
+            modelBuilder.Entity<BuildClassTranslation>()
+                .HasIndex(t => new { t.BuildClassId, t.Locale })
+                .IsUnique();
+
+            modelBuilder.Entity<BuildClassTranslation>()
+                .HasOne(t => t.BuildClass)
+                .WithMany(c => c.Translations)
+                .HasForeignKey(t => t.BuildClassId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Deleting a class leaves its builds in place, without one.
+            modelBuilder.Entity<PcBuild>()
+                .HasOne(b => b.BuildClass)
+                .WithMany()
+                .HasForeignKey(b => b.BuildClassId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             modelBuilder.Entity<ComponentCategory>()

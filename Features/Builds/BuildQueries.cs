@@ -14,6 +14,7 @@ namespace altinnendata_api.Features.Builds
             db.PcBuilds
                 .AsNoTracking()
                 .Include(b => b.Translations)
+                .Include(b => b.BuildClass).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Manufacturer)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Category).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentCategory).ThenInclude(c => c!.Translations)

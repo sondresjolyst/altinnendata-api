@@ -24,8 +24,12 @@ namespace altinnendata_api.Features.Builds
     {
         public string? Category { get; set; }
         public string Availability { get; set; } = nameof(Models.BuildAvailability.Available);
+        public int? BuildClassId { get; set; }
         public int? PriceNok { get; set; }
         public DateOnly? BuiltOn { get; set; }
+
+        /// <summary>Left null on a build turning Sold, the API stamps today.</summary>
+        public DateOnly? SoldOn { get; set; }
         public string? FinnUrl { get; set; }
         public bool Published { get; set; }
         public int SortOrder { get; set; }
@@ -53,8 +57,10 @@ namespace altinnendata_api.Features.Builds
         string Slug,
         string? Category,
         string Availability,
+        BuildClassRef? BuildClass,
         int? PriceNok,
         DateOnly? BuiltOn,
+        DateOnly? SoldOn,
         string? CoverImageId,
         bool Published,
         int SortOrder,
@@ -69,8 +75,10 @@ namespace altinnendata_api.Features.Builds
         string Slug,
         string? Category,
         string Availability,
+        BuildClassRef? BuildClass,
         int? PriceNok,
         DateOnly? BuiltOn,
+        DateOnly? SoldOn,
         string? CoverImageId,
         string? FinnUrl,
         bool Published,
@@ -91,8 +99,10 @@ namespace altinnendata_api.Features.Builds
         string Slug,
         string? Category,
         string Availability,
+        BuildClassRef? BuildClass,
         int? PriceNok,
         DateOnly? BuiltOn,
+        DateOnly? SoldOn,
         string? CoverImageId,
         string? FinnUrl,
         bool Published,
@@ -104,6 +114,9 @@ namespace altinnendata_api.Features.Builds
         DateTime UpdatedAt);
 
     public record BuildTranslationDto(string Locale, string Title, string? Summary, string? Description);
+
+    /// <summary>The build's class in one locale: what the card and the spec table show.</summary>
+    public record BuildClassRef(int Id, string Key, string Name, string? Description);
 
     public abstract class BuildValidator<T> : AbstractValidator<T> where T : CreateBuildDto
     {
@@ -117,6 +130,12 @@ namespace altinnendata_api.Features.Builds
                 .Must(BeAFinnLink)
                 .When(x => !string.IsNullOrWhiteSpace(x.FinnUrl))
                 .WithMessage("The advert link must point at finn.no.");
+
+            // A day's slack: the admin's local date can be ahead of the UTC one.
+            RuleFor(x => x.SoldOn)
+                .LessThanOrEqualTo(_ => DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
+                .When(x => x.SoldOn.HasValue)
+                .WithMessage("The sale date cannot be in the future.");
 
             RuleFor(x => x.Availability)
                 .Must(a => Enum.TryParse<Models.BuildAvailability>(a, ignoreCase: true, out _))

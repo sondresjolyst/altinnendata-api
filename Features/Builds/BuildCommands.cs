@@ -12,14 +12,19 @@ namespace altinnendata_api.Features.Builds
     {
         public static async Task<IResult> Create(CreateBuildDto dto, ApplicationDbContext db, CancellationToken ct)
         {
+            if (await UnknownClassAsync(dto.BuildClassId, db, ct))
+                return TypedResults.Problem("That build class does not exist.", statusCode: StatusCodes.Status400BadRequest);
+
             var defaultTitle = DefaultTitle(dto);
             var build = new PcBuild
             {
                 Slug = await UniqueSlugAsync(defaultTitle, null, db, ct),
                 Category = dto.Category,
                 Availability = ParseAvailability(dto.Availability),
+                BuildClassId = dto.BuildClassId,
                 PriceNok = dto.PriceNok,
                 BuiltOn = dto.BuiltOn,
+                SoldOn = SoldDate(ParseAvailability(dto.Availability), dto.SoldOn, null, wasSold: false),
                 FinnUrl = Trimmed(dto.FinnUrl),
                 Published = dto.Published,
                 SortOrder = dto.SortOrder,
@@ -42,10 +47,14 @@ namespace altinnendata_api.Features.Builds
         {
             var build = await db.PcBuilds
                 .Include(b => b.Translations)
+                .Include(b => b.BuildClass).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components)
                 .Include(b => b.Images)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
             if (build == null) return TypedResults.NotFound();
+
+            if (await UnknownClassAsync(dto.BuildClassId, db, ct))
+                return TypedResults.Problem("That build class does not exist.", statusCode: StatusCodes.Status400BadRequest);
 
             var defaultTitle = DefaultTitle(dto);
             var currentTitle = build.Translations.FirstOrDefault(t => t.Locale == Locales.Default)?.Title;
@@ -53,7 +62,10 @@ namespace altinnendata_api.Features.Builds
                 build.Slug = await UniqueSlugAsync(defaultTitle, build.Id, db, ct);
 
             build.Category = dto.Category;
-            build.Availability = ParseAvailability(dto.Availability);
+            var availability = ParseAvailability(dto.Availability);
+            build.SoldOn = SoldDate(availability, dto.SoldOn, build.SoldOn, build.Availability == BuildAvailability.Sold);
+            build.Availability = availability;
+            build.BuildClassId = dto.BuildClassId;
             build.PriceNok = dto.PriceNok;
             build.BuiltOn = dto.BuiltOn;
             build.FinnUrl = Trimmed(dto.FinnUrl);
@@ -97,6 +109,7 @@ namespace altinnendata_api.Features.Builds
             await db.PcBuilds
                 .AsNoTracking()
                 .Include(b => b.Translations)
+                .Include(b => b.BuildClass).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Manufacturer)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Category).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentCategory).ThenInclude(c => c!.Translations)
@@ -105,6 +118,22 @@ namespace altinnendata_api.Features.Builds
 
         private static string DefaultTitle(CreateBuildDto dto) =>
             dto.Translations.First(t => string.Equals(t.Locale, Locales.Default, StringComparison.OrdinalIgnoreCase)).Title;
+
+        /// <summary>
+        /// A date from the admin always wins. Today is stamped only on the edit that turns a build
+        /// Sold, so a build that was already Sold - including one sold before this field existed -
+        /// is never given an invented date by an unrelated edit. The date survives a build leaving
+        /// Sold, so moving it back does not lose when it was sold; only Sold builds are counted.
+        /// </summary>
+        private static DateOnly? SoldDate(BuildAvailability availability, DateOnly? given, DateOnly? current, bool wasSold)
+        {
+            if (given != null) return given;
+            if (availability == BuildAvailability.Sold && !wasSold) return DateOnly.FromDateTime(DateTime.UtcNow);
+            return current;
+        }
+
+        private static async Task<bool> UnknownClassAsync(int? classId, ApplicationDbContext db, CancellationToken ct) =>
+            classId != null && !await db.BuildClasses.AnyAsync(c => c.Id == classId, ct);
 
         private static BuildAvailability ParseAvailability(string value) =>
             Enum.Parse<BuildAvailability>(value, ignoreCase: true);

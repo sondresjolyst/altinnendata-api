@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace altinnendata_api.Models
 {
@@ -24,9 +25,18 @@ namespace altinnendata_api.Models
 
         public BuildAvailability Availability { get; set; } = BuildAvailability.Available;
 
+        /// <summary>Tier of machine, e.g. budsjett or high-end. Admin-managed, so it is a row rather than an enum.</summary>
+        public int? BuildClassId { get; set; }
+
+        [ForeignKey(nameof(BuildClassId))]
+        public BuildClass? BuildClass { get; set; }
+
         public int? PriceNok { get; set; }
 
         public DateOnly? BuiltOn { get; set; }
+
+        /// <summary>Date the build was sold. Stamped when availability turns Sold, and kept afterwards so a build that leaves Sold does not lose it.</summary>
+        public DateOnly? SoldOn { get; set; }
 
         [MaxLength(400)]
         public string? FinnUrl { get; set; }

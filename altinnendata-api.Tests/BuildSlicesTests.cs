@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Features.Builds;
@@ -194,5 +195,97 @@ public class BuildSlicesTests : TestBase
     {
         await using var db = CreateDbContext();
         Assert.IsType<NotFound>(await BuildCommands.Delete(404, db, new FakeImageStorage(), default));
+    }
+
+    private static UpdateBuildDto UpdateDto(string availability, DateOnly? soldOn = null) => new()
+    {
+        Availability = availability,
+        SoldOn = soldOn,
+        Published = true,
+        Translations = [new BuildTranslationInput { Locale = "no", Title = "Gaming-PC" }]
+    };
+
+    [Fact]
+    public async Task Update_TurningSold_StampsToday()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(
+            await BuildCommands.Update(build.Id, UpdateDto("Sold"), db, new FakeImageStorage(), default));
+
+        Assert.Equal(DateOnly.FromDateTime(DateTime.UtcNow), ok.Value!.SoldOn);
+    }
+
+    [Fact]
+    public async Task Update_AlreadySoldWithoutDate_DoesNotInventOne()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+        build.Availability = BuildAvailability.Sold;
+        await db.SaveChangesAsync();
+
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(
+            await BuildCommands.Update(build.Id, UpdateDto("Sold"), db, new FakeImageStorage(), default));
+
+        Assert.Null(ok.Value!.SoldOn);
+    }
+
+    [Fact]
+    public async Task Update_GivenDate_WinsOverToday()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+        var sold = new DateOnly(2026, 3, 14);
+
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(
+            await BuildCommands.Update(build.Id, UpdateDto("Sold", sold), db, new FakeImageStorage(), default));
+
+        Assert.Equal(sold, ok.Value!.SoldOn);
+    }
+
+    [Fact]
+    public async Task Update_LeavingSold_KeepsTheDate()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+        var sold = new DateOnly(2026, 3, 14);
+        build.Availability = BuildAvailability.Sold;
+        build.SoldOn = sold;
+        await db.SaveChangesAsync();
+
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(
+            await BuildCommands.Update(build.Id, UpdateDto("Reserved"), db, new FakeImageStorage(), default));
+
+        Assert.Equal("Reserved", ok.Value!.Availability);
+        Assert.Equal(sold, ok.Value.SoldOn);
+    }
+
+    [Fact]
+    public async Task Create_UnknownClass_IsRejected()
+    {
+        await using var db = CreateDbContext();
+
+        var dto = Dto();
+        dto.BuildClassId = 404;
+
+        var result = await BuildCommands.Create(dto, db, default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
+        Assert.Empty(await db.PcBuilds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Update_UnknownClass_IsRejected()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+
+        var dto = UpdateDto("Available");
+        dto.BuildClassId = 404;
+
+        var result = await BuildCommands.Update(build.Id, dto, db, new FakeImageStorage(), default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
     }
 }
