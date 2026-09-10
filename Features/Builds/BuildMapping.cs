@@ -20,6 +20,17 @@ namespace altinnendata_api.Features.Builds
             return translation?.Name ?? category.Key;
         }
 
+        public static BuildClassRef? ClassRef(PcBuild build, string locale)
+        {
+            if (build.BuildClass == null) return null;
+            var translation = BuildClasses.BuildClassEndpoints.Pick(build.BuildClass, locale);
+            return new BuildClassRef(
+                build.BuildClass.Id,
+                build.BuildClass.Key,
+                translation?.Name ?? build.BuildClass.Key,
+                translation?.Description);
+        }
+
         public static BuildComponentDto ToComponentDto(PcBuildComponent component, string locale)
         {
             var category = component.ComponentPart?.Category ?? component.ComponentCategory;
@@ -54,6 +65,7 @@ namespace altinnendata_api.Features.Builds
                 build.Slug,
                 build.Category,
                 build.Availability.ToString(),
+                ClassRef(build, locale),
                 build.PriceNok,
                 build.BuiltOn,
                 build.SoldOn,
@@ -75,6 +87,7 @@ namespace altinnendata_api.Features.Builds
                 build.Slug,
                 build.Category,
                 build.Availability.ToString(),
+                ClassRef(build, locale),
                 build.PriceNok,
                 build.BuiltOn,
                 build.SoldOn,
@@ -98,6 +111,7 @@ namespace altinnendata_api.Features.Builds
             build.Slug,
             build.Category,
             build.Availability.ToString(),
+            ClassRef(build, Locales.Default),
             build.PriceNok,
             build.BuiltOn,
             build.SoldOn,

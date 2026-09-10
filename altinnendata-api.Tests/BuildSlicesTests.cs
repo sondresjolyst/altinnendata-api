@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Features.Builds;
@@ -258,5 +259,33 @@ public class BuildSlicesTests : TestBase
 
         Assert.Equal("Reserved", ok.Value!.Availability);
         Assert.Equal(sold, ok.Value.SoldOn);
+    }
+
+    [Fact]
+    public async Task Create_UnknownClass_IsRejected()
+    {
+        await using var db = CreateDbContext();
+
+        var dto = Dto();
+        dto.BuildClassId = 404;
+
+        var result = await BuildCommands.Create(dto, db, default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
+        Assert.Empty(await db.PcBuilds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Update_UnknownClass_IsRejected()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+
+        var dto = UpdateDto("Available");
+        dto.BuildClassId = 404;
+
+        var result = await BuildCommands.Update(build.Id, dto, db, new FakeImageStorage(), default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
     }
 }

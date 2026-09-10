@@ -24,6 +24,7 @@ namespace altinnendata_api.Features.Builds
     {
         public string? Category { get; set; }
         public string Availability { get; set; } = nameof(Models.BuildAvailability.Available);
+        public int? BuildClassId { get; set; }
         public int? PriceNok { get; set; }
         public DateOnly? BuiltOn { get; set; }
 
@@ -56,6 +57,7 @@ namespace altinnendata_api.Features.Builds
         string Slug,
         string? Category,
         string Availability,
+        BuildClassRef? BuildClass,
         int? PriceNok,
         DateOnly? BuiltOn,
         DateOnly? SoldOn,
@@ -73,6 +75,7 @@ namespace altinnendata_api.Features.Builds
         string Slug,
         string? Category,
         string Availability,
+        BuildClassRef? BuildClass,
         int? PriceNok,
         DateOnly? BuiltOn,
         DateOnly? SoldOn,
@@ -96,6 +99,7 @@ namespace altinnendata_api.Features.Builds
         string Slug,
         string? Category,
         string Availability,
+        BuildClassRef? BuildClass,
         int? PriceNok,
         DateOnly? BuiltOn,
         DateOnly? SoldOn,
@@ -110,6 +114,9 @@ namespace altinnendata_api.Features.Builds
         DateTime UpdatedAt);
 
     public record BuildTranslationDto(string Locale, string Title, string? Summary, string? Description);
+
+    /// <summary>The build's class in one locale: what the card and the spec table show.</summary>
+    public record BuildClassRef(int Id, string Key, string Name, string? Description);
 
     public abstract class BuildValidator<T> : AbstractValidator<T> where T : CreateBuildDto
     {

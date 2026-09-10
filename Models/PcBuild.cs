@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace altinnendata_api.Models
 {
@@ -23,6 +24,12 @@ namespace altinnendata_api.Models
         public string? Category { get; set; }
 
         public BuildAvailability Availability { get; set; } = BuildAvailability.Available;
+
+        /// <summary>Tier of machine, e.g. budsjett or high-end. Admin-managed, so it is a row rather than an enum.</summary>
+        public int? BuildClassId { get; set; }
+
+        [ForeignKey(nameof(BuildClassId))]
+        public BuildClass? BuildClass { get; set; }
 
         public int? PriceNok { get; set; }
 
