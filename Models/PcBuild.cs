@@ -35,7 +35,7 @@ namespace altinnendata_api.Models
 
         public DateOnly? BuiltOn { get; set; }
 
-        /// <summary>Date the build was sold. Set when availability turns Sold, cleared when it turns back.</summary>
+        /// <summary>Date the build was sold. Stamped when availability turns Sold, and kept afterwards so a build that leaves Sold does not lose it.</summary>
         public DateOnly? SoldOn { get; set; }
 
         [MaxLength(400)]

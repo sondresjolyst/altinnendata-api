@@ -131,8 +131,9 @@ namespace altinnendata_api.Features.Builds
                 .When(x => !string.IsNullOrWhiteSpace(x.FinnUrl))
                 .WithMessage("The advert link must point at finn.no.");
 
+            // A day's slack: the admin's local date can be ahead of the UTC one.
             RuleFor(x => x.SoldOn)
-                .LessThanOrEqualTo(_ => DateOnly.FromDateTime(DateTime.UtcNow))
+                .LessThanOrEqualTo(_ => DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
                 .When(x => x.SoldOn.HasValue)
                 .WithMessage("The sale date cannot be in the future.");
 
