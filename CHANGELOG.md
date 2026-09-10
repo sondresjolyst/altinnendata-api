@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.5...v1.6.0) (2026-09-10)
+
+
+### Features
+
+* sale dates, sales stats and build classes ([#54](https://github.com/sondresjolyst/altinnendata-api/issues/54)) ([2c8c216](https://github.com/sondresjolyst/altinnendata-api/commit/2c8c216a3e50b732bddb53c45164b15929bde696))
+
 ## [1.5.5](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.4...v1.5.5) (2026-09-06)
 
 
