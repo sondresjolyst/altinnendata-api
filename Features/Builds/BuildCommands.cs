@@ -14,6 +14,8 @@ namespace altinnendata_api.Features.Builds
         {
             if (await UnknownClassAsync(dto.BuildClassId, db, ct))
                 return TypedResults.Problem("That build class does not exist.", statusCode: StatusCodes.Status400BadRequest);
+            if (await UnknownConditionAsync(dto, db, ct))
+                return TypedResults.Problem("That component condition does not exist.", statusCode: StatusCodes.Status400BadRequest);
 
             var defaultTitle = DefaultTitle(dto);
             var build = new PcBuild
@@ -55,6 +57,8 @@ namespace altinnendata_api.Features.Builds
 
             if (await UnknownClassAsync(dto.BuildClassId, db, ct))
                 return TypedResults.Problem("That build class does not exist.", statusCode: StatusCodes.Status400BadRequest);
+            if (await UnknownConditionAsync(dto, db, ct))
+                return TypedResults.Problem("That component condition does not exist.", statusCode: StatusCodes.Status400BadRequest);
 
             var defaultTitle = DefaultTitle(dto);
             var currentTitle = build.Translations.FirstOrDefault(t => t.Locale == Locales.Default)?.Title;
@@ -113,6 +117,7 @@ namespace altinnendata_api.Features.Builds
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Manufacturer)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentPart).ThenInclude(p => p!.Category).ThenInclude(c => c!.Translations)
                 .Include(b => b.Components).ThenInclude(c => c.ComponentCategory).ThenInclude(c => c!.Translations)
+                .Include(b => b.Components).ThenInclude(c => c.Condition).ThenInclude(c => c!.Translations)
                 .Include(b => b.Images)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
 
@@ -134,6 +139,17 @@ namespace altinnendata_api.Features.Builds
 
         private static async Task<bool> UnknownClassAsync(int? classId, ApplicationDbContext db, CancellationToken ct) =>
             classId != null && !await db.BuildClasses.AnyAsync(c => c.Id == classId, ct);
+
+        private static async Task<bool> UnknownConditionAsync(CreateBuildDto dto, ApplicationDbContext db, CancellationToken ct)
+        {
+            var ids = dto.Components
+                .Where(c => c.ComponentConditionId != null)
+                .Select(c => c.ComponentConditionId!.Value)
+                .Distinct()
+                .ToList();
+            if (ids.Count == 0) return false;
+            return await db.ComponentConditions.CountAsync(c => ids.Contains(c.Id), ct) != ids.Count;
+        }
 
         private static BuildAvailability ParseAvailability(string value) =>
             Enum.Parse<BuildAvailability>(value, ignoreCase: true);
@@ -173,6 +189,7 @@ namespace altinnendata_api.Features.Builds
                 {
                     ComponentPartId = input.ComponentPartId,
                     ComponentCategoryId = input.ComponentCategoryId,
+                    ComponentConditionId = input.ComponentConditionId,
                     Name = string.IsNullOrWhiteSpace(input.Name) ? null : input.Name.Trim(),
                     Details = string.IsNullOrWhiteSpace(input.Details) ? null : input.Details.Trim(),
                     SortOrder = order++

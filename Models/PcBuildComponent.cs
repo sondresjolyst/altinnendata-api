@@ -25,6 +25,11 @@ namespace altinnendata_api.Models
         [ForeignKey(nameof(ComponentCategoryId))]
         public ComponentCategory? ComponentCategory { get; set; }
 
+        public int? ComponentConditionId { get; set; }
+
+        [ForeignKey(nameof(ComponentConditionId))]
+        public ComponentCondition? Condition { get; set; }
+
         [MaxLength(200)]
         public string? Name { get; set; }
 

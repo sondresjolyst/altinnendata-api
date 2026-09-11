@@ -15,6 +15,7 @@ namespace altinnendata_api.Features.Builds
     {
         public int? ComponentPartId { get; set; }
         public int? ComponentCategoryId { get; set; }
+        public int? ComponentConditionId { get; set; }
         public string? Name { get; set; }
         public string? Details { get; set; }
         public int SortOrder { get; set; }
@@ -49,6 +50,7 @@ namespace altinnendata_api.Features.Builds
         string? ManufacturerName,
         string Name,
         string? Details,
+        ComponentConditionRef? Condition,
         int SortOrder);
 
     /// <summary>List item: one locale's text plus the structured fields.</summary>
@@ -117,6 +119,9 @@ namespace altinnendata_api.Features.Builds
 
     /// <summary>The build's class in one locale: what the card and the spec table show.</summary>
     public record BuildClassRef(int Id, string Key, string Name, string? Description);
+
+    /// <summary>A part's condition in one locale, e.g. "Brukt".</summary>
+    public record ComponentConditionRef(int Id, string Key, string Name);
 
     public abstract class BuildValidator<T> : AbstractValidator<T> where T : CreateBuildDto
     {
