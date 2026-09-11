@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.6.0...v1.7.0) (2026-09-11)
+
+
+### Features
+
+* add component conditions ([#56](https://github.com/sondresjolyst/altinnendata-api/issues/56)) ([0e1cee7](https://github.com/sondresjolyst/altinnendata-api/commit/0e1cee7b221ee20a29168a67d24bf5067021b4b2))
+
 ## [1.6.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.5.5...v1.6.0) (2026-09-10)
 
 
