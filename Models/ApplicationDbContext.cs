@@ -20,6 +20,8 @@ namespace altinnendata_api.Models
         public DbSet<PcBuildImage> PcBuildImages { get; set; }
         public DbSet<BuildClass> BuildClasses { get; set; }
         public DbSet<BuildClassTranslation> BuildClassTranslations { get; set; }
+        public DbSet<ComponentCondition> ComponentConditions { get; set; }
+        public DbSet<ComponentConditionTranslation> ComponentConditionTranslations { get; set; }
         public DbSet<ComponentCategory> ComponentCategories { get; set; }
         public DbSet<ComponentCategoryTranslation> ComponentCategoryTranslations { get; set; }
         public DbSet<ComponentManufacturer> ComponentManufacturers { get; set; }
@@ -116,6 +118,27 @@ namespace altinnendata_api.Models
                 .HasOne(b => b.BuildClass)
                 .WithMany()
                 .HasForeignKey(b => b.BuildClassId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<ComponentCondition>()
+                .HasIndex(c => c.Key)
+                .IsUnique();
+
+            modelBuilder.Entity<ComponentConditionTranslation>()
+                .HasIndex(t => new { t.ComponentConditionId, t.Locale })
+                .IsUnique();
+
+            modelBuilder.Entity<ComponentConditionTranslation>()
+                .HasOne(t => t.ComponentCondition)
+                .WithMany(c => c.Translations)
+                .HasForeignKey(t => t.ComponentConditionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Deleting a condition leaves the parts in place, without one.
+            modelBuilder.Entity<PcBuildComponent>()
+                .HasOne(c => c.Condition)
+                .WithMany()
+                .HasForeignKey(c => c.ComponentConditionId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             modelBuilder.Entity<ComponentCategory>()

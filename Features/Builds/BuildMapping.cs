@@ -31,6 +31,16 @@ namespace altinnendata_api.Features.Builds
                 translation?.Description);
         }
 
+        public static ComponentConditionRef? ConditionRef(PcBuildComponent component, string locale)
+        {
+            if (component.Condition == null) return null;
+            var translation = ComponentConditions.ComponentConditionEndpoints.Pick(component.Condition, locale);
+            return new ComponentConditionRef(
+                component.Condition.Id,
+                component.Condition.Key,
+                translation?.Name ?? component.Condition.Key);
+        }
+
         public static BuildComponentDto ToComponentDto(PcBuildComponent component, string locale)
         {
             var category = component.ComponentPart?.Category ?? component.ComponentCategory;
@@ -49,6 +59,7 @@ namespace altinnendata_api.Features.Builds
                 component.ComponentPart?.Manufacturer?.Name,
                 name,
                 component.Details ?? component.ComponentPart?.Details,
+                ConditionRef(component, locale),
                 component.SortOrder);
         }
 

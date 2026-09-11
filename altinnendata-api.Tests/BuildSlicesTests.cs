@@ -288,4 +288,77 @@ public class BuildSlicesTests : TestBase
 
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
     }
+
+    private static async Task<ComponentCondition> SeedConditionAsync(ApplicationDbContext db)
+    {
+        var condition = new ComponentCondition
+        {
+            Key = "brukt",
+            Translations =
+            [
+                new ComponentConditionTranslation { Locale = "no", Name = "Brukt" },
+                new ComponentConditionTranslation { Locale = "en", Name = "Used" }
+            ]
+        };
+        db.ComponentConditions.Add(condition);
+        await db.SaveChangesAsync();
+        return condition;
+    }
+
+    [Fact]
+    public async Task Create_StoresComponentCondition()
+    {
+        await using var db = CreateDbContext();
+        var condition = await SeedConditionAsync(db);
+
+        var dto = Dto();
+        dto.Components[0].ComponentConditionId = condition.Id;
+
+        var created = Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(dto, db, default));
+
+        Assert.Equal(new ComponentConditionRef(condition.Id, "brukt", "Brukt"), created.Value!.Components.Single().Condition);
+    }
+
+    [Fact]
+    public async Task GetBySlug_ReturnsConditionInRequestedLocale()
+    {
+        await using var db = CreateDbContext();
+        var condition = await SeedConditionAsync(db);
+        var dto = Dto("Gaming-PC");
+        dto.Components[0].ComponentConditionId = condition.Id;
+        await BuildCommands.Create(dto, db, default);
+        var http = MakeControllerContext().HttpContext;
+
+        var en = Assert.IsType<Ok<BuildDetailDto>>(await BuildQueries.GetBySlug("gaming-pc", http, db, default, "en"));
+
+        Assert.Equal("Used", en.Value!.Components.Single().Condition!.Name);
+    }
+
+    [Fact]
+    public async Task Create_UnknownCondition_IsRejected()
+    {
+        await using var db = CreateDbContext();
+
+        var dto = Dto();
+        dto.Components[0].ComponentConditionId = 404;
+
+        var result = await BuildCommands.Create(dto, db, default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
+        Assert.Empty(await db.PcBuilds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Update_UnknownCondition_IsRejected()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedBuildAsync(db);
+
+        var dto = UpdateDto("Available");
+        dto.Components = [new BuildComponentInput { Name = "RTX 3070", ComponentConditionId = 404 }];
+
+        var result = await BuildCommands.Update(build.Id, dto, db, new FakeImageStorage(), default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
+    }
 }
