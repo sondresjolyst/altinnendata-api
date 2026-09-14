@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.7.1...v1.8.0) (2026-09-14)
+
+
+### Features
+
+* accept budget as a range string instead of a number ([#62](https://github.com/sondresjolyst/altinnendata-api/issues/62)) ([a37007f](https://github.com/sondresjolyst/altinnendata-api/commit/a37007fbf4acc44fa55a26311dac82a7b1ca85cb))
+
 ## [1.7.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.7.0...v1.7.1) (2026-09-13)
 
 
