@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.7.0...v1.7.1) (2026-09-13)
+
+
+### Dependencies
+
+* **nuget:** bump `SkiaSharp.NativeAssets.Linux.NoDependencies` from 4.151.1 to 4.151.2 ([#60](https://github.com/sondresjolyst/altinnendata-api/issues/60)) ([13b2aa9](https://github.com/sondresjolyst/altinnendata-api/commit/13b2aa93d642a9ecf79fe04f1773fe3f2452db09))
+* **nuget:** bump `SkiaSharp` from 4.151.1 to 4.151.2 ([#59](https://github.com/sondresjolyst/altinnendata-api/issues/59)) ([d7cb7c9](https://github.com/sondresjolyst/altinnendata-api/commit/d7cb7c904ea879c48d9299c60064fa5780205161))
+
 ## [1.7.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.6.0...v1.7.0) (2026-09-11)
 
 
