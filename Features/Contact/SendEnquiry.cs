@@ -16,19 +16,22 @@ namespace altinnendata_api.Features.Contact
         string Email,
         string? Phone,
         string? UseCase,
-        int? BudgetNok,
+        string? BudgetNok,
         string? BuildSlug,
         string Message);
 
     public class ContactRequestValidator : AbstractValidator<ContactRequest>
     {
+        private static readonly string[] AllowedBudgetRanges =
+            ["5000-10000", "10000-15000", "15000-25000", "25000+"];
+
         public ContactRequestValidator()
         {
             RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
             RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(200);
             RuleFor(x => x.Phone).MaximumLength(30);
             RuleFor(x => x.UseCase).MaximumLength(160);
-            RuleFor(x => x.BudgetNok).GreaterThanOrEqualTo(0).When(x => x.BudgetNok.HasValue);
+            RuleFor(x => x.BudgetNok).Must(v => AllowedBudgetRanges.Contains(v)).When(x => x.BudgetNok != null);
             RuleFor(x => x.BuildSlug).MaximumLength(160);
             RuleFor(x => x.Message).NotEmpty().MaximumLength(4000);
         }
@@ -77,7 +80,7 @@ namespace altinnendata_api.Features.Contact
             Row("Email", Enc(req.Email));
             Row("Phone", Enc(req.Phone));
             Row("Use case", Enc(req.UseCase));
-            Row("Budget", req.BudgetNok.HasValue ? $"{req.BudgetNok} NOK" : null);
+            Row("Budget", req.BudgetNok is { } budget ? $"{budget} NOK" : null);
             Row("Build", BuildLink(req.BuildSlug, build, config));
 
             body.Append("<p><strong>Message:</strong></p>");

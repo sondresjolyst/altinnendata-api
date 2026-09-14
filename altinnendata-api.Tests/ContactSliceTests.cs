@@ -25,7 +25,7 @@ public class ContactSliceTests : TestBase
         await db.SaveChangesAsync();
         var email = new Mock<IEmailService>();
 
-        var req = new ContactRequest("Ola", "ola@kunde.no", null, "gaming", 20000, "gaming-pc", "Hi");
+        var req = new ContactRequest("Ola", "ola@kunde.no", null, "gaming", "25000+", "gaming-pc", "Hi");
         Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), default));
 
         email.Verify(e => e.SendEmailAsync("shop@altinnendata.no", It.IsAny<string>(), It.IsAny<string>(), "ola@kunde.no"), Times.Once);
