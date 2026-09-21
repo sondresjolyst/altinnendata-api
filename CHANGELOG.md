@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.0...v1.8.1) (2026-09-21)
+
+
+### Dependencies
+
+* **nuget:** bump `Microsoft.AspNetCore.Authentication.JwtBearer` from 10.0.11 to 10.0.12 ([#65](https://github.com/sondresjolyst/altinnendata-api/issues/65)) ([7c4dbb4](https://github.com/sondresjolyst/altinnendata-api/commit/7c4dbb4a55e81b192e3900a6eb8631b97d13973b))
+* **nuget:** bump `Microsoft.AspNetCore.OpenApi` from 10.0.11 to 10.0.12 ([#67](https://github.com/sondresjolyst/altinnendata-api/issues/67)) ([211bbd6](https://github.com/sondresjolyst/altinnendata-api/commit/211bbd68220c6c006ae21f33771be1f6552a251a))
+* **nuget:** bump `Microsoft.EntityFrameworkCore` from 10.0.11 to 10.0.12 ([#68](https://github.com/sondresjolyst/altinnendata-api/issues/68)) ([97be010](https://github.com/sondresjolyst/altinnendata-api/commit/97be0109e2f84c2b74a07f90784c9639e9a91e07))
+* **nuget:** bump `xunit.v3` from 4.0.0 to 4.0.1 ([#75](https://github.com/sondresjolyst/altinnendata-api/issues/75)) ([6220528](https://github.com/sondresjolyst/altinnendata-api/commit/6220528b8ef4888522db98d9ef32c1dde402c4d1))
+* **nuget:** Bump Microsoft.EntityFrameworkCore.Design and Microsoft.EntityFrameworkCore.Tools ([#70](https://github.com/sondresjolyst/altinnendata-api/issues/70)) ([4e169af](https://github.com/sondresjolyst/altinnendata-api/commit/4e169afcde5fb3fccc383ae6de353afb8e3e0e49))
+* **nuget:** Bump the aspnetcore group with 2 updates ([#73](https://github.com/sondresjolyst/altinnendata-api/issues/73)) ([a5ab30c](https://github.com/sondresjolyst/altinnendata-api/commit/a5ab30c3626bae0516f1fea157555e7f14716bd9))
+* **nuget:** Bump the skiasharp group with 2 updates ([#74](https://github.com/sondresjolyst/altinnendata-api/issues/74)) ([5e2f29e](https://github.com/sondresjolyst/altinnendata-api/commit/5e2f29e7b7b4c3d311044a4109f7753b6dd4059f))
+
 ## [1.8.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.7.1...v1.8.0) (2026-09-14)
 
 
