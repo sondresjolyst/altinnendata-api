@@ -1,101 +1,102 @@
-<p align="center">
-  The backend behind altinnendata.no — PC build showcase, component catalog, site content, and enquiries.
-</p>
+# altinnendata-api
 
----
-
-altinnendata-api is the API for **Altinnendata** — local building and installation
-of desktop PCs. It stores the builds shown on the site with their parts list and
-per-language text, keeps the component catalog, sends enquiries by email, and
-serves the admin-managed content for
+API for Altinnendata, serving
 [altinnendata-app](https://github.com/sondresjolyst/altinnendata-app).
 
-## What it does
+## Stack
 
-- **Builds** — public showcase; admins create a build with price, availability
-  (`Available` / `Reserved` / `Sold`), a parts list, a cover image, and page
-  content per language.
-- **Component catalog** — categories (CPU, GPU, kabinett …) → manufacturers →
-  parts, reused across builds.
-- **Content** — home page sections and the legal pages, stored per locale and
-  edited from the admin pages.
-- **Contact** — enquiries (use case, budget, which build) emailed via Brevo.
-- **Accounts** — sign-in, JWT + refresh tokens, password reset, roles
-  (`Default` / `Admin`). There is no public sign-up: an admin invites a user,
-  who then sets their own password.
+ASP.NET Core 10, PostgreSQL through EF Core and Npgsql, ASP.NET Identity with
+JWT, Mapster, Serilog, AspNetCoreRateLimit, Brevo.
 
-Built as vertical slices (minimal API endpoints + FluentValidation), with
-PostgreSQL via EF Core.
-
-## Languages
-
-`Constants/Locales.cs` lists the supported locales; `no` is the default. Text
-that an admin writes lives in translation tables (`PcBuildTranslations`,
-`ComponentCategoryTranslations`) or in a per-locale row (`HomePageContents`,
-`LegalPages`). Public endpoints take `?locale=` and fall back to the default
-locale when a language has not been filled in.
-
-Adding a language means adding its tag to `Locales.Supported` — no schema change.
-
----
-
-## For developers
-
-<details>
-<summary>Run, configure, and the endpoints</summary>
-
-### Stack
-
-ASP.NET Core 10 · PostgreSQL (EF Core / Npgsql) · ASP.NET Identity + JWT ·
-Mapster · Serilog · AspNetCoreRateLimit · Brevo.
-
-### Run locally
+## Quick start
 
 ```bash
 dotnet restore
-dotnet ef database update   # needs local Postgres (see appsettings.Development.json)
+dotnet ef database update   # needs a local Postgres, see appsettings.Development.json
 dotnet run                  # Swagger at /swagger
 ```
 
-### Create the first admin
+## Environment
 
-There is no public registration endpoint, so the first account is made directly
-in the database — insert a user row, then grant the role:
+Production reads these from the cluster secret.
 
-```sql
-INSERT INTO "AspNetUserRoles" ("UserId", "RoleId")
-SELECT u."Id", r."Id"
-FROM "AspNetUsers" u, "AspNetRoles" r
-WHERE u."Email" = 'you@example.com' AND r."Name" = 'Admin';
+| Variable | Used for |
+| --- | --- |
+| `ConnectionStrings__DefaultConnection` | PostgreSQL connection string |
+| `Jwt__Key`, `Jwt__Issuer` | JWT signing key and issuer. The key must match the app's `ALTINNENDATA_API_JWT_SECRET` |
+| `BrevoSettings__ApiKey`, `BrevoSettings__SenderEmail`, `BrevoSettings__SenderName` | Transactional email |
+| `Seed__AdminEmail`, `Seed__AdminPassword` | First admin, created at startup |
+| `Site__BaseUrl` | Used in links sent by email |
+| `Storage__ImagesPath` | Mount for uploaded images, `/data/images` in the cluster |
+
+## What it serves
+
+| Area | Holds |
+| --- | --- |
+| Builds | Public showcase. Price, availability (`Available`, `Reserved`, `Sold`), parts list, cover image, page content per language |
+| Component catalog | Categories, manufacturers and parts, reused across builds |
+| Content | Home page sections and legal pages, per locale |
+| Contact | Enquiries emailed through Brevo |
+| Accounts | Sign-in, JWT and refresh tokens, password reset, `Default` and `Admin` roles |
+
+There is no public sign-up. An admin invites a user from `/admin/users`, who
+then sets their own password from the emailed code.
+
+Endpoints are vertical slices of minimal API handlers with FluentValidation.
+Browse `/swagger` on a running instance for the current surface.
+
+## Health
+
+| Path | Reports |
+| --- | --- |
+| `/health` | The process is up. No dependency checks, so a database outage does not restart the pod |
+| `/health/ready` | The database connection. Fails while Postgres is unreachable, which takes the pod out of its Service |
+
+Both are anonymous, and both are blocked at the ingress: only the kubelet
+reaches them, over the pod address.
+
+## Languages
+
+`Constants/Locales.cs` lists the supported locales and `no` is the default. Text
+an admin writes lives in translation tables (`PcBuildTranslations`,
+`ComponentCategoryTranslations`) or in a per-locale row (`HomePageContents`,
+`LegalPages`). Public endpoints take `?locale=` and fall back to the default when
+a language has not been filled in.
+
+To add a language, add its tag to `Locales.Supported`. No schema change.
+
+## Layout
+
 ```
-
-Further admins are invited from `/admin/users`, which emails them a code to set
-a password with.
-
-### Configuration
-
-In production, secrets come from environment variables:
-
-| Variable                                                                  | What it's for                          |
-| ------------------------------------------------------------------------- | -------------------------------------- |
-| `ConnectionStrings__DefaultConnection`                                    | PostgreSQL connection string.          |
-| `Jwt__Key`, `Jwt__Issuer`                                                 | JWT signing key and issuer.            |
-| `BrevoSettings__ApiKey`, `BrevoSettings__SenderEmail`, `BrevoSettings__SenderName` | Brevo email.                  |
-| `Storage__ImagesPath`                                                     | NFS-backed mount for uploaded images.  |
-
-### API reference
-
-Run the app and browse **Swagger at `/swagger`** for the current endpoints,
-schemas, and auth.
-
-### Layout
-
-```
-Features/        # one folder per slice (Auth, Builds, Components, Content, Users, …)
+Features/        # one folder per slice: Auth, Builds, Components, Content, Users
 Infrastructure/  # endpoint registration, validation filter, seed data
 Services/        # email, image storage
-Models/          # EF Core entities + DbContext
+Models/          # EF Core entities and the DbContext
 Migrations/      # EF Core migrations
 ```
 
-</details>
+## Deployment
+
+Image [`sondresjo/altinnendata-api`](https://hub.docker.com/r/sondresjo/altinnendata-api)
+on Docker Hub, chart `altinnendata-api` in
+[tumogroup-charts](https://github.com/sondresjolyst/tumogroup-charts), applied by
+Flux from [tumo-flux](https://github.com/sondresjolyst/tumo-flux) to
+`altinnendata-dev` and `altinnendata-prod`.
+
+The container runs as the non-root `app` user with a read-only root filesystem,
+so anything written at runtime needs a volume. Uploaded images go to the
+`/data/images` mount, and the data protection key ring to `/home/app/.aspnet`.
+
+Migrations run at startup, so a deploy against a cold database can take a while.
+The startup probe allows for that before the liveness probe can restart the pod.
+
+A push to `main` builds the `dev` tag. A release-please release builds `vX.Y.Z`,
+tags it `latest` and opens a chart bump against
+[tumogroup-charts](https://github.com/sondresjolyst/tumogroup-charts). Cluster
+secrets are created by
+[`scripts/altinnendata/bootstrap.sh`](https://github.com/sondresjolyst/tumo-platform/blob/main/scripts/altinnendata/bootstrap.sh)
+in [tumo-platform](https://github.com/sondresjolyst/tumo-platform).
+
+## License
+
+Proprietary. Copyright (c) 2026 Sondre Sjølyst.
