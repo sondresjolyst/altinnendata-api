@@ -4,6 +4,7 @@ using Mapster;
 using MapsterMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -102,7 +103,8 @@ namespace altinnendata_api
                 };
             });
 
-            builder.Services.AddHealthChecks();
+            builder.Services.AddHealthChecks()
+                .AddDbContextCheck<ApplicationDbContext>("db", tags: ["ready"]);
 
             builder.Services.AddAuthorization(options =>
             {
@@ -228,7 +230,17 @@ namespace altinnendata_api
             app.UseIpRateLimiting();
             app.MapControllers();
             app.MapEndpoints();
-            app.MapHealthChecks("/health").AllowAnonymous();
+            // Liveness and startup. Reports that the process is up, with no dependency checks,
+            // so a database outage does not restart the pod.
+            app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false })
+                .AllowAnonymous();
+
+            // Readiness. Fails while the database is unreachable, which takes the pod out of
+            // the Service instead of letting it serve errors.
+            app.MapHealthChecks("/health/ready", new HealthCheckOptions
+            {
+                Predicate = check => check.Tags.Contains("ready")
+            }).AllowAnonymous();
             app.Run();
         }
     }
