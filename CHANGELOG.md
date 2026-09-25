@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.1...v1.8.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* add an anonymous health endpoint ([#76](https://github.com/sondresjolyst/altinnendata-api/issues/76)) ([d0c916a](https://github.com/sondresjolyst/altinnendata-api/commit/d0c916a7db8d036a23a82aab49b22d1ee5d291c3))
+
 ## [1.8.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.0...v1.8.1) (2026-09-21)
 
 
