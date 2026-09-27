@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.2...v1.8.3) (2026-09-27)
+
+
+### Dependencies
+
+* **nuget:** bump `System.IdentityModel.Tokens.Jwt` from 8.22.0 to 8.23.0 ([#80](https://github.com/sondresjolyst/altinnendata-api/issues/80)) ([919f462](https://github.com/sondresjolyst/altinnendata-api/commit/919f462a21c46aee479a2726a60efca9d719e746))
+* **nuget:** Bump the skiasharp group with 2 updates ([#79](https://github.com/sondresjolyst/altinnendata-api/issues/79)) ([416b9f3](https://github.com/sondresjolyst/altinnendata-api/commit/416b9f358249feef41797066e3f1b3a51e3b22b8))
+
 ## [1.8.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.1...v1.8.2) (2026-09-25)
 
 
