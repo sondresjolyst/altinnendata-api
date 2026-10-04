@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.3...v1.8.4) (2026-10-04)
+
+
+### Dependencies
+
+* **nuget:** bump `Moq` from 4.20.72 to 4.21.0 ([#85](https://github.com/sondresjolyst/altinnendata-api/issues/85)) ([6d6e957](https://github.com/sondresjolyst/altinnendata-api/commit/6d6e9570f1f266d0e5f27c0488de6eac5f34f625))
+* **nuget:** Bump Mapster and Mapster.DependencyInjection ([#84](https://github.com/sondresjolyst/altinnendata-api/issues/84)) ([8f29ee6](https://github.com/sondresjolyst/altinnendata-api/commit/8f29ee6cf980267362d565bbe6645ec7a01ca9e5))
+
 ## [1.8.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.2...v1.8.3) (2026-09-27)
 
 
