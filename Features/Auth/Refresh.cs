@@ -10,8 +10,9 @@ namespace altinnendata_api.Features.Auth
     /// <summary>Rotates a refresh token, with reuse detection (revokes the whole family on replay).</summary>
     public static class Refresh
     {
-        public static async Task<IResult> Handle(RefreshTokenRequestDto req, UserManager<User> users, IConfiguration config, ApplicationDbContext db)
+        public static async Task<IResult> Handle(RefreshTokenRequestDto req, UserManager<User> users, IConfiguration config, ApplicationDbContext db, ILoggerFactory loggerFactory)
         {
+            var logger = loggerFactory.CreateLogger(typeof(Refresh));
             var principal = JwtTokens.GetPrincipalFromExpiredToken(req.Token, config);
             if (principal == null) return TypedResults.BadRequest(new MessageResponse("Invalid token"));
 
@@ -33,6 +34,11 @@ namespace altinnendata_api.Features.Auth
                 var now = DateTime.UtcNow;
                 var familyLive = await db.RefreshTokens.Where(t => t.UserId == user.Id && t.Revoked == null).ToListAsync();
                 foreach (var t in familyLive) t.Revoked = now;
+                // Log before the commit, so a revocation that fails to save is not silent.
+                if (familyLive.Count > 0)
+                    logger.LogWarning(
+                        "Refresh token replayed for user {UserId}. Revoking {RevokedCount} live token(s).",
+                        user.Id, familyLive.Count);
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
                 return Unauthorized("Invalid or expired refresh token");

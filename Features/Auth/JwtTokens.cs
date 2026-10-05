@@ -36,24 +36,40 @@ namespace altinnendata_api.Features.Auth
             return tokenHandler.WriteToken(tokenHandler.CreateToken(tokenDescriptor));
         }
 
+        /// <summary>How many refresh tokens one user may hold at once, across devices and browsers.</summary>
+        private const int MaxLiveTokensPerUser = 5;
+
         public static async Task<string> IssueRefreshTokenAsync(ApplicationDbContext db, string userId)
         {
+            var now = DateTime.UtcNow;
             var rawToken = GenerateRefreshToken();
             var hashedToken = HashText(rawToken);
 
-            var userTokens = await db.RefreshTokens
-                .Where(t => t.UserId == userId && t.Revoked == null && t.Expires > DateTime.UtcNow)
-                .OrderBy(t => t.Created)
-                .ToListAsync();
-            if (userTokens.Count >= 5)
-                db.RefreshTokens.Remove(userTokens.First());
+            var liveTokens = (await db.RefreshTokens
+                    .Where(t => t.UserId == userId && t.Revoked == null && t.Expires > now)
+                    .OrderBy(t => t.Created)
+                    .ThenBy(t => t.Id)
+                    .ToListAsync())
+                // Also filter on the tracked state: the caller may have just revoked the token it
+                // is rotating without saving yet, and the database still reports that one live.
+                .Where(t => t.Revoked == null)
+                .ToList();
+
+            // Drop every token past the cap, not only one. Trimming a single row per issuance left
+            // the count permanently above the cap once it had drifted above it.
+            //
+            // Delete rather than revoke. Rotation marks a consumed token with the same Revoked
+            // field, and presenting a revoked token is what Refresh treats as a replay, so an
+            // evicted device's next refresh would revoke every session the user has.
+            foreach (var stale in liveTokens.SkipLast(MaxLiveTokensPerUser - 1))
+                db.RefreshTokens.Remove(stale);
 
             db.RefreshTokens.Add(new RefreshToken
             {
                 Token = hashedToken,
                 UserId = userId,
-                Expires = DateTime.UtcNow.AddMonths(6),
-                Created = DateTime.UtcNow
+                Expires = now.AddMonths(6),
+                Created = now
             });
             return rawToken;
         }
