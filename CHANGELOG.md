@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.5](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.4...v1.8.5) (2026-10-05)
+
+
+### Bug Fixes
+
+* evict every refresh token past the cap, not just one ([#87](https://github.com/sondresjolyst/altinnendata-api/issues/87)) ([4a5b2f3](https://github.com/sondresjolyst/altinnendata-api/commit/4a5b2f30bde49a13247e056cb10db1c13efdec5e))
+
 ## [1.8.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.3...v1.8.4) (2026-10-04)
 
 
