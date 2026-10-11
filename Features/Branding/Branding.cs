@@ -2,14 +2,28 @@ using altinnendata_api.Constants;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Services;
+using SkiaSharp;
 
 namespace altinnendata_api.Features.Branding
 {
     public record BrandingResponse(string? LogoData, string? LogoContentType, string? IconData, string? IconContentType);
 
-    /// <summary>Get (public) / update (admin) the site logo and icon, stored as base64.</summary>
+    /// <summary>Get (public) and update (admin) the site logo and icon, stored as base64.</summary>
     public static class Branding
     {
+        public const long MaxImageBytes = 2 * 1024 * 1024;
+
+        // The formats a logo or icon may have. The content type comes from the decoded image, never from
+        // what the browser claims. SVG is not accepted, since it can carry script.
+        private static readonly Dictionary<SKEncodedImageFormat, string> ContentTypes = new()
+        {
+            [SKEncodedImageFormat.Png] = "image/png",
+            [SKEncodedImageFormat.Jpeg] = "image/jpeg",
+            [SKEncodedImageFormat.Webp] = "image/webp",
+            [SKEncodedImageFormat.Gif] = "image/gif",
+            [SKEncodedImageFormat.Ico] = "image/x-icon",
+        };
+
         public static async Task<IResult> Get(ApplicationDbContext db, CancellationToken ct)
         {
             var settings = await db.AppSettings.FindAsync([1], ct);
@@ -23,7 +37,7 @@ namespace altinnendata_api.Features.Branding
             var settings = await db.AppSettings.FindAsync([1], ct);
             if (settings == null)
             {
-                settings = new altinnendata_api.Models.Admin.AppSettings { Id = 1 };
+                settings = new Models.Admin.AppSettings { Id = 1 };
                 db.AppSettings.Add(settings);
             }
 
@@ -41,17 +55,21 @@ namespace altinnendata_api.Features.Branding
             return await Get(db, ct);
         }
 
-        private static async Task<(string Data, string ContentType)> ReadImageAsync(IFormFile file, CancellationToken ct)
+        internal static async Task<(string Data, string ContentType)> ReadImageAsync(IFormFile file, CancellationToken ct)
         {
-            const long maxBytes = 2 * 1024 * 1024;
-            if (file.Length == 0 || file.Length > maxBytes)
+            if (file.Length == 0 || file.Length > MaxImageBytes)
                 throw new AppValidationException("Image must be between 1 byte and 2 MB.");
-            if (!file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-                throw new AppValidationException("File must be an image.");
 
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
-            return (Convert.ToBase64String(ms.ToArray()), file.ContentType);
+            var bytes = ms.ToArray();
+
+            using var data = SKData.CreateCopy(bytes);
+            using var codec = SKCodec.Create(data);
+            if (codec == null || !ContentTypes.TryGetValue(codec.EncodedFormat, out var contentType))
+                throw new AppValidationException("The file must be a PNG, JPEG, WebP, GIF or ICO image.");
+
+            return (Convert.ToBase64String(bytes), contentType);
         }
 
         public class Endpoints : IEndpoint
