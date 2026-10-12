@@ -5,7 +5,7 @@ using Moq;
 using altinnendata_api.Features.Users;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
-using altinnendata_api.Models.Auth;
+using SjolystInnovation.AppKit.Auth;
 using Xunit;
 
 namespace altinnendata_api.Tests;

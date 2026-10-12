@@ -33,6 +33,7 @@ public class InviteUserTests : TestBase
         MockUserManager.Verify(m => m.AddToRoleAsync(user, "Admin"), Times.Once);
         email.Verify(e => e.SendEmailAsync("ny@altinnendata.no", It.IsAny<string>(), It.IsAny<string>(), null), Times.Once);
         Assert.NotNull(user.PasswordResetCodeHash);
+        Assert.InRange(user.PasswordResetCodeExpiration!.Value, DateTime.UtcNow.AddDays(7).AddMinutes(-1), DateTime.UtcNow.AddDays(7));
     }
 
     [Fact]

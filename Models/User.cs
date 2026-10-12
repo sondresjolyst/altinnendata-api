@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Identity;
+using SjolystInnovation.AppKit.Auth;
 
 namespace altinnendata_api.Models
 {
-    public class User : IdentityUser
+    public class User : IdentityUser, IPasswordResetUser
     {
         [Required]
         [MaxLength(50)]

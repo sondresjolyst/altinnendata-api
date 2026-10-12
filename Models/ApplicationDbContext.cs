@@ -2,13 +2,13 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Models.Admin;
-using altinnendata_api.Models.Auth;
 using altinnendata_api.Models.Content;
+using SjolystInnovation.AppKit.Auth;
 
 namespace altinnendata_api.Models
 {
     public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-        : IdentityDbContext<User, IdentityRole, string>(options)
+        : IdentityDbContext<User, IdentityRole, string>(options), IAuthDbContext
     {
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<AppSettings> AppSettings { get; set; }
@@ -33,6 +33,7 @@ namespace altinnendata_api.Models
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.AddAppKitRefreshTokens<User>();
 
             modelBuilder.Entity<DailyStatSnapshot>()
                 .HasIndex(s => s.Date)

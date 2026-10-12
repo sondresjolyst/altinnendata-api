@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Identity;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
+using SjolystInnovation.AppKit.Auth;
 
 namespace altinnendata_api.Features.Auth
 {
     /// <summary>Logs in a user and issues a JWT + rotating refresh token.</summary>
     public static class Login
     {
-        public static async Task<IResult> Handle(LoginModel login, UserManager<User> users, SignInManager<User> signIn, IConfiguration config, ApplicationDbContext db)
+        public static async Task<IResult> Handle(LoginModel login, UserManager<User> users, SignInManager<User> signIn, IJwtTokenService jwt, IRefreshTokenService refreshTokens, ApplicationDbContext db)
         {
             var user = await users.FindByEmailAsync(login.Email);
             if (user == null || user.IsDeleted)
@@ -20,8 +21,8 @@ namespace altinnendata_api.Features.Auth
                     : "Invalid email or password.");
 
             var roles = await users.GetRolesAsync(user);
-            var token = JwtTokens.BuildJwt(user, roles, config);
-            var raw = await JwtTokens.IssueRefreshTokenAsync(db, user.Id);
+            var token = jwt.Build(user, roles);
+            var raw = await refreshTokens.IssueAsync(user.Id);
             await db.SaveChangesAsync();
 
             return TypedResults.Ok(new TokenResponse(token, raw));

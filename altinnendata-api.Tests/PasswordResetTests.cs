@@ -105,6 +105,7 @@ public class PasswordResetTests : TestBase
         var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG", "newpass1"), MockUserManager.Object));
         Assert.Equal(400, problem.StatusCode);
         Assert.Equal(1, user.PasswordResetAttempts);
+        MockUserManager.Verify(m => m.UpdateAsync(user), Times.Once);
     }
 
     [Fact]
