@@ -55,9 +55,48 @@ public class PasswordResetTests : TestBase
         MockUserManager.Setup(m => m.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("tok");
         MockUserManager.Setup(m => m.ResetPasswordAsync(user, "tok", "newpass1")).ReturnsAsync(IdentityResult.Success);
 
-        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object));
+        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object, AuthServices(CreateDbContext()).RefreshTokens));
         Assert.Null(user.PasswordResetCodeHash);
         Assert.Equal(0, user.PasswordResetAttempts);
+    }
+
+    [Fact]
+    public async Task Reset_ValidCode_SignsOutEveryDevice()
+    {
+        await using var db = CreateDbContext();
+        var user = MakeUser();
+        user.PasswordResetCodeHash = Hash("ABC123");
+        user.PasswordResetCodeExpiration = DateTime.UtcNow.AddMinutes(10);
+        MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
+        MockUserManager.Setup(m => m.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("tok");
+        MockUserManager.Setup(m => m.ResetPasswordAsync(user, "tok", "newpass1")).ReturnsAsync(IdentityResult.Success);
+        var refreshTokens = AuthServices(db).RefreshTokens;
+        await refreshTokens.IssueAsync(user.Id);
+        await refreshTokens.IssueAsync(user.Id);
+        await refreshTokens.IssueAsync("someone-else");
+        await db.SaveChangesAsync();
+
+        await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object, refreshTokens);
+
+        Assert.Equal("someone-else", Assert.Single(db.RefreshTokens).UserId);
+    }
+
+    [Fact]
+    public async Task Reset_WrongCode_KeepsTheSessions()
+    {
+        await using var db = CreateDbContext();
+        var user = MakeUser();
+        user.PasswordResetCodeHash = Hash("ABC123");
+        user.PasswordResetCodeExpiration = DateTime.UtcNow.AddMinutes(10);
+        MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
+        MockUserManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+        var refreshTokens = AuthServices(db).RefreshTokens;
+        await refreshTokens.IssueAsync(user.Id);
+        await db.SaveChangesAsync();
+
+        await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG1", "newpass1"), MockUserManager.Object, refreshTokens);
+
+        Assert.Single(db.RefreshTokens);
     }
 
     [Fact]
@@ -72,7 +111,7 @@ public class PasswordResetTests : TestBase
         MockUserManager.Setup(m => m.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("tok");
         MockUserManager.Setup(m => m.ResetPasswordAsync(user, "tok", "newpass1")).ReturnsAsync(IdentityResult.Success);
 
-        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object));
+        Assert.IsType<Ok<MessageResponse>>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object, AuthServices(CreateDbContext()).RefreshTokens));
         Assert.Null(user.LockoutEnd);
         Assert.Equal(0, user.AccessFailedCount);
     }
@@ -88,7 +127,7 @@ public class PasswordResetTests : TestBase
         MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
         MockUserManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-        await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG", "newpass1"), MockUserManager.Object);
+        await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG", "newpass1"), MockUserManager.Object, AuthServices(CreateDbContext()).RefreshTokens);
 
         Assert.Equal(lockedUntil, user.LockoutEnd);
     }
@@ -102,7 +141,7 @@ public class PasswordResetTests : TestBase
         MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
         MockUserManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-        var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG", "newpass1"), MockUserManager.Object));
+        var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "WRONG", "newpass1"), MockUserManager.Object, AuthServices(CreateDbContext()).RefreshTokens));
         Assert.Equal(400, problem.StatusCode);
         Assert.Equal(1, user.PasswordResetAttempts);
         MockUserManager.Verify(m => m.UpdateAsync(user), Times.Once);
@@ -115,7 +154,7 @@ public class PasswordResetTests : TestBase
         user.PasswordResetAttempts = 5;
         MockUserManager.Setup(m => m.FindByEmailAsync(user.Email!)).ReturnsAsync(user);
 
-        var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object));
+        var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto(user.Email!, "ABC123", "newpass1"), MockUserManager.Object, AuthServices(CreateDbContext()).RefreshTokens));
         Assert.Equal(429, problem.StatusCode);
     }
 
@@ -123,7 +162,7 @@ public class PasswordResetTests : TestBase
     public async Task Reset_UnknownEmail_Returns400()
     {
         MockUserManager.Setup(m => m.FindByEmailAsync("nobody@example.com")).ReturnsAsync((User?)null);
-        var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto("nobody@example.com", "ABC123", "newpass1"), MockUserManager.Object));
+        var problem = Assert.IsType<ProblemHttpResult>(await PasswordReset.Reset(new ResetPasswordDto("nobody@example.com", "ABC123", "newpass1"), MockUserManager.Object, AuthServices(CreateDbContext()).RefreshTokens));
         Assert.Equal(400, problem.StatusCode);
     }
 }

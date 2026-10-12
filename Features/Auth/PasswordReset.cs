@@ -30,7 +30,7 @@ namespace altinnendata_api.Features.Auth
             return TypedResults.Ok(new MessageResponse(RequestGeneric));
         }
 
-        public static async Task<IResult> Reset(ResetPasswordDto dto, UserManager<User> users)
+        public static async Task<IResult> Reset(ResetPasswordDto dto, UserManager<User> users, IRefreshTokenService refreshTokens)
         {
             var user = await users.FindByEmailAsync(dto.Email);
             if (user == null || user.IsDeleted)
@@ -55,6 +55,8 @@ namespace altinnendata_api.Features.Auth
 
             PasswordResetCodes.Complete(user);
             await users.UpdateAsync(user);
+            // A new password ends every session, so one that was taken over cannot carry on.
+            await refreshTokens.RevokeAllForUserAsync(user.Id);
 
             return TypedResults.Ok(new MessageResponse("Password reset successfully."));
         }

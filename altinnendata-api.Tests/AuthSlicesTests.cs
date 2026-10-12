@@ -179,6 +179,33 @@ public class AuthSlicesTests : TestBase
     }
 
     [Fact]
+    public async Task Logout_DeletesTheLiveTokenAndKeepsTheOthers()
+    {
+        await using var db = CreateDbContext();
+        var (user, _) = SeedUser(db);
+        var raw = SeedRefreshToken(db, user.Id);
+        var other = SeedRefreshToken(db, user.Id);
+
+        var result = await Logout.Handle(new LogoutRequestDto(raw), AuthServices(db).RefreshTokens);
+
+        Assert.IsType<NoContent>(result);
+        Assert.Equal(VerificationCodes.Hash(other), Assert.Single(db.RefreshTokens).Token);
+    }
+
+    [Fact]
+    public async Task Logout_UnknownToken_AnswersTheSame()
+    {
+        await using var db = CreateDbContext();
+        var (user, _) = SeedUser(db);
+        SeedRefreshToken(db, user.Id);
+
+        var result = await Logout.Handle(new LogoutRequestDto("made-up"), AuthServices(db).RefreshTokens);
+
+        Assert.IsType<NoContent>(result);
+        Assert.Single(db.RefreshTokens);
+    }
+
+    [Fact]
     public async Task Refresh_DeletedUser_ReturnsUnauthorizedAndKeepsTheToken()
     {
         await using var db = CreateDbContext();
