@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using FluentValidation;
 using MapsterMapper;
 using Microsoft.AspNetCore.Identity;
@@ -8,6 +6,7 @@ using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Services;
+using SjolystInnovation.AppKit.Auth;
 
 namespace altinnendata_api.Features.Users
 {
@@ -47,10 +46,7 @@ namespace altinnendata_api.Features.Users
 
             await users.AddToRoleAsync(user, dto.Role);
 
-            var code = GenerateCode();
-            user.PasswordResetCodeHash = HashText(code);
-            user.PasswordResetCodeExpiration = DateTime.UtcNow.AddDays(7);
-            user.PasswordResetAttempts = 0;
+            var code = PasswordResetCodes.Issue(user, lifetime: TimeSpan.FromDays(7));
             await users.UpdateAsync(user);
 
             var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
@@ -60,18 +56,6 @@ namespace altinnendata_api.Features.Users
 
             return TypedResults.Ok(new MessageResponse("Invitation sent."));
         }
-
-        private static string GenerateCode()
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            var result = new char[6];
-            for (var i = 0; i < result.Length; i++)
-                result[i] = chars[RandomNumberGenerator.GetInt32(chars.Length)];
-            return new string(result);
-        }
-
-        private static string HashText(string text) =>
-            Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
         public class Endpoints : IEndpoint
         {

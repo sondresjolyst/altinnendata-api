@@ -6,9 +6,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using SjolystInnovation.AppKit.Auth;
 using altinnendata_api.Constants;
 using altinnendata_api.Models;
 using altinnendata_api.Profiles;
@@ -48,6 +50,17 @@ public abstract class TestBase
                 ["Jwt:Issuer"] = TestJwtIssuer
             })
             .Build();
+    }
+
+    /// <summary>The token services as the app registers them, on the given database.</summary>
+    protected (IJwtTokenService Jwt, IRefreshTokenService RefreshTokens) AuthServices(ApplicationDbContext db)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(db);
+        services.AddAppKitAuth<ApplicationDbContext>(Configuration.GetSection("Jwt"));
+        var provider = services.BuildServiceProvider();
+        return (provider.GetRequiredService<IJwtTokenService>(), provider.GetRequiredService<IRefreshTokenService>());
     }
 
     protected static ApplicationDbContext CreateDbContext() =>

@@ -1,10 +1,9 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Identity;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Services;
+using SjolystInnovation.AppKit.Auth;
 
 namespace altinnendata_api.Features.Auth
 {
@@ -19,10 +18,7 @@ namespace altinnendata_api.Features.Auth
             var user = await users.FindByEmailAsync(dto.Email);
             if (user != null && !user.IsDeleted)
             {
-                var code = GenerateCode();
-                user.PasswordResetCodeHash = HashText(code);
-                user.PasswordResetCodeExpiration = DateTime.UtcNow.AddMinutes(30);
-                user.PasswordResetAttempts = 0;
+                var code = PasswordResetCodes.Issue(user);
                 await users.UpdateAsync(user);
 
                 var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
@@ -40,14 +36,13 @@ namespace altinnendata_api.Features.Auth
             if (user == null || user.IsDeleted)
                 return TypedResults.Problem(InvalidGeneric, statusCode: StatusCodes.Status400BadRequest);
 
-            if (user.PasswordResetAttempts >= 5)
-                return TypedResults.Problem("Too many attempts. Request a new reset code.", statusCode: StatusCodes.Status429TooManyRequests);
-
-            if (user.PasswordResetCodeHash != HashText(dto.Code) || user.PasswordResetCodeExpiration < DateTime.UtcNow)
+            switch (PasswordResetCodes.Check(user, dto.Code))
             {
-                user.PasswordResetAttempts++;
-                await users.UpdateAsync(user);
-                return TypedResults.Problem(InvalidGeneric, statusCode: StatusCodes.Status400BadRequest);
+                case CodeCheck.TooManyAttempts:
+                    return TypedResults.Problem("Too many attempts. Request a new reset code.", statusCode: StatusCodes.Status429TooManyRequests);
+                case CodeCheck.Invalid:
+                    await users.UpdateAsync(user);
+                    return TypedResults.Problem(InvalidGeneric, statusCode: StatusCodes.Status400BadRequest);
             }
 
             var token = await users.GeneratePasswordResetTokenAsync(user);
@@ -58,31 +53,10 @@ namespace altinnendata_api.Features.Auth
                     ["NewPassword"] = result.Errors.Select(e => e.Description).ToArray()
                 });
 
-            user.PasswordResetCodeHash = null;
-            user.PasswordResetCodeExpiration = null;
-            user.PasswordResetAttempts = 0;
-            // Failed logins are what sends most people here, and those lock the account. Whoever
-            // proved the code from their mailbox gets to log in with the new password right away.
-            user.LockoutEnd = null;
-            user.AccessFailedCount = 0;
+            PasswordResetCodes.Complete(user);
             await users.UpdateAsync(user);
 
             return TypedResults.Ok(new MessageResponse("Password reset successfully."));
-        }
-
-        private static string GenerateCode()
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            var result = new char[6];
-            for (int i = 0; i < result.Length; i++)
-                result[i] = chars[RandomNumberGenerator.GetInt32(chars.Length)];
-            return new string(result);
-        }
-
-        private static string HashText(string text)
-        {
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-            return Convert.ToBase64String(hash);
         }
 
         public class Endpoints : IEndpoint

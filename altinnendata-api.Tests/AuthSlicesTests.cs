@@ -1,12 +1,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using altinnendata_api.Features.Auth;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
-using altinnendata_api.Models.Auth;
+using SjolystInnovation.AppKit.Auth;
 using Xunit;
 
 namespace altinnendata_api.Tests;
@@ -20,7 +19,7 @@ public class AuthSlicesTests : TestBase
         MockUserManager.Setup(m => m.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((User?)null);
 
         var result = await Login.Handle(new LoginModel { Email = "x@y.no", Password = "nope" },
-            MockUserManager.Object, MockSignInManager.Object, Configuration, db);
+            MockUserManager.Object, MockSignInManager.Object, AuthServices(db).Jwt, AuthServices(db).RefreshTokens, db);
 
         var json = Assert.IsType<JsonHttpResult<MessageResponse>>(result);
         Assert.Equal(StatusCodes.Status401Unauthorized, json.StatusCode);
@@ -37,19 +36,19 @@ public class AuthSlicesTests : TestBase
         MockUserManager.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
 
         var result = await Login.Handle(new LoginModel { Email = "a@b.no", Password = "Password1" },
-            MockUserManager.Object, MockSignInManager.Object, Configuration, db);
+            MockUserManager.Object, MockSignInManager.Object, AuthServices(db).Jwt, AuthServices(db).RefreshTokens, db);
 
         Assert.IsType<Ok<TokenResponse>>(result);
         Assert.Single(db.RefreshTokens);
     }
 
     /// <summary>Registers a user the refresh slice can find, and returns a usable access token.</summary>
-    private (User user, string accessToken) SeedUser()
+    private (User user, string accessToken) SeedUser(ApplicationDbContext db)
     {
         var user = MakeUser();
         MockUserManager.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
         MockUserManager.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
-        return (user, JwtTokens.BuildJwt(user, new List<string> { "Admin" }, Configuration));
+        return (user, AuthServices(db).Jwt.Build(user, new List<string> { "Admin" }));
     }
 
     private static string SeedRefreshToken(
@@ -58,7 +57,7 @@ public class AuthSlicesTests : TestBase
         var raw = Guid.NewGuid().ToString("N");
         db.RefreshTokens.Add(new RefreshToken
         {
-            Token = JwtTokens.HashText(raw),
+            Token = VerificationCodes.Hash(raw),
             UserId = userId,
             Created = created ?? DateTime.UtcNow.AddMinutes(-10),
             Expires = expires ?? DateTime.UtcNow.AddMonths(6),
@@ -71,13 +70,13 @@ public class AuthSlicesTests : TestBase
     private Task<IResult> CallRefresh(ApplicationDbContext db, string accessToken, string refreshToken) =>
         Refresh.Handle(
             new RefreshTokenRequestDto { Token = accessToken, RefreshToken = refreshToken },
-            MockUserManager.Object, Configuration, db, NullLoggerFactory.Instance);
+            MockUserManager.Object, AuthServices(db).Jwt, AuthServices(db).RefreshTokens);
 
     [Fact]
     public async Task Refresh_IssuedToken_WorksOnTheNextCall()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         var raw = SeedRefreshToken(db, user.Id);
 
         // The sequence the app actually performs: rotate, store the successor, rotate again.
@@ -94,7 +93,7 @@ public class AuthSlicesTests : TestBase
     public async Task Refresh_AtTheLiveTokenCap_KeepsTheOtherDevicesSignedIn()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         var oldest = SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddDays(-5));
         for (var i = 4; i >= 2; i--) SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddDays(-i));
         var presented = SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddMinutes(-1));
@@ -105,17 +104,17 @@ public class AuthSlicesTests : TestBase
         Assert.IsType<Ok<TokenResponse>>(result);
         // Rotating at the cap consumes the presented token, so the successor fits without
         // touching anyone else: the user's other devices must stay signed in.
-        Assert.Null(db.RefreshTokens.Single(t => t.Token == JwtTokens.HashText(oldest)).Revoked);
+        Assert.Null(db.RefreshTokens.Single(t => t.Token == VerificationCodes.Hash(oldest)).Revoked);
         Assert.Equal(5, db.RefreshTokens.Count(t => t.Revoked == null));
         // The consumed token is kept and marked revoked, which is what makes a replay detectable.
-        Assert.NotNull(db.RefreshTokens.Single(t => t.Token == JwtTokens.HashText(presented)).Revoked);
+        Assert.NotNull(db.RefreshTokens.Single(t => t.Token == VerificationCodes.Hash(presented)).Revoked);
     }
 
     [Fact]
     public async Task Refresh_OverTheLiveTokenCap_EvictsEveryExcessToken()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         for (var i = 8; i >= 2; i--) SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddDays(-i));
         var presented = SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddMinutes(-1));
         Assert.Equal(8, db.RefreshTokens.Count(t => t.Revoked == null));
@@ -132,12 +131,12 @@ public class AuthSlicesTests : TestBase
     public async Task Refresh_EvictedToken_DoesNotRevokeTheOtherSessions()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         var evicted = SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddDays(-9));
         for (var i = 8; i >= 2; i--) SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddDays(-i));
         var presented = SeedRefreshToken(db, user.Id, created: DateTime.UtcNow.AddMinutes(-1));
         await CallRefresh(db, accessToken, presented);
-        Assert.Empty(db.RefreshTokens.Where(t => t.Token == JwtTokens.HashText(evicted)));
+        Assert.Empty(db.RefreshTokens.Where(t => t.Token == VerificationCodes.Hash(evicted)));
 
         var result = await CallRefresh(db, accessToken, evicted);
 
@@ -152,7 +151,7 @@ public class AuthSlicesTests : TestBase
     public async Task Refresh_ReplayedToken_RevokesTheWholeFamily()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         var raw = SeedRefreshToken(db, user.Id, revoked: DateTime.UtcNow.AddMinutes(-1));
         SeedRefreshToken(db, user.Id);
 
@@ -169,21 +168,37 @@ public class AuthSlicesTests : TestBase
     public async Task Refresh_LiveToken_RotatesAndRevokesPresentedToken()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         var raw = SeedRefreshToken(db, user.Id);
 
         var result = await CallRefresh(db, accessToken, raw);
 
         Assert.IsType<Ok<TokenResponse>>(result);
-        Assert.NotNull(db.RefreshTokens.Single(t => t.Token == JwtTokens.HashText(raw)).Revoked);
+        Assert.NotNull(db.RefreshTokens.Single(t => t.Token == VerificationCodes.Hash(raw)).Revoked);
         Assert.Single(db.RefreshTokens.Where(t => t.Revoked == null));
+    }
+
+    [Fact]
+    public async Task Refresh_DeletedUser_ReturnsUnauthorizedAndKeepsTheToken()
+    {
+        await using var db = CreateDbContext();
+        var (user, accessToken) = SeedUser(db);
+        user.IsDeleted = true;
+        SeedRefreshToken(db, user.Id);
+        var raw = SeedRefreshToken(db, user.Id);
+
+        var result = await CallRefresh(db, accessToken, raw);
+
+        var json = Assert.IsType<JsonHttpResult<MessageResponse>>(result);
+        Assert.Equal(StatusCodes.Status401Unauthorized, json.StatusCode);
+        Assert.Equal(2, db.RefreshTokens.Count(t => t.Revoked == null));
     }
 
     [Fact]
     public async Task Refresh_ExpiredToken_ReturnsUnauthorized()
     {
         await using var db = CreateDbContext();
-        var (user, accessToken) = SeedUser();
+        var (user, accessToken) = SeedUser(db);
         var raw = SeedRefreshToken(db, user.Id, expires: DateTime.UtcNow.AddDays(-1));
 
         var result = await CallRefresh(db, accessToken, raw);
