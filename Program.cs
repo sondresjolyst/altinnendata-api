@@ -1,11 +1,8 @@
-using AspNetCoreRateLimit;
 using FluentValidation;
 using Mapster;
 using MapsterMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -21,6 +18,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using SjolystInnovation.AppKit.Auth;
+using SjolystInnovation.AppKit.Hosting;
 
 namespace altinnendata_api
 {
@@ -105,8 +103,7 @@ namespace altinnendata_api
                 };
             });
 
-            builder.Services.AddHealthChecks()
-                .AddDbContextCheck<ApplicationDbContext>("db", tags: ["ready"]);
+            builder.Services.AddAppKitHealthChecks<ApplicationDbContext>();
 
             builder.Services.AddAuthorization(options =>
             {
@@ -128,10 +125,7 @@ namespace altinnendata_api
                 });
             });
 
-            builder.Services.AddMemoryCache();
-            builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
-            builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
-            builder.Services.AddInMemoryRateLimiting();
+            builder.Services.AddAppKitRateLimiting(builder.Configuration.GetSection("RateLimiting"));
 
             var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
             var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
@@ -193,39 +187,13 @@ namespace altinnendata_api
                 await AdminSeeder.EnsureFirstAdminAsync(scope.ServiceProvider, app.Configuration, logger);
             }
 
-            var fwd = new ForwardedHeadersOptions
-            {
-                ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-                ForwardLimit = 1
-            };
-            fwd.KnownIPNetworks.Clear();
-            fwd.KnownProxies.Clear();
-            foreach (var cidr in app.Configuration.GetSection("TrustedProxies").Get<string[]>() ?? [])
-                fwd.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
-            app.UseForwardedHeaders(fwd);
+            app.UseAppKitForwardedHeaders();
 
             app.UseExceptionHandler();
 
-            app.Use(async (context, next) =>
-            {
-                context.Response.OnStarting(() =>
-                {
-                    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
-                    context.Response.Headers["X-Frame-Options"] = "DENY";
-                    return Task.CompletedTask;
-                });
-                await next();
-            });
+            app.UseAppKitSecurityHeaders();
 
-            if (!app.Environment.IsDevelopment())
-            {
-                app.UseHsts();
-                // Probes reach the pod over plain HTTP and send no X-Forwarded-Proto, so a
-                // redirect would fail them if an HTTPS port is ever configured.
-                app.UseWhen(
-                    context => !context.Request.Path.StartsWithSegments("/health"),
-                    branch => branch.UseHttpsRedirection());
-            }
+            app.UseAppKitHttps();
 
             app.UseSwagger();
             app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Altinnendata API V1"));
@@ -234,20 +202,10 @@ namespace altinnendata_api
             app.UseCors("AllowAllOrigins");
             app.UseAuthentication();
             app.UseAuthorization();
-            app.UseIpRateLimiting();
+            app.UseAppKitRateLimiting();
             app.MapControllers();
             app.MapEndpoints();
-            // Liveness and startup. Reports that the process is up, with no dependency checks,
-            // so a database outage does not restart the pod.
-            app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false })
-                .AllowAnonymous();
-
-            // Readiness. Fails while the database is unreachable, which takes the pod out of
-            // the Service instead of letting it serve errors.
-            app.MapHealthChecks("/health/ready", new HealthCheckOptions
-            {
-                Predicate = check => check.Tags.Contains("ready")
-            }).AllowAnonymous();
+            app.MapAppKitHealthChecks();
             app.Run();
         }
     }
