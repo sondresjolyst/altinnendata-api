@@ -17,6 +17,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using SjolystInnovation.AppKit.Auth;
 using SjolystInnovation.AppKit.Hosting;
+using SjolystInnovation.AppKit.Email;
 
 namespace altinnendata_api
 {
@@ -52,6 +53,7 @@ namespace altinnendata_api
                     options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
                 });
 
+            builder.Services.AddAppKitBrevo(builder.Configuration.GetSection("BrevoSettings"));
             builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddAppKitAuth<ApplicationDbContext>(builder.Configuration.GetSection("Jwt"));
             builder.Services.AddSingleton<IImageStorageService, ImageStorageService>();
