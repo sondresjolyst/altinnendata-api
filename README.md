@@ -28,6 +28,7 @@ Production reads these from the cluster secret.
 | `Seed__AdminEmail`, `Seed__AdminPassword` | First admin, created at startup |
 | `Site__BaseUrl` | Used in links sent by email |
 | `Storage__ImagesPath` | Mount for uploaded images, `/data/images` in the cluster |
+| `TrustedProxies` | CIDRs allowed to set `X-Forwarded-For`. Defaults to the cluster pod network (`192.169.0.0/16`, where the ingress runs) and the private ranges. A wildcard would let any caller forge the client IP the rate limiter reads |
 
 ## What it serves
 

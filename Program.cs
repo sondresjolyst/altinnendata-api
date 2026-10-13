@@ -196,11 +196,12 @@ namespace altinnendata_api
             var fwd = new ForwardedHeadersOptions
             {
                 ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-                ForwardLimit = 2
+                ForwardLimit = 1
             };
             fwd.KnownIPNetworks.Clear();
             fwd.KnownProxies.Clear();
-            fwd.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Any, 0));
+            foreach (var cidr in app.Configuration.GetSection("TrustedProxies").Get<string[]>() ?? [])
+                fwd.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
             app.UseForwardedHeaders(fwd);
 
             app.UseExceptionHandler();
