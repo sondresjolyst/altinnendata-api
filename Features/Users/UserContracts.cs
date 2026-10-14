@@ -10,10 +10,6 @@ namespace altinnendata_api.Features.Users
 
     public record UserExport(UserProfileDto Account, IList<string> Roles, DateTime ExportedAt);
 
-    public record AdminUserDto(string Id, string UserName, string Email, string FirstName, string LastName, DateTime CreatedAt, bool IsDeleted, IList<string> Roles);
-
-    public record AssignRoleDto(string Role);
-
     public class UpdateProfileValidator : AbstractValidator<UpdateProfileDto>
     {
         public UpdateProfileValidator()
@@ -21,11 +17,6 @@ namespace altinnendata_api.Features.Users
             RuleFor(x => x.FirstName).NotEmpty().MaximumLength(50);
             RuleFor(x => x.LastName).NotEmpty().MaximumLength(50);
         }
-    }
-
-    public class AssignRoleValidator : AbstractValidator<AssignRoleDto>
-    {
-        public AssignRoleValidator() => RuleFor(x => x.Role).NotEmpty();
     }
 
     public class ChangePasswordValidator : AbstractValidator<ChangePasswordDto>
