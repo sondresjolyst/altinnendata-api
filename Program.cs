@@ -55,7 +55,14 @@ namespace altinnendata_api
 
             builder.Services.AddAppKitBrevo(builder.Configuration.GetSection("BrevoSettings"));
             builder.Services.AddScoped<IEmailService, EmailService>();
-            builder.Services.AddScoped<IAuthEmails<User>, AuthEmails>();
+            builder.Services.AddScoped<IEmailBrand, AuthEmailBrand>();
+            builder.Services.AddAppKitAuthEmails<User>(o =>
+            {
+                o.Language = EmailLanguage.Norwegian;
+                o.HeaderColor = "#0f3d3a";
+                o.AccentColor = "#00887a";
+                o.SetPasswordUrl = SiteLinks.SetPasswordPage(builder.Configuration);
+            });
             builder.Services.AddAppKitAccounts<User, ApplicationDbContext>(o => o.AdminRole = RoleNames.Admin);
             builder.Services.AddAppKitAuth<ApplicationDbContext>(builder.Configuration.GetSection("Jwt"));
             builder.Services.AddSingleton<IImageStorageService, ImageStorageService>();
