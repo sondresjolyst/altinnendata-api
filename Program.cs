@@ -56,6 +56,7 @@ namespace altinnendata_api
             builder.Services.AddAppKitBrevo(builder.Configuration.GetSection("BrevoSettings"));
             builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddScoped<IAuthEmails<User>, AuthEmails>();
+            builder.Services.AddAppKitAccounts<User, ApplicationDbContext>(o => o.AdminRole = RoleNames.Admin);
             builder.Services.AddAppKitAuth<ApplicationDbContext>(builder.Configuration.GetSection("Jwt"));
             builder.Services.AddSingleton<IImageStorageService, ImageStorageService>();
             builder.Services.AddHttpClient("finn")
@@ -172,6 +173,7 @@ namespace altinnendata_api
             app.MapControllers();
             app.MapEndpoints();
             app.MapAppKitAuthEndpoints<User, ApplicationDbContext>(configure: o => o.IsActive = u => !u.IsDeleted);
+            app.MapAppKitAccount<User>();
             app.MapAppKitUserAdmin<User, ApplicationDbContext>(configure: o =>
             {
                 o.Roles = RoleNames.AllRoles;
