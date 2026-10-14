@@ -1,5 +1,4 @@
 using Mapster;
-using altinnendata_api.Features.Users;
 using altinnendata_api.Models;
 
 namespace altinnendata_api.Profiles
