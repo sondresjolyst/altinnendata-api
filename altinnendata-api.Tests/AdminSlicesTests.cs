@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,7 +25,7 @@ public class AdminSlicesTests : TestBase
         db.ContentImages.Add(new ContentImage { FileName = "x.png", ContentType = "image/png", StoredPath = "x.png" });
         await db.SaveChangesAsync();
 
-        var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, Configuration, NullLoggerFactory.Instance, default));
+        var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, default));
         Assert.Equal(2, ok.Value!.TotalUsers);
         Assert.Equal(2, ok.Value.PublishedBuilds);
         Assert.Equal(1, ok.Value.DraftBuilds);
