@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using altinnendata_api.Models.Admin;
+using SjolystInnovation.AppKit.SiteSettings;
 using altinnendata_api.Models.Content;
+using altinnendata_api.Models.Admin;
 using SjolystInnovation.AppKit.Auth;
 
 namespace altinnendata_api.Models
@@ -43,9 +44,7 @@ namespace altinnendata_api.Models
                 .HasIndex(c => c.Locale)
                 .IsUnique();
 
-            modelBuilder.Entity<LegalPage>()
-                .HasIndex(p => new { p.Key, p.Locale })
-                .IsUnique();
+            modelBuilder.AddAppKitLegalPages();
 
             modelBuilder.Entity<PcBuild>()
                 .HasIndex(b => b.Slug)

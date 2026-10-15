@@ -1,3 +1,5 @@
+using SjolystInnovation.AppKit.SiteSettings;
+
 namespace altinnendata_api.Infrastructure
 {
     /// <summary>
@@ -6,9 +8,7 @@ namespace altinnendata_api.Infrastructure
     /// </summary>
     public static class LegalSeedText
     {
-        public record Page(string Key, string Locale, string Title, string Body);
-
-        public static readonly Page[] All =
+        public static readonly LegalPageSeed[] All =
         [
             new("terms", "no", "Vilkår", TermsNo),
             new("terms", "en", "Terms of Service", TermsEn),
