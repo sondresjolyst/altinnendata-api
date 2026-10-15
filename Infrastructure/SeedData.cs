@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Models;
-using altinnendata_api.Models.Content;
 
 namespace altinnendata_api.Infrastructure
 {
@@ -44,27 +43,5 @@ namespace altinnendata_api.Infrastructure
             await db.SaveChangesAsync(ct);
         }
 
-        /// <summary>Writes the starting legal text for any (key, locale) that has none. Edited pages are left alone.</summary>
-        public static async Task EnsureLegalPagesAsync(ApplicationDbContext db, CancellationToken ct = default)
-        {
-            var existing = await db.LegalPages.Select(p => new { p.Key, p.Locale }).ToListAsync(ct);
-            var missing = LegalSeedText.All
-                .Where(p => !existing.Any(e => e.Key == p.Key && e.Locale == p.Locale))
-                .ToList();
-            if (missing.Count == 0) return;
-
-            foreach (var page in missing)
-            {
-                db.LegalPages.Add(new LegalPage
-                {
-                    Key = page.Key,
-                    Locale = page.Locale,
-                    Title = page.Title,
-                    BodyMarkdown = page.Body
-                });
-            }
-
-            await db.SaveChangesAsync(ct);
-        }
     }
 }
