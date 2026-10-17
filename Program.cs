@@ -58,7 +58,6 @@ namespace altinnendata_api
                 });
 
             builder.Services.AddAppKitBrevo(builder.Configuration.GetSection("BrevoSettings"));
-            builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddScoped<IEmailBrand, AuthEmailBrand>();
             builder.Services.AddAppKitAuthEmails<User>(o =>
             {
