@@ -7,8 +7,8 @@ using altinnendata_api.Features.Admin;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
 using SjolystInnovation.AppKit.AdminStats;
+using SjolystInnovation.AppKit.Storage;
 using SjolystInnovation.AppKit.Storage.Images;
-using altinnendata_api.Services;
 using Xunit;
 
 namespace altinnendata_api.Tests;
@@ -33,11 +33,37 @@ public class AdminSlicesTests : TestBase
         db.ContentImages.Add(new ContentImage { FileName = "x.png", ContentType = "image/png", StoredPath = "x.png" });
         await db.SaveChangesAsync();
 
-        var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, Options.Create(new AppKitContentImagesOptions()), NullLoggerFactory.Instance, default));
+        var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, new FakeStorageUsage(), default));
         Assert.Equal(2, ok.Value!.TotalUsers);
         Assert.Equal(2, ok.Value.PublishedBuilds);
         Assert.Equal(1, ok.Value.DraftBuilds);
         Assert.Equal(1, ok.Value.ContentImages);
+    }
+
+    [Fact]
+    public async Task GetStats_ReturnsTheContentImageStoreUsage()
+    {
+        await using var db = CreateDbContext();
+        var usage = new FakeStorageUsage { Usage = new AppKitStorageUsage(1234, 10_000, 4_000) };
+
+        var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, usage, TestContext.Current.CancellationToken));
+
+        Assert.Equal([AppKitContentImages.StoreName], usage.Stores);
+        Assert.Equal(1234, ok.Value!.StorageUsedBytes);
+        Assert.Equal(10_000, ok.Value.DiskTotalBytes);
+        Assert.Equal(4_000, ok.Value.DiskFreeBytes);
+    }
+
+    private sealed class FakeStorageUsage : IAppKitStorageUsage
+    {
+        public AppKitStorageUsage Usage { get; init; } = new(0, 0, 0);
+        public string[] Stores { get; private set; } = [];
+
+        public Task<AppKitStorageUsage> GetAsync(IEnumerable<string> storeNames, CancellationToken cancellationToken = default)
+        {
+            Stores = storeNames.ToArray();
+            return Task.FromResult(Usage);
+        }
     }
 
     [Fact]
@@ -97,31 +123,5 @@ public class AdminSlicesTests : TestBase
         await AdminDashboard.GetStatsHistory(db, Stats(), default);
 
         Assert.Empty(db.DailyStatSnapshots);
-    }
-
-    [Fact]
-    public void GetRoles_ReturnsAllRoles()
-    {
-        var ok = Assert.IsType<Ok<string[]>>(AdminDashboard.GetRoles());
-        Assert.Contains("Admin", ok.Value!);
-        Assert.Contains("Default", ok.Value!);
-    }
-
-    [Fact]
-    public async Task GetEmailStats_ReturnsStats()
-    {
-        var email = new Mock<IEmailService>();
-        email.Setup(e => e.GetEmailStatsAsync(30)).ReturnsAsync(new EmailStatsDto { Days = 30, Requests = 5 });
-        var ok = Assert.IsType<Ok<EmailStatsDto>>(await AdminDashboard.GetEmailStats(email.Object, NullLoggerFactory.Instance, 30));
-        Assert.Equal(5, ok.Value!.Requests);
-    }
-
-    [Fact]
-    public async Task GetEmailStats_BrevoFailure_Returns502()
-    {
-        var email = new Mock<IEmailService>();
-        email.Setup(e => e.GetEmailStatsAsync(It.IsAny<int>())).ThrowsAsync(new Exception("brevo down"));
-        var problem = Assert.IsType<ProblemHttpResult>(await AdminDashboard.GetEmailStats(email.Object, NullLoggerFactory.Instance, 30));
-        Assert.Equal(StatusCodes.Status502BadGateway, problem.StatusCode);
     }
 }

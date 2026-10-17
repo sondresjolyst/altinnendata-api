@@ -3,31 +3,18 @@ using altinnendata_api.Constants;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
-using altinnendata_api.Services;
-using Microsoft.Extensions.Options;
 using SjolystInnovation.AppKit.AdminStats;
+using SjolystInnovation.AppKit.Storage;
 using SjolystInnovation.AppKit.Storage.Images;
 
 namespace altinnendata_api.Features.Admin
 {
-    /// <summary>Admin dashboard: aggregate stats, daily history, roles, Brevo email stats.</summary>
+    /// <summary>Admin dashboard: aggregate stats and daily history.</summary>
     public static class AdminDashboard
     {
-        public static async Task<IResult> GetStats(ApplicationDbContext db, IOptions<AppKitContentImagesOptions> images, ILoggerFactory loggerFactory, CancellationToken ct)
+        public static async Task<IResult> GetStats(ApplicationDbContext db, IAppKitStorageUsage storageUsage, CancellationToken ct)
         {
-            var imagesPath = Path.GetFullPath(images.Value.ImagesPath);
-
-            long diskTotal = 0, diskFree = 0;
-            try
-            {
-                var drive = new DriveInfo(Path.GetPathRoot(imagesPath) ?? imagesPath);
-                diskTotal = drive.TotalSize;
-                diskFree = drive.AvailableFreeSpace;
-            }
-            catch (Exception ex)
-            {
-                loggerFactory.CreateLogger("Admin").LogWarning("Disk info unavailable: {Error}", ex.Message);
-            }
+            var usage = await storageUsage.GetAsync([AppKitContentImages.StoreName], ct);
 
             var sold = await db.PcBuilds
                 .Where(b => b.Availability == BuildAvailability.Sold)
@@ -47,9 +34,9 @@ namespace altinnendata_api.Features.Admin
                 SoldWithoutDate = sold.Count(b => !b.SoldOn.HasValue),
                 CatalogParts = await db.ComponentParts.CountAsync(ct),
                 ContentImages = await db.ContentImages.CountAsync(ct),
-                StorageUsedBytes = DirectorySize(imagesPath),
-                DiskTotalBytes = diskTotal,
-                DiskFreeBytes = diskFree
+                StorageUsedBytes = usage.StorageUsedBytes,
+                DiskTotalBytes = usage.DiskTotalBytes,
+                DiskFreeBytes = usage.DiskFreeBytes
             });
         }
 
@@ -92,27 +79,6 @@ namespace altinnendata_api.Features.Admin
             ContentImages = await db.ContentImages.CountAsync(ct)
         };
 
-        public static IResult GetRoles() => TypedResults.Ok(RoleNames.AllRoles);
-
-        public static async Task<IResult> GetEmailStats(IEmailService email, ILoggerFactory loggerFactory, int days = 30)
-        {
-            try
-            {
-                return TypedResults.Ok(await email.GetEmailStatsAsync(days));
-            }
-            catch (Exception ex)
-            {
-                loggerFactory.CreateLogger("Admin").LogError("GetEmailStats failed: {Error}", ex.Message);
-                return TypedResults.Problem("Failed to fetch email stats from Brevo.", statusCode: StatusCodes.Status502BadGateway);
-            }
-        }
-
-        private static long DirectorySize(string path)
-        {
-            if (!Directory.Exists(path)) return 0;
-            return new DirectoryInfo(path).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
-        }
-
         public class Endpoints : IEndpoint
         {
             public void Map(IEndpointRouteBuilder app)
@@ -120,8 +86,6 @@ namespace altinnendata_api.Features.Admin
                 var group = app.MapGroup("/api/admin").RequireAuthorization(Policies.Admin);
                 group.MapGet("stats", GetStats);
                 group.MapGet("stats/history", GetStatsHistory);
-                group.MapGet("roles", GetRoles);
-                group.MapGet("email-stats", GetEmailStats);
             }
         }
     }

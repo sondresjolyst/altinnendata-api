@@ -13,7 +13,8 @@ namespace altinnendata_api.Services
             return new EmailBrand(s.CompanyName)
             {
                 LegalName = s.CompanyLegalName,
-                OrgNumber = string.IsNullOrWhiteSpace(s.OrgNumber) ? null : $"Org.nr. {s.OrgNumber}{(s.VatRegistered ? " MVA" : "")}",
+                OrgNumber = s.OrgNumber,
+                VatRegistered = s.VatRegistered,
                 Address = s.FormattedAddress,
                 Email = s.PublicEmail,
             };

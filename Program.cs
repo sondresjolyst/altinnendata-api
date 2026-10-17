@@ -192,6 +192,7 @@ namespace altinnendata_api
                 o.NewUser = u => new User { FirstName = u.FirstName, LastName = u.LastName };
             });
             app.MapAppKitContentImages<ApplicationDbContext>("/api/content-images", o => o.Policy = Policies.Admin);
+            app.MapAppKitEmailStats(configure: o => o.Policy = Policies.Admin);
             app.MapAppKitHealthChecks();
             app.Run();
         }
