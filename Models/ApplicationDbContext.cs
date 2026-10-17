@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SjolystInnovation.AppKit.SiteSettings;
-using altinnendata_api.Models.Content;
 using altinnendata_api.Models.Admin;
 using SjolystInnovation.AppKit.Auth;
 using SjolystInnovation.AppKit.Storage.Images;
@@ -14,7 +13,7 @@ namespace altinnendata_api.Models
     {
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<AppSettings> AppSettings { get; set; }
-        public DbSet<HomePageContent> HomePageContents { get; set; }
+        public DbSet<PageSections> PageSections { get; set; }
         public DbSet<LegalPage> LegalPages { get; set; }
         public DbSet<PcBuild> PcBuilds { get; set; }
         public DbSet<PcBuildTranslation> PcBuildTranslations { get; set; }
@@ -42,11 +41,14 @@ namespace altinnendata_api.Models
                 .HasIndex(s => s.Date)
                 .IsUnique();
 
-            modelBuilder.Entity<HomePageContent>()
-                .HasIndex(c => c.Locale)
-                .IsUnique();
-
             modelBuilder.AddAppKitLegalPages();
+
+            // The home page sections keep their existing table, which holds one page per locale.
+            modelBuilder.AddAppKitPageSections(o =>
+            {
+                o.TableName = "HomePageContents";
+                o.KeyColumn = false;
+            });
 
             modelBuilder.Entity<PcBuild>()
                 .HasIndex(b => b.Slug)

@@ -179,6 +179,12 @@ namespace altinnendata_api
                 o.Locales = Locales.Supported;
                 o.Policy = Policies.Admin;
             });
+            app.MapAppKitPageSections<ApplicationDbContext>(configure: o =>
+            {
+                o.Locales = Locales.Supported;
+                o.DefaultLocale = Locales.Default;
+                o.Policy = Policies.Admin;
+            });
             app.MapAppKitUserAdmin<User, ApplicationDbContext>(configure: o =>
             {
                 o.Roles = RoleNames.AllRoles;

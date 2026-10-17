@@ -225,6 +225,105 @@ namespace altinnendata_api.Migrations
                     b.ToTable("LegalPages", (string)null);
                 });
 
+            modelBuilder.Entity("SjolystInnovation.AppKit.SiteSettings.PageSections", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("SectionsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Locale")
+                        .IsUnique();
+
+                    b.ToTable("HomePageContents", (string)null);
+                });
+
+            modelBuilder.Entity("SjolystInnovation.AppKit.Storage.Images.ContentImage", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StoredPath")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("UploadedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ContentImages", (string)null);
+                });
+
+            modelBuilder.Entity("SjolystInnovation.AppKit.Storage.Images.ContentImageVariant", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ContentImageId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StoredPath")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentImageId");
+
+                    b.ToTable("ContentImageVariants", (string)null);
+                });
+
             modelBuilder.Entity("altinnendata_api.Models.Admin.AppSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -571,105 +670,6 @@ namespace altinnendata_api.Migrations
                     b.ToTable("ComponentParts");
                 });
 
-            modelBuilder.Entity("altinnendata_api.Models.Content.HomePageContent", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Locale")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<string>("SectionsJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Locale")
-                        .IsUnique();
-
-                    b.ToTable("HomePageContents");
-                });
-
-            modelBuilder.Entity("altinnendata_api.Models.ContentImage", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(260)
-                        .HasColumnType("character varying(260)");
-
-                    b.Property<int>("Height")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("StoredPath")
-                        .IsRequired()
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<string>("UploadedByUserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("character varying(450)");
-
-                    b.Property<int>("Width")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ContentImages");
-                });
-
-            modelBuilder.Entity("altinnendata_api.Models.ContentImageVariant", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("ContentImageId")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("StoredPath")
-                        .IsRequired()
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<int>("Width")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContentImageId");
-
-                    b.ToTable("ContentImageVariants");
-                });
-
             modelBuilder.Entity("altinnendata_api.Models.PcBuild", b =>
                 {
                     b.Property<int>("Id")
@@ -991,6 +991,17 @@ namespace altinnendata_api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SjolystInnovation.AppKit.Storage.Images.ContentImageVariant", b =>
+                {
+                    b.HasOne("SjolystInnovation.AppKit.Storage.Images.ContentImage", "ContentImage")
+                        .WithMany("Variants")
+                        .HasForeignKey("ContentImageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ContentImage");
+                });
+
             modelBuilder.Entity("altinnendata_api.Models.BuildClassTranslation", b =>
                 {
                     b.HasOne("altinnendata_api.Models.BuildClass", "BuildClass")
@@ -1042,17 +1053,6 @@ namespace altinnendata_api.Migrations
                     b.Navigation("Manufacturer");
                 });
 
-            modelBuilder.Entity("altinnendata_api.Models.ContentImageVariant", b =>
-                {
-                    b.HasOne("altinnendata_api.Models.ContentImage", "ContentImage")
-                        .WithMany("Variants")
-                        .HasForeignKey("ContentImageId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ContentImage");
-                });
-
             modelBuilder.Entity("altinnendata_api.Models.PcBuild", b =>
                 {
                     b.HasOne("altinnendata_api.Models.BuildClass", "BuildClass")
@@ -1097,7 +1097,7 @@ namespace altinnendata_api.Migrations
 
             modelBuilder.Entity("altinnendata_api.Models.PcBuildImage", b =>
                 {
-                    b.HasOne("altinnendata_api.Models.ContentImage", "ContentImage")
+                    b.HasOne("SjolystInnovation.AppKit.Storage.Images.ContentImage", "ContentImage")
                         .WithMany()
                         .HasForeignKey("ContentImageId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1125,6 +1125,11 @@ namespace altinnendata_api.Migrations
                     b.Navigation("PcBuild");
                 });
 
+            modelBuilder.Entity("SjolystInnovation.AppKit.Storage.Images.ContentImage", b =>
+                {
+                    b.Navigation("Variants");
+                });
+
             modelBuilder.Entity("altinnendata_api.Models.BuildClass", b =>
                 {
                     b.Navigation("Translations");
@@ -1138,11 +1143,6 @@ namespace altinnendata_api.Migrations
             modelBuilder.Entity("altinnendata_api.Models.ComponentCondition", b =>
                 {
                     b.Navigation("Translations");
-                });
-
-            modelBuilder.Entity("altinnendata_api.Models.ContentImage", b =>
-                {
-                    b.Navigation("Variants");
                 });
 
             modelBuilder.Entity("altinnendata_api.Models.PcBuild", b =>
