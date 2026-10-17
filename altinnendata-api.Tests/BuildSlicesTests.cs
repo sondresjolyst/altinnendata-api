@@ -171,7 +171,7 @@ public class BuildSlicesTests : TestBase
             ]
         };
 
-        var ok = Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, new FakeImageStorage(), default));
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, CreateImageService(db), default));
 
         Assert.Equal("kontor-pc", ok.Value!.Slug);
         Assert.Equal("Sold", ok.Value.Availability);
@@ -185,7 +185,7 @@ public class BuildSlicesTests : TestBase
         await using var db = CreateDbContext();
         var build = await SeedBuildAsync(db);
 
-        Assert.IsType<NoContent>(await BuildCommands.Delete(build.Id, db, new FakeImageStorage(), default));
+        Assert.IsType<NoContent>(await BuildCommands.Delete(build.Id, db, CreateImageService(db), default));
 
         Assert.Empty(await db.PcBuilds.ToListAsync());
     }
@@ -194,7 +194,7 @@ public class BuildSlicesTests : TestBase
     public async Task Delete_UnknownId_ReturnsNotFound()
     {
         await using var db = CreateDbContext();
-        Assert.IsType<NotFound>(await BuildCommands.Delete(404, db, new FakeImageStorage(), default));
+        Assert.IsType<NotFound>(await BuildCommands.Delete(404, db, CreateImageService(db), default));
     }
 
     private static UpdateBuildDto UpdateDto(string availability, DateOnly? soldOn = null) => new()
@@ -212,7 +212,7 @@ public class BuildSlicesTests : TestBase
         var build = await SeedBuildAsync(db);
 
         var ok = Assert.IsType<Ok<BuildAdminDto>>(
-            await BuildCommands.Update(build.Id, UpdateDto("Sold"), db, new FakeImageStorage(), default));
+            await BuildCommands.Update(build.Id, UpdateDto("Sold"), db, CreateImageService(db), default));
 
         Assert.Equal(DateOnly.FromDateTime(DateTime.UtcNow), ok.Value!.SoldOn);
     }
@@ -226,7 +226,7 @@ public class BuildSlicesTests : TestBase
         await db.SaveChangesAsync();
 
         var ok = Assert.IsType<Ok<BuildAdminDto>>(
-            await BuildCommands.Update(build.Id, UpdateDto("Sold"), db, new FakeImageStorage(), default));
+            await BuildCommands.Update(build.Id, UpdateDto("Sold"), db, CreateImageService(db), default));
 
         Assert.Null(ok.Value!.SoldOn);
     }
@@ -239,7 +239,7 @@ public class BuildSlicesTests : TestBase
         var sold = new DateOnly(2026, 3, 14);
 
         var ok = Assert.IsType<Ok<BuildAdminDto>>(
-            await BuildCommands.Update(build.Id, UpdateDto("Sold", sold), db, new FakeImageStorage(), default));
+            await BuildCommands.Update(build.Id, UpdateDto("Sold", sold), db, CreateImageService(db), default));
 
         Assert.Equal(sold, ok.Value!.SoldOn);
     }
@@ -255,7 +255,7 @@ public class BuildSlicesTests : TestBase
         await db.SaveChangesAsync();
 
         var ok = Assert.IsType<Ok<BuildAdminDto>>(
-            await BuildCommands.Update(build.Id, UpdateDto("Reserved"), db, new FakeImageStorage(), default));
+            await BuildCommands.Update(build.Id, UpdateDto("Reserved"), db, CreateImageService(db), default));
 
         Assert.Equal("Reserved", ok.Value!.Availability);
         Assert.Equal(sold, ok.Value.SoldOn);
@@ -284,7 +284,7 @@ public class BuildSlicesTests : TestBase
         var dto = UpdateDto("Available");
         dto.BuildClassId = 404;
 
-        var result = await BuildCommands.Update(build.Id, dto, db, new FakeImageStorage(), default);
+        var result = await BuildCommands.Update(build.Id, dto, db, CreateImageService(db), default);
 
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
     }
@@ -357,7 +357,7 @@ public class BuildSlicesTests : TestBase
         var dto = UpdateDto("Available");
         dto.Components = [new BuildComponentInput { Name = "RTX 3070", ComponentConditionId = 404 }];
 
-        var result = await BuildCommands.Update(build.Id, dto, db, new FakeImageStorage(), default);
+        var result = await BuildCommands.Update(build.Id, dto, db, CreateImageService(db), default);
 
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
     }

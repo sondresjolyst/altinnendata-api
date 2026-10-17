@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using SjolystInnovation.AppKit.Storage.Images;
 using altinnendata_api.Constants;
 using System.Security.Claims;
 using altinnendata_api.Models;
 
 namespace altinnendata_api.Tests;
 
-/// <summary>The helpers the tests share: an in-memory database and a sample user.</summary>
+/// <summary>The helpers the tests share: an in-memory database, the content image service, and a sample user.</summary>
 public abstract class TestBase
 {
     protected static ApplicationDbContext CreateDbContext() =>
@@ -15,6 +17,18 @@ public abstract class TestBase
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
+
+    private static readonly string ImagesRoot = Path.Combine(Path.GetTempPath(), "altinnendata-api-tests", "images");
+
+    /// <summary>The package's content image service on <paramref name="db"/>, with the image files in a temporary directory.</summary>
+    protected static IContentImageService CreateImageService(ApplicationDbContext db)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(db);
+        services.AddAppKitContentImages<ApplicationDbContext>(o => o.ImagesPath = ImagesRoot);
+        return services.BuildServiceProvider().GetRequiredService<IContentImageService>();
+    }
 
     protected static ControllerContext MakeControllerContext(string userId = "user-1", bool isAdmin = false)
     {

@@ -1,10 +1,10 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
 using altinnendata_api.Constants;
-using altinnendata_api.Helpers;
 using altinnendata_api.Infrastructure;
-using altinnendata_api.Models;
-using altinnendata_api.Services;
+using SjolystInnovation.AppKit.Auth;
+using SjolystInnovation.AppKit.Storage;
+using SjolystInnovation.AppKit.Storage.Images;
 
 namespace altinnendata_api.Features.Finn
 {
@@ -45,8 +45,7 @@ namespace altinnendata_api.Features.Finn
         public static async Task<IResult> Handle(
             FinnImportRequest request,
             IHttpClientFactory clients,
-            ApplicationDbContext db,
-            IImageStorageService images,
+            IContentImageService images,
             HttpContext http,
             ILoggerFactory loggerFactory,
             CancellationToken ct)
@@ -81,7 +80,7 @@ namespace altinnendata_api.Features.Finn
             {
                 if (!FinnUrls.IsImageUrl(imageUrl)) { skipped++; continue; }
 
-                var id = await StoreImageAsync(client, imageUrl, db, images, http, ct);
+                var id = await StoreImageAsync(client, imageUrl, images, http, ct);
                 if (id == null) skipped++;
                 else stored.Add(id);
             }
@@ -162,8 +161,7 @@ namespace altinnendata_api.Features.Finn
         private static async Task<string?> StoreImageAsync(
             HttpClient client,
             string url,
-            ApplicationDbContext db,
-            IImageStorageService images,
+            IContentImageService images,
             HttpContext http,
             CancellationToken ct)
         {
@@ -182,32 +180,11 @@ namespace altinnendata_api.Features.Finn
                 var fileName = Path.GetFileName(new Uri(url).AbsolutePath);
                 if (string.IsNullOrWhiteSpace(fileName)) fileName = "finn-image";
 
-                var file = new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", fileName)
-                {
-                    Headers = new HeaderDictionary(),
-                    ContentType = contentType,
-                };
-
-                var (storedPath, storedType, sizeBytes) = await images.SaveAsync(file, ct);
-
-                var image = new ContentImage
-                {
-                    FileName = fileName,
-                    ContentType = storedType,
-                    SizeBytes = sizeBytes,
-                    StoredPath = storedPath,
-                    UploadedByUserId = http.User.UserId(),
-                };
-                db.ContentImages.Add(image);
-                await db.SaveChangesAsync(ct);
-
-                foreach (var variant in await images.GenerateWebpVariantsAsync(storedPath, ct))
-                    db.ContentImageVariants.Add(ContentImageVariant.From(image.Id, variant));
-                await db.SaveChangesAsync(ct);
-
+                using var content = new MemoryStream(bytes);
+                var image = await images.CreateAsync(content, fileName, http.User.GetUserId(), ct);
                 return image.Id;
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UriFormatException or AppValidationException)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UriFormatException or AppKitFileRefusedException)
             {
                 return null;
             }

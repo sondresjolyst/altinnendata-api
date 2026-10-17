@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using SjolystInnovation.AppKit.Storage.Images;
 
 namespace altinnendata_api.Models
 {

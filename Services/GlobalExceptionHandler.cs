@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using SjolystInnovation.AppKit.Storage;
 
 namespace altinnendata_api.Services
 {
@@ -22,7 +23,7 @@ namespace altinnendata_api.Services
         {
             var (status, title) = exception switch
             {
-                AppValidationException => (StatusCodes.Status400BadRequest, exception.Message),
+                AppKitFileRefusedException => (StatusCodes.Status400BadRequest, exception.Message),
                 _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
             };
 
