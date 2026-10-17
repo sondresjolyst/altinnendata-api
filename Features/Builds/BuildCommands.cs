@@ -3,7 +3,7 @@ using altinnendata_api.Constants;
 using altinnendata_api.Helpers;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
-using altinnendata_api.Services;
+using SjolystInnovation.AppKit.Storage.Images;
 
 namespace altinnendata_api.Features.Builds
 {
@@ -45,7 +45,7 @@ namespace altinnendata_api.Features.Builds
             return TypedResults.Created($"/api/builds/{build.Slug}", BuildMapping.ToAdmin(created!));
         }
 
-        public static async Task<IResult> Update(int id, UpdateBuildDto dto, ApplicationDbContext db, IImageStorageService images, CancellationToken ct)
+        public static async Task<IResult> Update(int id, UpdateBuildDto dto, ApplicationDbContext db, IContentImageService images, CancellationToken ct)
         {
             var build = await db.PcBuilds
                 .Include(b => b.Translations)
@@ -77,7 +77,10 @@ namespace altinnendata_api.Features.Builds
             build.SortOrder = dto.SortOrder;
             build.UpdatedAt = DateTime.UtcNow;
 
-            await RemoveDroppedImagesAsync(build, dto.ImageIds, db, images, ct);
+            var dropped = build.Images
+                .Select(i => i.ContentImageId)
+                .Where(imageId => !dto.ImageIds.Contains(imageId))
+                .ToList();
 
             db.PcBuildTranslations.RemoveRange(build.Translations);
             build.Translations.Clear();
@@ -92,20 +95,22 @@ namespace altinnendata_api.Features.Builds
             ApplyImages(build, dto);
 
             await db.SaveChangesAsync(ct);
+            await images.DeleteOrphansAsync(dropped, ct);
 
             var updated = await LoadAsync(build.Id, db, ct);
             return TypedResults.Ok(BuildMapping.ToAdmin(updated!));
         }
 
-        public static async Task<IResult> Delete(int id, ApplicationDbContext db, IImageStorageService images, CancellationToken ct)
+        public static async Task<IResult> Delete(int id, ApplicationDbContext db, IContentImageService images, CancellationToken ct)
         {
             var build = await db.PcBuilds.Include(b => b.Images).FirstOrDefaultAsync(b => b.Id == id, ct);
             if (build == null) return TypedResults.NotFound();
 
-            await DeleteUnusedImagesAsync(build.Images.Select(i => i.ContentImageId).ToList(), build.Id, db, images, ct);
+            var imageIds = build.Images.Select(i => i.ContentImageId).ToList();
 
             db.PcBuilds.Remove(build);
             await db.SaveChangesAsync(ct);
+            await images.DeleteOrphansAsync(imageIds, ct);
             return TypedResults.NoContent();
         }
 
@@ -195,42 +200,6 @@ namespace altinnendata_api.Features.Builds
                     SortOrder = order++
                 });
             }
-        }
-
-        private static async Task RemoveDroppedImagesAsync(PcBuild build, List<string> keptIds, ApplicationDbContext db, IImageStorageService images, CancellationToken ct)
-        {
-            var dropped = build.Images
-                .Select(i => i.ContentImageId)
-                .Where(id => !keptIds.Contains(id))
-                .ToList();
-
-            await DeleteUnusedImagesAsync(dropped, build.Id, db, images, ct);
-        }
-
-        private static async Task DeleteUnusedImagesAsync(List<string> imageIds, int buildId, ApplicationDbContext db, IImageStorageService images, CancellationToken ct)
-        {
-            if (imageIds.Count == 0) return;
-
-            var usedElsewhere = await db.PcBuildImages
-                .Where(i => imageIds.Contains(i.ContentImageId) && i.PcBuildId != buildId)
-                .Select(i => i.ContentImageId)
-                .ToListAsync(ct);
-
-            var orphans = await db.ContentImages
-                .Include(i => i.Variants)
-                .Where(i => imageIds.Contains(i.Id) && !usedElsewhere.Contains(i.Id))
-                .ToListAsync(ct);
-
-            foreach (var image in orphans)
-                DeleteImage(image, db, images);
-        }
-
-        private static void DeleteImage(ContentImage image, ApplicationDbContext db, IImageStorageService images)
-        {
-            images.Delete(image.StoredPath);
-            foreach (var variant in image.Variants)
-                images.Delete(variant.StoredPath);
-            db.ContentImages.Remove(image);
         }
 
         private static async Task<string> UniqueSlugAsync(string title, int? excludeId, ApplicationDbContext db, CancellationToken ct)

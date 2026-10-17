@@ -2,17 +2,20 @@ using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Constants;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
+using altinnendata_api.Models.Admin;
 using altinnendata_api.Services;
+using Microsoft.Extensions.Options;
+using SjolystInnovation.AppKit.AdminStats;
+using SjolystInnovation.AppKit.Storage.Images;
 
 namespace altinnendata_api.Features.Admin
 {
     /// <summary>Admin dashboard: aggregate stats, daily history, roles, Brevo email stats.</summary>
     public static class AdminDashboard
     {
-        public static async Task<IResult> GetStats(ApplicationDbContext db, IConfiguration config, ILoggerFactory loggerFactory, CancellationToken ct)
+        public static async Task<IResult> GetStats(ApplicationDbContext db, IOptions<AppKitContentImagesOptions> images, ILoggerFactory loggerFactory, CancellationToken ct)
         {
-            var options = config.GetSection("Storage").Get<StorageOptions>() ?? new StorageOptions();
-            var imagesPath = Path.GetFullPath(options.ImagesPath);
+            var imagesPath = Path.GetFullPath(images.Value.ImagesPath);
 
             long diskTotal = 0, diskFree = 0;
             try
@@ -50,9 +53,13 @@ namespace altinnendata_api.Features.Admin
             });
         }
 
-        public static async Task<IResult> GetStatsHistory(ApplicationDbContext db, CancellationToken ct)
+        /// <summary>
+        /// The package's daily history with SoldBuilds added. The package serves only stored counters, and
+        /// sold counts are derived instead, so this endpoint stays in the app.
+        /// </summary>
+        public static async Task<IResult> GetStatsHistory(ApplicationDbContext db, AppKitDailyStats<ApplicationDbContext, DailyStatSnapshot> stats, CancellationToken ct, DateOnly? from = null)
         {
-            var snapshots = await StatsSnapshotService.GetHistoryAsync(db, ct);
+            var snapshots = await stats.GetHistoryAsync(db, from, ct);
 
             // Sold counts are not snapshotted but derived from each sale's own date, so a sale
             // dated before the snapshot table existed still lands on the right day. The flip side:
@@ -74,6 +81,16 @@ namespace altinnendata_api.Features.Admin
             }).ToList();
             return TypedResults.Ok(result);
         }
+
+        /// <summary>The counts the daily history stores, as they are right now.</summary>
+        public static async Task<DailyStatSnapshot> SampleAsync(ApplicationDbContext db, CancellationToken ct) => new()
+        {
+            TotalUsers = await db.Users.CountAsync(u => !u.IsDeleted, ct),
+            PublishedBuilds = await db.PcBuilds.CountAsync(b => b.Published, ct),
+            DraftBuilds = await db.PcBuilds.CountAsync(b => !b.Published, ct),
+            CatalogParts = await db.ComponentParts.CountAsync(ct),
+            ContentImages = await db.ContentImages.CountAsync(ct)
+        };
 
         public static IResult GetRoles() => TypedResults.Ok(RoleNames.AllRoles);
 

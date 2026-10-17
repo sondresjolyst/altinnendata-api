@@ -5,6 +5,7 @@ using SjolystInnovation.AppKit.SiteSettings;
 using altinnendata_api.Models.Content;
 using altinnendata_api.Models.Admin;
 using SjolystInnovation.AppKit.Auth;
+using SjolystInnovation.AppKit.Storage.Images;
 
 namespace altinnendata_api.Models
 {
@@ -35,6 +36,7 @@ namespace altinnendata_api.Models
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.AddAppKitRefreshTokens<User>();
+            modelBuilder.AddAppKitContentImages();
 
             modelBuilder.Entity<DailyStatSnapshot>()
                 .HasIndex(s => s.Date)
@@ -174,12 +176,6 @@ namespace altinnendata_api.Models
                 .WithMany()
                 .HasForeignKey(p => p.ManufacturerId)
                 .OnDelete(DeleteBehavior.SetNull);
-
-            modelBuilder.Entity<ContentImageVariant>()
-                .HasOne(v => v.ContentImage)
-                .WithMany(i => i.Variants)
-                .HasForeignKey(v => v.ContentImageId)
-                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

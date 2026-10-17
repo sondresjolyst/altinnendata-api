@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Features.Builds;
 using altinnendata_api.Models;
+using SjolystInnovation.AppKit.Storage.Images;
 using Xunit;
 
 namespace altinnendata_api.Tests;
@@ -56,7 +57,7 @@ public class BuildGalleryTests : TestBase
             Translations = [new BuildTranslationInput { Locale = "no", Title = "Gaming-PC" }],
             ImageIds = ["b"],
         };
-        var ok = Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, new FakeImageStorage(), default));
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, CreateImageService(db), default));
 
         Assert.Equal(["b"], ok.Value!.ImageIds);
         Assert.Equal(1, await db.PcBuildImages.CountAsync());
@@ -92,11 +93,45 @@ public class BuildGalleryTests : TestBase
             Translations = [new BuildTranslationInput { Locale = "no", Title = "Gaming-PC" }],
             ImageIds = ["a"],
         };
-        var storage = new FakeImageStorage();
-        Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, storage, default));
+        Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, CreateImageService(db), default));
 
         Assert.Null(await db.ContentImages.FindAsync("b"));
         Assert.NotNull(await db.ContentImages.FindAsync("a"));
+    }
+
+    [Fact]
+    public async Task Update_KeepsADroppedImageAnotherBuildUses()
+    {
+        await using var db = CreateDbContext();
+        db.ContentImages.AddRange(Image("a"), Image("b"));
+        await db.SaveChangesAsync();
+        var created = Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(Dto("a", "b"), db, default));
+        Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(Dto("b"), db, default));
+
+        var dto = new UpdateBuildDto
+        {
+            Availability = "Available",
+            Translations = [new BuildTranslationInput { Locale = "no", Title = "Gaming-PC" }],
+            ImageIds = ["a"],
+        };
+        Assert.IsType<Ok<BuildAdminDto>>(await BuildCommands.Update(created.Value!.Id, dto, db, CreateImageService(db), default));
+
+        Assert.NotNull(await db.ContentImages.FindAsync("b"));
+    }
+
+    [Fact]
+    public async Task Delete_DeletesTheImagesNoOtherBuildUses()
+    {
+        await using var db = CreateDbContext();
+        db.ContentImages.AddRange(Image("a"), Image("b"));
+        await db.SaveChangesAsync();
+        var created = Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(Dto("a", "b"), db, default));
+        Assert.IsType<Created<BuildAdminDto>>(await BuildCommands.Create(Dto("b"), db, default));
+
+        Assert.IsType<NoContent>(await BuildCommands.Delete(created.Value!.Id, db, CreateImageService(db), default));
+
+        Assert.Null(await db.ContentImages.FindAsync("a"));
+        Assert.NotNull(await db.ContentImages.FindAsync("b"));
     }
 
     [Theory]
