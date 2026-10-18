@@ -52,6 +52,7 @@ namespace altinnendata_api
 
             builder.Services.AddMemoryCache();
             builder.Services.AddShopVipps(builder.Configuration);
+            builder.Services.AddScoped<IOrderNotifier, OrderNotifier>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()
