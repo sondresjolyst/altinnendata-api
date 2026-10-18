@@ -15,6 +15,8 @@ public sealed class PostgresDatabase : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18")
         .WithLogger(NullLogger.Instance)
+        // Each test database keeps its own idle connection pool, so a long run passes the default limit of 100.
+        .WithCommand("-c", "max_connections=500")
         .Build();
 
     public ValueTask InitializeAsync() => new(_container.StartAsync());
