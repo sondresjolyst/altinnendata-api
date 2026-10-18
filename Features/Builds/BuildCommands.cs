@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Constants;
+using altinnendata_api.Features.Shop;
 using altinnendata_api.Helpers;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
@@ -96,7 +97,7 @@ namespace altinnendata_api.Features.Builds
             build.Images.Clear();
             ApplyImages(build, dto);
 
-            await db.SaveChangesAsync(ct);
+            if (!await TrySaveAsync(db, ct)) return BuildChanged();
             await images.DeleteOrphansAsync(dropped, ct);
 
             var updated = await LoadAsync(build.Id, db, ct);
@@ -111,10 +112,27 @@ namespace altinnendata_api.Features.Builds
             var imageIds = build.Images.Select(i => i.ContentImageId).ToList();
 
             db.PcBuilds.Remove(build);
-            await db.SaveChangesAsync(ct);
+            if (!await TrySaveAsync(db, ct)) return BuildChanged();
             await images.DeleteOrphansAsync(imageIds, ct);
             return TypedResults.NoContent();
         }
+
+        /// <summary>False when the build changed since it was read, for example by a checkout holding it.</summary>
+        private static async Task<bool> TrySaveAsync(ApplicationDbContext db, CancellationToken ct)
+        {
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return false;
+            }
+        }
+
+        private static IResult BuildChanged() =>
+            ShopProblems.Code(StatusCodes.Status409Conflict, "buildChanged", "Datamaskinen ble endret av noen andre. Last siden på nytt.");
 
         private static async Task<PcBuild?> LoadAsync(int id, ApplicationDbContext db, CancellationToken ct) =>
             await db.PcBuilds

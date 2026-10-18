@@ -1,5 +1,8 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using altinnendata_api.Features.Builds;
 using altinnendata_api.Features.Shop;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Shop;
@@ -8,7 +11,7 @@ using Xunit;
 namespace altinnendata_api.Tests;
 
 [Collection("postgres")]
-public class BuildHoldTests(PostgresDatabase postgres)
+public class BuildHoldTests(PostgresDatabase postgres) : TestBase
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -136,6 +139,37 @@ public class BuildHoldTests(PostgresDatabase postgres)
         var reloaded = await ReloadAsync(db, build.Id);
         Assert.Equal(BuildAvailability.Reserved, reloaded.Availability);
         Assert.Equal(winner, reloaded.HeldByOrderId);
+    }
+
+    [Fact]
+    public async Task AdminUpdate_FromAStaleRead_IsRefused_AndKeepsTheOrderHold()
+    {
+        await using var admin = await postgres.NewContextAsync();
+        var (build, order) = await SeedAsync(admin);
+
+        // The admin's request has read the build as Available with no hold.
+        await admin.PcBuilds.SingleAsync(b => b.Id == build.Id, Ct);
+
+        // Checkout holds it in the meantime.
+        await using (var checkout = postgres.NewContextOn(admin))
+            Assert.True(await BuildHold.TryHoldAsync(checkout, build.Id, order.Id, 1, Ct));
+
+        var dto = new UpdateBuildDto
+        {
+            Availability = "Reserved",
+            PriceNok = 18990,
+            Published = true,
+            Translations = [new BuildTranslationInput { Locale = "no", Title = "Gaming-PC" }]
+        };
+        var result = await BuildCommands.Update(build.Id, dto, admin, CreateImageService(admin), Ct);
+
+        var problem = Assert.IsType<ProblemHttpResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, problem.StatusCode);
+        Assert.Equal("buildChanged", problem.ProblemDetails.Extensions["code"]);
+        await using var fresh = postgres.NewContextOn(admin);
+        var reloaded = await ReloadAsync(fresh, build.Id);
+        Assert.Equal(BuildAvailability.Reserved, reloaded.Availability);
+        Assert.Equal(order.Id, reloaded.HeldByOrderId);
     }
 
     private static async Task WaitForALockWaiterAsync(string connectionString)

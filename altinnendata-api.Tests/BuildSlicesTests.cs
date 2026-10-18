@@ -266,7 +266,7 @@ public class BuildSlicesTests : TestBase
         var build = await SeedBuildAsync(db);
         build.Availability = BuildAvailability.Reserved;
         build.HeldByOrderId = 5;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         return build;
     }
 
@@ -277,9 +277,9 @@ public class BuildSlicesTests : TestBase
         var build = await SeedHeldBuildAsync(db);
 
         Assert.IsType<Ok<BuildAdminDto>>(
-            await BuildCommands.Update(build.Id, UpdateDto("Available"), db, CreateImageService(db), default));
+            await BuildCommands.Update(build.Id, UpdateDto("Available"), db, CreateImageService(db), TestContext.Current.CancellationToken));
 
-        var reloaded = await db.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == build.Id);
+        var reloaded = await db.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == build.Id, TestContext.Current.CancellationToken);
         Assert.Equal(BuildAvailability.Available, reloaded.Availability);
         Assert.Null(reloaded.HeldByOrderId);
     }
@@ -293,9 +293,9 @@ public class BuildSlicesTests : TestBase
         dto.Translations = [new BuildTranslationInput { Locale = "no", Title = "Ny tittel" }];
 
         Assert.IsType<Ok<BuildAdminDto>>(
-            await BuildCommands.Update(build.Id, dto, db, CreateImageService(db), default));
+            await BuildCommands.Update(build.Id, dto, db, CreateImageService(db), TestContext.Current.CancellationToken));
 
-        var reloaded = await db.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == build.Id);
+        var reloaded = await db.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == build.Id, TestContext.Current.CancellationToken);
         Assert.Equal("ny-tittel", reloaded.Slug);
         Assert.Equal(5, reloaded.HeldByOrderId);
     }

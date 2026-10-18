@@ -100,6 +100,10 @@ namespace altinnendata_api.Models
             });
 
             modelBuilder.Entity<PcBuild>()
+                .Property(b => b.Version)
+                .IsRowVersion();
+
+            modelBuilder.Entity<PcBuild>()
                 .HasOne<Order>()
                 .WithMany()
                 .HasForeignKey(b => b.HeldByOrderId)
