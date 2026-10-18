@@ -1037,7 +1037,7 @@ namespace altinnendata_api.Migrations
                     b.Property<int>("DeliveryPriceInOre")
                         .HasColumnType("integer");
 
-                    b.Property<string>("FikenInvoiceNumber")
+                    b.Property<string>("InvoiceNumber")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 

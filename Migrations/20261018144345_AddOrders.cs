@@ -48,7 +48,7 @@ namespace altinnendata_api.Migrations
                     RefundedInOre = table.Column<int>(type: "integer", nullable: false),
                     IsTest = table.Column<bool>(type: "boolean", nullable: false),
                     CaptureGuaranteedUntil = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    FikenInvoiceNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    InvoiceNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     TermsAcceptedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     AuthorizedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CapturedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),

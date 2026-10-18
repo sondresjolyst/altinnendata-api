@@ -95,7 +95,7 @@ namespace altinnendata_api.Models
                 order.Property(o => o.PickupNote).HasMaxLength(500);
                 order.Property(o => o.BuildTitle).HasMaxLength(200);
                 order.Property(o => o.BuildSlug).HasMaxLength(160);
-                order.Property(o => o.FikenInvoiceNumber).HasMaxLength(50);
+                order.Property(o => o.InvoiceNumber).HasMaxLength(50);
                 order.HasIndex(o => o.CreatedAt);
                 order.Property(o => o.Version).IsRowVersion();
 

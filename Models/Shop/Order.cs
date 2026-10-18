@@ -45,7 +45,7 @@ namespace altinnendata_api.Models.Shop
 
         public bool IsTest { get; set; }
         public DateTimeOffset? CaptureGuaranteedUntil { get; set; }
-        public string? FikenInvoiceNumber { get; set; }
+        public string? InvoiceNumber { get; set; }
 
         public DateTime TermsAcceptedAt { get; set; }
         public DateTime? AuthorizedAt { get; set; }
