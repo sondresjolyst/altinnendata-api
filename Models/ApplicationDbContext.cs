@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -6,11 +7,12 @@ using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
 using SjolystInnovation.AppKit.Auth;
 using SjolystInnovation.AppKit.Storage.Images;
+using SjolystInnovation.AppKit.Vipps;
 
 namespace altinnendata_api.Models
 {
     public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-        : IdentityDbContext<User, IdentityRole, string>(options), IAuthDbContext
+        : IdentityDbContext<User, IdentityRole, string>(options), IAuthDbContext, IVippsWebhookDbContext, IDataProtectionKeyContext
     {
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<AppSettings> AppSettings { get; set; }
@@ -34,6 +36,8 @@ namespace altinnendata_api.Models
         public DbSet<ShopSettings> ShopSettings { get; set; }
         public DbSet<DeliveryOption> DeliveryOptions { get; set; }
         public DbSet<Order> Orders { get; set; }
+        public DbSet<VippsProcessedWebhookEvent> ProcessedWebhookEvents { get; set; }
+        public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -46,6 +50,8 @@ namespace altinnendata_api.Models
                 .IsUnique();
 
             modelBuilder.AddAppKitLegalPages();
+            modelBuilder.AddAppKitVippsProcessedWebhookEvents();
+            modelBuilder.AddAppKitVippsWebhookRegistrations();
 
             modelBuilder.Entity<ShopSettings>()
                 .Property(s => s.Id)

@@ -23,6 +23,7 @@ using SjolystInnovation.AppKit.Hosting;
 using SjolystInnovation.AppKit.Email;
 using SjolystInnovation.AppKit.Storage.Images;
 using SjolystInnovation.AppKit.AdminStats;
+using SjolystInnovation.AppKit.Vipps;
 
 namespace altinnendata_api
 {
@@ -199,6 +200,7 @@ namespace altinnendata_api
             });
             app.MapAppKitContentImages<ApplicationDbContext>("/api/content-images", o => o.Policy = Policies.Admin);
             app.MapAppKitEmailStats(configure: o => o.Policy = Policies.Admin);
+            app.MapAppKitVippsWebhook<ApplicationDbContext>(ShopVipps.Slot);
             app.MapAppKitHealthChecks();
             app.Run();
         }

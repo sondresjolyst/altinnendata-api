@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Memory;
 using SjolystInnovation.AppKit.Vipps;
 using altinnendata_api.Models;
@@ -30,9 +31,24 @@ namespace altinnendata_api.Features.Shop
         /// <summary>How long one Vipps HTTP call may take. Checkout holds the build's row lock while it waits.</summary>
         public static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(15);
 
-        /// <summary>Registers the Vipps client with the credentials in the <c>Vipps</c> section and the shop's test mode.</summary>
+        /// <summary>The name of the shop's ePayment webhook.</summary>
+        public const string Slot = "shop";
+
+        /// <summary>The path Vipps sends the shop's ePayment events to.</summary>
+        public const string WebhookPath = "/api/shop/webhook";
+
+        /// <summary>The Postgres advisory lock that lets one instance register the webhook at a time.</summary>
+        public const long AdvisoryLockKey = 7300115;
+
+        /// <summary>
+        /// Registers the Vipps client with the credentials in the <c>Vipps</c> section and the shop's test mode,
+        /// and the ePayment webhook. The Data Protection keys that protect the webhook secrets are kept in the database.
+        /// </summary>
         public static IServiceCollection AddShopVipps(this IServiceCollection services, IConfiguration config)
         {
+            services.AddDataProtection()
+                .PersistKeysToDbContext<ApplicationDbContext>()
+                .SetApplicationName("altinnendata-api");
             services.AddSingleton<IVippsEnvironment, ShopVippsEnvironment>();
             services.AddAppKitVipps(config.GetSection("Vipps"), o =>
                 {
@@ -40,6 +56,13 @@ namespace altinnendata_api.Features.Shop
                     o.SystemVersion = SystemVersion();
                 })
                 .ConfigureHttpClient(c => c.Timeout = HttpTimeout);
+            services.AddAppKitVippsWebhooks<ApplicationDbContext>(o =>
+            {
+                o.PublicBaseUrl = config["Api:PublicBaseUrl"] ?? "";
+                o.AddSlot(Slot, VippsWebhookKind.Payment, WebhookPath);
+                o.AdvisoryLockKey = AdvisoryLockKey;
+            });
+            services.AddScoped<IVippsPaymentWebhookHandler, ShopWebhookHandler>();
             return services;
         }
 

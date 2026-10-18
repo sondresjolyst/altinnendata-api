@@ -22,6 +22,25 @@ namespace altinnendata_api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Xml")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataProtectionKeys");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -322,6 +341,52 @@ namespace altinnendata_api.Migrations
                     b.HasIndex("ContentImageId");
 
                     b.ToTable("ContentImageVariants", (string)null);
+                });
+
+            modelBuilder.Entity("SjolystInnovation.AppKit.Vipps.VippsProcessedWebhookEvent", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProcessedAt");
+
+                    b.HasIndex("Source", "Id");
+
+                    b.ToTable("ProcessedWebhookEvents", (string)null);
+                });
+
+            modelBuilder.Entity("SjolystInnovation.AppKit.Vipps.VippsWebhookRegistrationEntry", b =>
+                {
+                    b.Property<string>("Slot")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ProtectedSecret")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("WebhookId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Slot", "IsTest");
+
+                    b.ToTable("VippsWebhookRegistrations", (string)null);
                 });
 
             modelBuilder.Entity("altinnendata_api.Models.Admin.AppSettings", b =>
