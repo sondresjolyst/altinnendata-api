@@ -33,16 +33,4 @@ namespace altinnendata_api.Features.Admin
         public int CatalogParts { get; set; }
         public int ContentImages { get; set; }
     }
-
-    public class EmailStatsDto
-    {
-        public int Days { get; set; }
-        public int Requests { get; set; }
-        public int Delivered { get; set; }
-        public int HardBounces { get; set; }
-        public int SoftBounces { get; set; }
-        public int SpamReports { get; set; }
-        public int Blocked { get; set; }
-        public int Invalid { get; set; }
-    }
 }

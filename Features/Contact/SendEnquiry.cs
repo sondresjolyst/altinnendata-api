@@ -8,6 +8,7 @@ using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Services;
+using SjolystInnovation.AppKit.Email;
 
 namespace altinnendata_api.Features.Contact
 {
@@ -43,7 +44,7 @@ namespace altinnendata_api.Features.Contact
         public static async Task<IResult> Handle(
             ContactRequest req,
             ApplicationDbContext db,
-            IEmailService email,
+            IEmailSender email,
             IConfiguration config,
             CancellationToken ct)
         {
@@ -55,11 +56,12 @@ namespace altinnendata_api.Features.Contact
                     .Include(b => b.Translations)
                     .FirstOrDefaultAsync(b => b.Slug == req.BuildSlug, ct);
 
-            await email.SendEmailAsync(
-                settings.ContactRecipientEmail,
-                $"New enquiry from {req.Name}",
-                BuildBody(req, build, config),
-                replyTo: req.Email);
+            await email.SendAsync(
+                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config))
+                {
+                    ReplyTo = req.Email,
+                },
+                ct);
 
             return TypedResults.Ok(new MessageResponse("Thanks — we'll be in touch."));
         }

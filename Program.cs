@@ -58,7 +58,6 @@ namespace altinnendata_api
                 });
 
             builder.Services.AddAppKitBrevo(builder.Configuration.GetSection("BrevoSettings"));
-            builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddScoped<IEmailBrand, AuthEmailBrand>();
             builder.Services.AddAppKitAuthEmails<User>(o =>
             {
@@ -192,6 +191,7 @@ namespace altinnendata_api
                 o.NewUser = u => new User { FirstName = u.FirstName, LastName = u.LastName };
             });
             app.MapAppKitContentImages<ApplicationDbContext>("/api/content-images", o => o.Policy = Policies.Admin);
+            app.MapAppKitEmailStats(configure: o => o.Policy = Policies.Admin);
             app.MapAppKitHealthChecks();
             app.Run();
         }

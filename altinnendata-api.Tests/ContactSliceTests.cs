@@ -5,13 +5,22 @@ using altinnendata_api.Features.Contact;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
-using altinnendata_api.Services;
+using SjolystInnovation.AppKit.Email;
 using Xunit;
 
 namespace altinnendata_api.Tests;
 
 public class ContactSliceTests : TestBase
 {
+    private static Mock<IEmailSender> Sender(Action<EmailMessage>? sent = null)
+    {
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<EmailMessage, CancellationToken>((m, _) => sent?.Invoke(m))
+            .ReturnsAsync(new EmailResult(true));
+        return email;
+    }
+
     private static IConfiguration Config(string baseUrl = "https://www.altinnendata.no") =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Site:BaseUrl"] = baseUrl })
@@ -23,23 +32,31 @@ public class ContactSliceTests : TestBase
         await using var db = CreateDbContext();
         db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
         await db.SaveChangesAsync();
-        var email = new Mock<IEmailService>();
+        EmailMessage? sent = null;
+        var email = Sender(m => sent = m);
+        using var cts = new CancellationTokenSource();
 
         var req = new ContactRequest("Ola", "ola@kunde.no", null, "gaming", "25000+", "gaming-pc", "Hi");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), cts.Token));
 
-        email.Verify(e => e.SendEmailAsync("shop@altinnendata.no", It.IsAny<string>(), It.IsAny<string>(), "ola@kunde.no"), Times.Once);
+        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), cts.Token), Times.Once);
+        Assert.Equal("shop@altinnendata.no", sent!.To);
+        Assert.Equal("ola@kunde.no", sent.ReplyTo);
+        Assert.Equal("New enquiry from Ola", sent.Subject);
     }
 
     [Fact]
     public async Task Send_FallsBackToDefaultRecipientWhenNoSettings()
     {
         await using var db = CreateDbContext();
-        var email = new Mock<IEmailService>();
+        EmailMessage? sent = null;
+        var email = Sender(m => sent = m);
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), default);
 
-        email.Verify(e => e.SendEmailAsync("sonyslyst@gmail.com", It.IsAny<string>(), It.IsAny<string>(), "kari@kunde.no"), Times.Once);
+        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("sonyslyst@gmail.com", sent!.To);
+        Assert.Equal("kari@kunde.no", sent.ReplyTo);
     }
 
     [Fact]
@@ -53,10 +70,8 @@ public class ContactSliceTests : TestBase
         });
         await db.SaveChangesAsync();
 
-        var email = new Mock<IEmailService>();
         string? body = null;
-        email.Setup(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            .Callback<string, string, string, string?>((_, _, html, _) => body = html);
+        var email = Sender(m => body = m.HtmlBody);
 
         var req = new ContactRequest("Ola", "ola@kunde.no", null, null, null, "lenovo-rtx-3060-3700x-2", "Er den ledig?");
         await SendEnquiry.Handle(req, db, email.Object, Config(), default);
@@ -70,10 +85,8 @@ public class ContactSliceTests : TestBase
     public async Task Send_LeavesOutTheFieldsTheSenderDidNotFill()
     {
         await using var db = CreateDbContext();
-        var email = new Mock<IEmailService>();
         string? body = null;
-        email.Setup(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            .Callback<string, string, string, string?>((_, _, html, _) => body = html);
+        var email = Sender(m => body = m.HtmlBody);
 
         await SendEnquiry.Handle(
             new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), default);
@@ -88,10 +101,8 @@ public class ContactSliceTests : TestBase
     public async Task Send_KeepsAnUnknownSlugAsPlainText()
     {
         await using var db = CreateDbContext();
-        var email = new Mock<IEmailService>();
         string? body = null;
-        email.Setup(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            .Callback<string, string, string, string?>((_, _, html, _) => body = html);
+        var email = Sender(m => body = m.HtmlBody);
 
         await SendEnquiry.Handle(
             new ContactRequest("Ola", "ola@kunde.no", null, null, null, "gone", "Hei"), db, email.Object, Config(), default);
