@@ -33,6 +33,7 @@ namespace altinnendata_api.Models
         public DbSet<DailyStatSnapshot> DailyStatSnapshots { get; set; }
         public DbSet<ShopSettings> ShopSettings { get; set; }
         public DbSet<DeliveryOption> DeliveryOptions { get; set; }
+        public DbSet<Order> Orders { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -68,6 +69,41 @@ namespace altinnendata_api.Models
             modelBuilder.Entity<DeliveryOption>().Property(o => o.LabelEn).HasMaxLength(80);
             modelBuilder.Entity<DeliveryOption>().Property(o => o.DescriptionNo).HasMaxLength(300);
             modelBuilder.Entity<DeliveryOption>().Property(o => o.DescriptionEn).HasMaxLength(300);
+
+            modelBuilder.Entity<Order>(order =>
+            {
+                order.Property(o => o.Reference).HasMaxLength(64);
+                order.HasIndex(o => o.Reference).IsUnique();
+                order.Property(o => o.PublicToken).HasMaxLength(64);
+                order.HasIndex(o => o.PublicToken).IsUnique();
+                order.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
+                order.Property(o => o.Locale).HasMaxLength(5);
+                order.Property(o => o.BuyerName).HasMaxLength(120);
+                order.Property(o => o.BuyerEmail).HasMaxLength(200);
+                order.Property(o => o.BuyerPhone).HasMaxLength(30);
+                order.Property(o => o.StreetAddress).HasMaxLength(200);
+                order.Property(o => o.PostalCode).HasMaxLength(10);
+                order.Property(o => o.City).HasMaxLength(100);
+                order.Property(o => o.DeliveryMethod).HasConversion<string>().HasMaxLength(20);
+                order.Property(o => o.DeliveryLabel).HasMaxLength(80);
+                order.Property(o => o.PickupNote).HasMaxLength(500);
+                order.Property(o => o.BuildTitle).HasMaxLength(200);
+                order.Property(o => o.BuildSlug).HasMaxLength(160);
+                order.Property(o => o.FikenInvoiceNumber).HasMaxLength(50);
+                order.HasIndex(o => o.CreatedAt);
+
+                // Deleting a build keeps its orders, which carry their own copy of the build details.
+                order.HasOne(o => o.PcBuild)
+                    .WithMany()
+                    .HasForeignKey(o => o.PcBuildId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<PcBuild>()
+                .HasOne<Order>()
+                .WithMany()
+                .HasForeignKey(b => b.HeldByOrderId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // The home page sections keep their existing table, which holds one page per locale.
             modelBuilder.AddAppKitPageSections(o =>

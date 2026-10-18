@@ -43,6 +43,9 @@ namespace altinnendata_api.Models
 
         public bool Published { get; set; }
 
+        /// <summary>The order holding this build while it is Reserved for checkout. Cleared when the admin changes availability.</summary>
+        public int? HeldByOrderId { get; set; }
+
         public int SortOrder { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

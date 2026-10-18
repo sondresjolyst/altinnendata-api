@@ -261,6 +261,45 @@ public class BuildSlicesTests : TestBase
         Assert.Equal(sold, ok.Value.SoldOn);
     }
 
+    private static async Task<PcBuild> SeedHeldBuildAsync(ApplicationDbContext db)
+    {
+        var build = await SeedBuildAsync(db);
+        build.Availability = BuildAvailability.Reserved;
+        build.HeldByOrderId = 5;
+        await db.SaveChangesAsync();
+        return build;
+    }
+
+    [Fact]
+    public async Task Update_ClearsTheOrderHold_WhenTheAdminChangesAvailability()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedHeldBuildAsync(db);
+
+        Assert.IsType<Ok<BuildAdminDto>>(
+            await BuildCommands.Update(build.Id, UpdateDto("Available"), db, CreateImageService(db), default));
+
+        var reloaded = await db.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == build.Id);
+        Assert.Equal(BuildAvailability.Available, reloaded.Availability);
+        Assert.Null(reloaded.HeldByOrderId);
+    }
+
+    [Fact]
+    public async Task Update_KeepsTheHold_WhenAvailabilityIsUnchanged()
+    {
+        await using var db = CreateDbContext();
+        var build = await SeedHeldBuildAsync(db);
+        var dto = UpdateDto("Reserved");
+        dto.Translations = [new BuildTranslationInput { Locale = "no", Title = "Ny tittel" }];
+
+        Assert.IsType<Ok<BuildAdminDto>>(
+            await BuildCommands.Update(build.Id, dto, db, CreateImageService(db), default));
+
+        var reloaded = await db.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == build.Id);
+        Assert.Equal("ny-tittel", reloaded.Slug);
+        Assert.Equal(5, reloaded.HeldByOrderId);
+    }
+
     [Fact]
     public async Task Create_UnknownClass_IsRejected()
     {

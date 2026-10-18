@@ -68,6 +68,8 @@ namespace altinnendata_api.Features.Builds
             build.Category = dto.Category;
             var availability = ParseAvailability(dto.Availability);
             build.SoldOn = SoldDate(availability, dto.SoldOn, build.SoldOn, build.Availability == BuildAvailability.Sold);
+            // The admin's hand edit wins over the order flow, so the order no longer holds the build.
+            if (availability != build.Availability) build.HeldByOrderId = null;
             build.Availability = availability;
             build.BuildClassId = dto.BuildClassId;
             build.PriceNok = dto.PriceNok;

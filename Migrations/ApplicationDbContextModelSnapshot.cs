@@ -700,6 +700,9 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(400)
                         .HasColumnType("character varying(400)");
 
+                    b.Property<int?>("HeldByOrderId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("PriceNok")
                         .HasColumnType("integer");
 
@@ -723,6 +726,8 @@ namespace altinnendata_api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BuildClassId");
+
+                    b.HasIndex("HeldByOrderId");
 
                     b.HasIndex("Slug")
                         .IsUnique();
@@ -885,6 +890,152 @@ namespace altinnendata_api.Migrations
                         .IsUnique();
 
                     b.ToTable("DeliveryOptions");
+                });
+
+            modelBuilder.Entity("altinnendata_api.Models.Shop.Order", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AuthorizedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("BuildPriceInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("BuildSlug")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("BuildTitle")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BuyerEmail")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BuyerName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("BuyerPhone")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CaptureGuaranteedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CapturedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CapturedInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeliveryLabel")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("DeliveryMethod")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("DeliveryPriceInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FikenInvoiceNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<int?>("PcBuildId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PickupNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("PublicToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RefundedInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("StreetAddress")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("TermsAcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TotalInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("WithinDistanceConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("PcBuildId");
+
+                    b.HasIndex("PublicToken")
+                        .IsUnique();
+
+                    b.HasIndex("Reference")
+                        .IsUnique();
+
+                    b.ToTable("Orders");
                 });
 
             modelBuilder.Entity("altinnendata_api.Models.Shop.ShopSettings", b =>
@@ -1132,6 +1283,11 @@ namespace altinnendata_api.Migrations
                         .HasForeignKey("BuildClassId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("altinnendata_api.Models.Shop.Order", null)
+                        .WithMany()
+                        .HasForeignKey("HeldByOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("BuildClass");
                 });
 
@@ -1193,6 +1349,16 @@ namespace altinnendata_api.Migrations
                         .HasForeignKey("PcBuildId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("PcBuild");
+                });
+
+            modelBuilder.Entity("altinnendata_api.Models.Shop.Order", b =>
+                {
+                    b.HasOne("altinnendata_api.Models.PcBuild", "PcBuild")
+                        .WithMany()
+                        .HasForeignKey("PcBuildId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("PcBuild");
                 });
