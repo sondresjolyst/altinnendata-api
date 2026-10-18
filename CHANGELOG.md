@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.9.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.4...v1.9.0) (2026-10-18)
+
+
+### Features
+
+* **api:** answer unreadable JSON bodies with 400 through AppKit.Hosting 1.0.1 ([#116](https://github.com/sondresjolyst/altinnendata-api/issues/116)) ([bb2cf76](https://github.com/sondresjolyst/altinnendata-api/commit/bb2cf76e3ebd8bff8c4551cbdd5f15554aa60621))
+* **api:** serve roles, email stats and storage usage from the AppKit 1.0.1 packages ([#114](https://github.com/sondresjolyst/altinnendata-api/issues/114)) ([b8ce4dc](https://github.com/sondresjolyst/altinnendata-api/commit/b8ce4dc2b3cdfef995f8ad8af3ec3d6d306a7b9f))
+* **auth:** end sessions at the API on logout and after a password reset ([#92](https://github.com/sondresjolyst/altinnendata-api/issues/92)) ([fbd098c](https://github.com/sondresjolyst/altinnendata-api/commit/fbd098cac0d2dd33a736b2dca6feca2ead772617))
+* **auth:** send reset and invite emails through SjolystInnovation.AppKit.Auth ([#101](https://github.com/sondresjolyst/altinnendata-api/issues/101)) ([93307bb](https://github.com/sondresjolyst/altinnendata-api/commit/93307bbc3b84faa4bc5b429159f1b75b08244410))
+* **auth:** serve sign-in and password reset from SjolystInnovation.AppKit.Auth ([#97](https://github.com/sondresjolyst/altinnendata-api/issues/97)) ([9805dc1](https://github.com/sondresjolyst/altinnendata-api/commit/9805dc136cbb8a69c5907bd84715354cb6453af1))
+* **auth:** use SjolystInnovation.AppKit.Auth for Identity, bearer tokens and token cleanup ([#95](https://github.com/sondresjolyst/altinnendata-api/issues/95)) ([92cd4f6](https://github.com/sondresjolyst/altinnendata-api/commit/92cd4f60ad13bcf38ea12ce2852a90160853ad56))
+* **content:** serve the home page sections from SjolystInnovation.AppKit.SiteSettings ([#108](https://github.com/sondresjolyst/altinnendata-api/issues/108)) ([a86b34b](https://github.com/sondresjolyst/altinnendata-api/commit/a86b34b174d17642ec218174b0e75ef8ed824545))
+* **email:** send through SjolystInnovation.AppKit.Email instead of the Brevo SDK ([#96](https://github.com/sondresjolyst/altinnendata-api/issues/96)) ([85a26a2](https://github.com/sondresjolyst/altinnendata-api/commit/85a26a270a221a9e2e58099fe7317c3f9d98a457))
+* **legal:** serve legal pages from SjolystInnovation.AppKit.SiteSettings ([#105](https://github.com/sondresjolyst/altinnendata-api/issues/105)) ([afa89e3](https://github.com/sondresjolyst/altinnendata-api/commit/afa89e3cf4caa9ca589744fab7f45dc15b658590))
+* **settings:** move settings, company info and branding onto SjolystInnovation.AppKit.SiteSettings ([#103](https://github.com/sondresjolyst/altinnendata-api/issues/103)) ([79ee0b8](https://github.com/sondresjolyst/altinnendata-api/commit/79ee0b89bf0e27e7f8a8f135fe0d28c40b0aa338))
+* use SjolystInnovation.AppKit.Hosting for startup and rate limiting ([#94](https://github.com/sondresjolyst/altinnendata-api/issues/94)) ([0307282](https://github.com/sondresjolyst/altinnendata-api/commit/030728229e7f35cd19afb66a7303cbccf92f672c))
+* **users:** delete accounts through SjolystInnovation.AppKit.Auth ([#99](https://github.com/sondresjolyst/altinnendata-api/issues/99)) ([386fe8f](https://github.com/sondresjolyst/altinnendata-api/commit/386fe8f936e6d208499dc024797e6ac012134f5a))
+* **users:** serve user admin, invites and first-admin seeding from SjolystInnovation.AppKit.Auth ([#98](https://github.com/sondresjolyst/altinnendata-api/issues/98)) ([6c86536](https://github.com/sondresjolyst/altinnendata-api/commit/6c8653683c6300711cc63e837b963a071bf8b245))
+
+
+### Bug Fixes
+
+* **branding:** check logo and icon uploads by their decoded format ([#90](https://github.com/sondresjolyst/altinnendata-api/issues/90)) ([aff419a](https://github.com/sondresjolyst/altinnendata-api/commit/aff419a3a385e610d6f3d2d4003f1fe928920436))
+* evict every refresh token past the cap, not just one ([#87](https://github.com/sondresjolyst/altinnendata-api/issues/87)) ([4a5b2f3](https://github.com/sondresjolyst/altinnendata-api/commit/4a5b2f30bde49a13247e056cb10db1c13efdec5e))
+* trust only configured proxies for X-Forwarded-For ([#93](https://github.com/sondresjolyst/altinnendata-api/issues/93)) ([b0e2728](https://github.com/sondresjolyst/altinnendata-api/commit/b0e272876f279810a090dd6bbced2ae04d5561ff))
+
+
+### Dependencies
+
+* bump SjolystInnovation.AppKit.Auth to 0.8.0 ([#102](https://github.com/sondresjolyst/altinnendata-api/issues/102)) ([2455ea5](https://github.com/sondresjolyst/altinnendata-api/commit/2455ea5c604b5de663e37ef6f7a5cfaf596aa4fa))
+* **nuget:** bump `Swashbuckle.AspNetCore.Annotations` from 10.2.3 to 10.3.0 ([#112](https://github.com/sondresjolyst/altinnendata-api/issues/112)) ([9e070b5](https://github.com/sondresjolyst/altinnendata-api/commit/9e070b5c74f28327b3f6920feea1badfaf32a9a0))
+* **nuget:** bump `Swashbuckle.AspNetCore` from 10.2.3 to 10.3.0 ([#111](https://github.com/sondresjolyst/altinnendata-api/issues/111)) ([c3eff53](https://github.com/sondresjolyst/altinnendata-api/commit/c3eff53db94e9c96b8556fdf58a71ac1b929bc5e))
+* **nuget:** bump `xunit.v3` from 4.0.1 to 4.0.2 ([#113](https://github.com/sondresjolyst/altinnendata-api/issues/113)) ([3635e8f](https://github.com/sondresjolyst/altinnendata-api/commit/3635e8f7c230aed86cbbeea2358e5c6605591921))
+* **nuget:** Bump FluentValidation and FluentValidation.DependencyInjectionExtensions ([#110](https://github.com/sondresjolyst/altinnendata-api/issues/110)) ([ee2a726](https://github.com/sondresjolyst/altinnendata-api/commit/ee2a726f5c60b8d545a851a8aca484d6f5fd8fa4))
+* **nuget:** Bump the skiasharp group with 2 updates ([#89](https://github.com/sondresjolyst/altinnendata-api/issues/89)) ([05522b6](https://github.com/sondresjolyst/altinnendata-api/commit/05522b6f6565f8db329907b759fdc474e37ca90a))
+
 ## [1.8.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.3...v1.8.4) (2026-10-04)
 
 
