@@ -150,8 +150,9 @@ namespace altinnendata_api
                 }
 
                 await SeedData.EnsureComponentCategoriesAsync(context);
-                await ShopSeed.EnsureAsync(context, CancellationToken.None);
                 await app.Services.SeedAppKitLegalPagesAsync<ApplicationDbContext>(LegalSeedText.All);
+                // After the legal pages, so the seeded terms predate the shop settings baseline.
+                await ShopSeed.EnsureAsync(context, CancellationToken.None);
                 await app.Services.SeedAppKitFirstAdminAsync<User>(app.Configuration, u => new User { FirstName = u.FirstName, LastName = u.LastName });
             }
 

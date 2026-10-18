@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using SjolystInnovation.AppKit.SiteSettings;
 using altinnendata_api.Features.Shop;
 using altinnendata_api.Models;
@@ -75,11 +76,15 @@ public class ShopSettingsTests : TestBase
         AddTerms(db, "en", created.AddMinutes(-1));
         await db.SaveChangesAsync();
 
-        var refused = Assert.IsType<ProblemHttpResult>(await ShopSettingsEndpoints.Update(Update("Everyone"), db, cache, default));
+        var refused = Assert.IsType<ProblemHttpResult>(await ShopSettingsEndpoints.Update(
+            Update("Everyone", vippsTestMode: false, edit: d => d[0] = d[0] with { Enabled = true, PriceNok = 50 }), db, cache, default));
 
         Assert.Equal(StatusCodes.Status409Conflict, refused.StatusCode);
         Assert.Equal("termsNotUpdated", refused.ProblemDetails.Extensions["code"]?.ToString());
-        Assert.Equal(BuyButtonMode.Off, (await db.ShopSettings.AsNoTracking().SingleAsync()).BuyButton);
+        var unchanged = await db.ShopSettings.AsNoTracking().SingleAsync();
+        Assert.Equal(BuyButtonMode.Off, unchanged.BuyButton);
+        Assert.True(unchanged.VippsTestMode);
+        Assert.False((await db.DeliveryOptions.AsNoTracking().SingleAsync(o => o.Method == DeliveryMethod.Shipping)).Enabled);
 
         var en = await db.LegalPages.SingleAsync(p => p.Locale == "en");
         en.UpdatedAt = created.AddMinutes(2);
@@ -88,6 +93,7 @@ public class ShopSettingsTests : TestBase
         var ok = Assert.IsType<Ok<ShopSettingsDto>>(await ShopSettingsEndpoints.Update(Update("Everyone"), db, cache, default));
 
         Assert.Equal("Everyone", ok.Value!.BuyButton);
+        Assert.True(ok.Value.VippsTestMode);
         Assert.Equal(BuyButtonMode.Everyone, (await db.ShopSettings.AsNoTracking().SingleAsync()).BuyButton);
     }
 
@@ -198,5 +204,55 @@ public class ShopSettingsTests : TestBase
         Assert.False(validator.Validate(Update(edit: d => d[0] = d[0] with { LabelNo = new string('a', 81) })).IsValid);
         Assert.True(validator.Validate(Update(edit: d => d[0] = d[0] with { LabelNo = new string('a', 80) })).IsValid);
         Assert.False(validator.Validate(Update(edit: d => d[0] = d[0] with { DescriptionEn = new string('a', 301) })).IsValid);
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("1")]
+    [InlineData("-1")]
+    [InlineData("Maybe")]
+    public void Validator_RejectsNumericAndUndefinedBuyButtonModes(string mode) =>
+        Assert.Contains(new UpdateShopSettingsValidator().Validate(Update(mode)).Errors, e => e.PropertyName == "BuyButton");
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("1")]
+    public void Validator_RejectsNumericAndUndefinedDeliveryMethods(string method)
+    {
+        var extra = new UpdateShopSettingsValidator().Validate(Update(edit: d => d.Add(d[0] with { Method = method })));
+        var replaced = new UpdateShopSettingsValidator().Validate(Update(edit: d => d[2] = d[2] with { Method = method }));
+
+        Assert.Contains(extra.Errors, e => e.PropertyName == "Delivery");
+        Assert.Contains(replaced.Errors, e => e.PropertyName == "Delivery");
+    }
+
+    [Fact]
+    public void Validator_RejectsANullDeliveryListAndNullEntries()
+    {
+        var validator = new UpdateShopSettingsValidator();
+        var noList = Update();
+        noList.Delivery = null!;
+        var nullEntry = Update(edit: d => d.Add(null!));
+
+        Assert.Contains(validator.Validate(noList).Errors, e => e.PropertyName == "Delivery");
+        Assert.Contains(validator.Validate(nullEntry).Errors, e => e.PropertyName == "Delivery");
+    }
+
+    [Fact]
+    public async Task Problem_WritesCodeAtTheTopLevelOfTheJsonBody()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddProblemDetails();
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.Response.Body = new MemoryStream();
+
+        await ShopProblems.Code(StatusCodes.Status409Conflict, "termsNotUpdated", "Save the terms.").ExecuteAsync(context);
+
+        context.Response.Body.Position = 0;
+        using var json = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body);
+        Assert.Equal(409, context.Response.StatusCode);
+        Assert.Equal("termsNotUpdated", json.RootElement.GetProperty("code").GetString());
+        Assert.Equal("Save the terms.", json.RootElement.GetProperty("message").GetString());
     }
 }

@@ -36,15 +36,16 @@ namespace altinnendata_api.Features.Shop
         public UpdateShopSettingsValidator()
         {
             RuleFor(x => x.BuyButton)
-                .Must(v => Enum.TryParse<BuyButtonMode>(v, true, out _))
+                .Must(v => TryParseName<BuyButtonMode>(v, out _))
                 .WithMessage("Unknown buy button mode.");
 
             RuleFor(x => x.Delivery)
+                .Cascade(CascadeMode.Stop)
                 .NotNull()
                 .Must(HoldEachMethodOnce)
                 .WithMessage("Delivery must hold each delivery method exactly once.");
 
-            RuleForEach(x => x.Delivery).ChildRules(d =>
+            RuleForEach(x => x.Delivery).Where(d => d != null).ChildRules(d =>
             {
                 d.RuleFor(x => x.PriceNok).InclusiveBetween(0, 100000);
                 d.RuleFor(x => x.LabelNo).NotEmpty().MaximumLength(80);
@@ -58,15 +59,25 @@ namespace altinnendata_api.Features.Shop
             });
         }
 
+        /// <summary>Parses a defined enum name, ignoring case. Numbers and undefined values are refused.</summary>
+        public static bool TryParseName<T>(string? value, out T result) where T : struct, Enum
+        {
+            result = default;
+            return !string.IsNullOrWhiteSpace(value)
+                && !char.IsDigit(value.Trim()[0]) && value.Trim()[0] != '-' && value.Trim()[0] != '+'
+                && Enum.TryParse(value, true, out result)
+                && Enum.IsDefined(result);
+        }
+
         private static bool IsMethod(string value, DeliveryMethod method) =>
-            Enum.TryParse<DeliveryMethod>(value, true, out var parsed) && parsed == method;
+            TryParseName<DeliveryMethod>(value, out var parsed) && parsed == method;
 
         private static bool HoldEachMethodOnce(List<DeliveryOptionDto> delivery)
         {
             var parsed = new List<DeliveryMethod>();
             foreach (var option in delivery)
             {
-                if (!Enum.TryParse<DeliveryMethod>(option.Method, true, out var method)) return false;
+                if (option == null || !TryParseName<DeliveryMethod>(option.Method, out var method)) return false;
                 parsed.Add(method);
             }
 
