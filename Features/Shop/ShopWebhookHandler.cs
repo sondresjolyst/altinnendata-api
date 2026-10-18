@@ -86,10 +86,7 @@ namespace altinnendata_api.Features.Shop
                     case "EXPIRED":
                     case "TERMINATED":
                         if (previous is OrderStatus.Pending or OrderStatus.Reserved)
-                        {
-                            order.Status = OrderStatus.Failed;
-                            if (build != null) BuildHold.Release(build, order.Id);
-                        }
+                            Fail(order, build, e.Name, eventKey);
                         break;
                     case "CANCELLED":
                         if (previous is OrderStatus.Pending or OrderStatus.Reserved)
@@ -114,6 +111,8 @@ namespace altinnendata_api.Features.Shop
             var orderId = order.Id;
             return order.Status switch
             {
+                // AUTHORIZED never arrived, so the buyer and the owner have not heard about the order yet.
+                OrderStatus.Paid when previous == OrderStatus.Pending => VippsWebhookOutcome.Applied(ct => notifier.OrderReservedAsync(orderId, ct)),
                 OrderStatus.Reserved => VippsWebhookOutcome.Applied(ct => notifier.OrderReservedAsync(orderId, ct)),
                 OrderStatus.Cancelled => VippsWebhookOutcome.Applied(ct => notifier.OrderCancelledAsync(orderId, ct)),
                 OrderStatus.Refunded => VippsWebhookOutcome.Applied(ct => notifier.OrderRefundedAsync(orderId, ct)),
@@ -138,7 +137,9 @@ namespace altinnendata_api.Features.Shop
 
             order.Status = OrderStatus.Paid;
             order.CapturedAt = at;
-            if (build != null) BuildHold.MarkSold(build, order.Id, DateOnly.FromDateTime(DateTime.UtcNow));
+            if (build != null && !BuildHold.MarkSold(build, order.Id, DateOnly.FromDateTime(DateTime.UtcNow)))
+                log.LogWarning("Shop webhook {EventKey}: order {OrderId} is paid but no longer holds build {BuildId}, so the build was not marked sold",
+                    eventKey, order.Id, build.Id);
         }
 
         /// <summary>A full refund refunds the order. A partial one records what Vipps has refunded so far. The build stays sold.</summary>
@@ -158,6 +159,20 @@ namespace altinnendata_api.Features.Shop
 
             order.Status = OrderStatus.Refunded;
             order.RefundedAt = at;
+        }
+
+        private void Fail(Order order, PcBuild? build, string name, string eventKey)
+        {
+            // The buyer paid part of the order. That needs a person, so the order and the build stay as they are.
+            if (order.CapturedInOre > 0)
+            {
+                log.LogError("Shop webhook {EventKey}: {Name} on order {OrderId} after a capture of {Captured} of {Total} øre, the order stays {Status} and needs manual handling",
+                    eventKey, name, order.Id, order.CapturedInOre, order.TotalInOre, order.Status);
+                return;
+            }
+
+            order.Status = OrderStatus.Failed;
+            if (build != null) BuildHold.Release(build, order.Id);
         }
 
         private void Cancel(Order order, PcBuild? build, DateTime at, string eventKey)

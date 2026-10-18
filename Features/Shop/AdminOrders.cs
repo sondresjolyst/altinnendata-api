@@ -49,17 +49,28 @@ namespace altinnendata_api.Features.Shop
                 return ProviderUnavailable(log, ex, "capture", order);
             }
 
+            // Vipps has taken the money, so an aborted admin request must not stop the save.
+            var buildNotSold = false;
             var (saved, fresh) = await SaveAsync(db, order, OrderStatus.Reserved, OrderStatus.Paid, (o, build) =>
             {
+                buildNotSold = false;
                 o.CapturedInOre = Math.Clamp(Math.Max(o.CapturedInOre, payment.CapturedAmountInOre), 0, o.TotalInOre);
                 if (o.CapturedInOre < o.TotalInOre) return;
 
                 o.Status = OrderStatus.Paid;
                 o.CapturedAt = DateTime.UtcNow;
-                if (build != null) BuildHold.MarkSold(build, o.Id, DateOnly.FromDateTime(DateTime.UtcNow));
-            }, ct);
+                if (build != null) buildNotSold = !BuildHold.MarkSold(build, o.Id, DateOnly.FromDateTime(DateTime.UtcNow));
+            }, CancellationToken.None);
 
-            if (saved == Saved.Moved) return WrongStatus(fresh, "The order changed while it was being captured.");
+            if (saved == Saved.Moved)
+            {
+                log.LogWarning("Vipps captured {Captured} øre of order {OrderId}, but the order is now {Status}",
+                    payment.CapturedAmountInOre, fresh.Id, fresh.Status);
+                return WrongStatus(fresh, "The order changed while it was being captured.");
+            }
+            if (saved == Saved.Applied && buildNotSold)
+                log.LogWarning("Order {OrderId} is paid but no longer holds build {BuildId}, so the build was not marked sold",
+                    fresh.Id, fresh.PcBuildId);
             if (fresh.Status != OrderStatus.Paid)
             {
                 log.LogError("Admin capture of order {OrderId} captured {Captured} of {Total} øre, the order stays {Status}",
@@ -89,15 +100,16 @@ namespace altinnendata_api.Features.Shop
                 return ProviderUnavailable(log, ex, "cancel", order);
             }
 
+            // Vipps has released the reservation, so an aborted admin request must not stop the save or the email.
             var (saved, fresh) = await SaveAsync(db, order, OrderStatus.Reserved, OrderStatus.Cancelled, (o, build) =>
             {
                 o.Status = OrderStatus.Cancelled;
                 o.CancelledAt = DateTime.UtcNow;
                 if (build != null) BuildHold.Release(build, o.Id);
-            }, ct);
+            }, CancellationToken.None);
 
             if (saved == Saved.Moved) return WrongStatus(fresh, "The order changed while it was being cancelled.");
-            if (saved == Saved.Applied) await notifier.OrderCancelledAsync(fresh.Id, ct);
+            if (saved == Saved.Applied) await notifier.OrderCancelledAsync(fresh.Id, CancellationToken.None);
 
             log.LogInformation("Order {OrderId} cancelled by an admin", fresh.Id);
             return TypedResults.Ok(AdminOrderDto.From(fresh));
@@ -120,6 +132,7 @@ namespace altinnendata_api.Features.Shop
             }
 
             // The build stays sold. Whether it goes back on sale is the admin's own choice.
+            // Vipps has paid the money back, so an aborted admin request must not stop the save or the email.
             var (saved, fresh) = await SaveAsync(db, order, OrderStatus.Paid, OrderStatus.Refunded, (o, _) =>
             {
                 o.RefundedInOre = Math.Clamp(Math.Max(o.RefundedInOre, payment.RefundedAmountInOre), 0, o.TotalInOre);
@@ -127,9 +140,14 @@ namespace altinnendata_api.Features.Shop
 
                 o.Status = OrderStatus.Refunded;
                 o.RefundedAt = DateTime.UtcNow;
-            }, ct);
+            }, CancellationToken.None);
 
-            if (saved == Saved.Moved) return WrongStatus(fresh, "The order changed while it was being refunded.");
+            if (saved == Saved.Moved)
+            {
+                log.LogWarning("Vipps refunded {Refunded} øre of order {OrderId}, but the order is now {Status}",
+                    payment.RefundedAmountInOre, fresh.Id, fresh.Status);
+                return WrongStatus(fresh, "The order changed while it was being refunded.");
+            }
             if (fresh.Status != OrderStatus.Refunded)
             {
                 log.LogError("Admin refund of order {OrderId} refunded {Refunded} of {Total} øre, the order stays {Status}",
@@ -138,7 +156,7 @@ namespace altinnendata_api.Features.Shop
                     "Vipps did not confirm the full refund. Check the payment in the Vipps portal.");
             }
 
-            if (saved == Saved.Applied) await notifier.OrderRefundedAsync(fresh.Id, ct);
+            if (saved == Saved.Applied) await notifier.OrderRefundedAsync(fresh.Id, CancellationToken.None);
 
             log.LogInformation("Order {OrderId} refunded by an admin", fresh.Id);
             return TypedResults.Ok(AdminOrderDto.From(fresh));
@@ -210,11 +228,15 @@ namespace altinnendata_api.Features.Shop
         private static bool IsProviderFailure(Exception ex, CancellationToken ct) =>
             ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested);
 
+        /// <summary>
+        /// Vipps timed out or refused. After a timeout the change may still have happened in Vipps, so the order is
+        /// left as it was and the admin checks the portal. A retry uses the same idempotency key and is safe.
+        /// </summary>
         private static IResult ProviderUnavailable(ILogger log, Exception ex, string action, Order order)
         {
-            log.LogError(ex, "Vipps could not {Action} the payment of order {OrderId}, nothing was changed", action, order.Id);
+            log.LogError(ex, "Vipps did not confirm the {Action} of the payment of order {OrderId}, the order was left as it was", action, order.Id);
             return ShopProblems.Code(StatusCodes.Status502BadGateway, "paymentProviderUnavailable",
-                "Vipps did not answer. Nothing was changed. Try again later.");
+                "Vipps did not confirm the change. Check the payment in the Vipps portal before you try again.");
         }
 
         private static IResult WrongStatus(Order order, string message) =>

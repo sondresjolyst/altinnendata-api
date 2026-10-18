@@ -19,7 +19,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
 
     private readonly Mock<IVippsClient> _vipps = new(MockBehavior.Strict);
     private readonly Mock<IOrderNotifier> _notifier = new();
-    private readonly ListLogger _log = new();
+    private readonly ListLogger<ShopWebhookHandler> _log = new();
 
     private static readonly DateTimeOffset EventTime = new(2026, 10, 18, 12, 30, 0, TimeSpan.Zero);
 
@@ -399,6 +399,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(BuildAvailability.Reserved, build.Availability);
         Assert.Null(build.HeldByOrderId);
         Assert.Null(build.SoldOn);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("not marked sold"));
     }
 
     [Theory]
@@ -666,21 +667,6 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Null(order.PcBuildId);
     }
 
-    /// <summary>Keeps every log line, so a test can check that a rejection is logged.</summary>
-    private sealed class ListLogger : ILogger<ShopWebhookHandler>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-        {
-            lock (Entries) Entries.Add((logLevel, formatter(state, exception)));
-        }
-    }
-
     [Theory]
     [InlineData(OrderStatus.Paid)]
     [InlineData(OrderStatus.Failed)]
@@ -699,6 +685,45 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Null(order.CancelledAt);
         Assert.Equal(BuildAvailability.Reserved, build.Availability);
         Assert.Equal(orderId, build.HeldByOrderId);
+        VerifyNoEmails();
+    }
+
+    [Theory]
+    [InlineData("ABORTED")]
+    [InlineData("EXPIRED")]
+    [InlineData("TERMINATED")]
+    public async Task Failed_AfterAPartialCapture_StaysReserved_AndKeepsTheBuild(string name)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        await using (var fresh = postgres.NewContextOn(db))
+            await fresh.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s.SetProperty(o => o.CapturedInOre, 500_000), Ct);
+
+        var outcome = await DeliverAsync(db, Delivery(name, amount: null));
+
+        Assert.Equal(VippsWebhookOutcomeKind.Applied, outcome.Kind);
+        Assert.Null(outcome.AfterCommit);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("manual handling") && e.Message.Contains(name));
+        VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Captured_OnAPendingOrder_MarksPaid_AndSendsTheReservedEmailsOnce()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+
+        await DeliverAsync(db, Delivery("CAPTURED"));
+        await DeliverAsync(db, Delivery("CAPTURED"));
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(BuildAvailability.Sold, build.Availability);
+        _notifier.Verify(n => n.OrderReservedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
     }
 }

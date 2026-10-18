@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SjolystInnovation.AppKit.Vipps;
@@ -23,7 +24,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
     private readonly Mock<IVippsClient> _vipps = new(MockBehavior.Strict);
     private readonly Mock<IOrderNotifier> _notifier = new();
-    private static readonly NullLogger<AdminOrderDto> Log = NullLogger<AdminOrderDto>.Instance;
+    private readonly ListLogger<AdminOrderDto> _log = new();
 
     /// <summary>
     /// An order in <paramref name="status"/> for a build. A Pending or Reserved order holds the build,
@@ -113,9 +114,9 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         _vipps.Setup(v => v.RefundPaymentAsync(Reference, Total, "refund-" + Reference, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Payment(captured: Total, refunded: refunded));
 
-    private Task<IResult> Capture(ApplicationDbContext db, int id) => AdminOrders.Capture(id, db, _vipps.Object, Log, Ct);
-    private Task<IResult> Cancel(ApplicationDbContext db, int id) => AdminOrders.Cancel(id, db, _vipps.Object, _notifier.Object, Log, Ct);
-    private Task<IResult> Refund(ApplicationDbContext db, int id) => AdminOrders.Refund(id, db, _vipps.Object, _notifier.Object, Log, Ct);
+    private Task<IResult> Capture(ApplicationDbContext db, int id) => AdminOrders.Capture(id, db, _vipps.Object, _log, Ct);
+    private Task<IResult> Cancel(ApplicationDbContext db, int id) => AdminOrders.Cancel(id, db, _vipps.Object, _notifier.Object, _log, Ct);
+    private Task<IResult> Refund(ApplicationDbContext db, int id) => AdminOrders.Refund(id, db, _vipps.Object, _notifier.Object, _log, Ct);
 
     private static AdminOrderDto AssertOk(IResult result) => Assert.IsType<Ok<AdminOrderDto>>(result).Value!;
 
@@ -417,12 +418,15 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
         var result = action switch
         {
-            "capture" => await AdminOrders.Capture(orderId, db, vipps.Object, Log, Ct),
-            "cancel" => await AdminOrders.Cancel(orderId, db, vipps.Object, _notifier.Object, Log, Ct),
-            _ => await AdminOrders.Refund(orderId, db, vipps.Object, _notifier.Object, Log, Ct)
+            "capture" => await AdminOrders.Capture(orderId, db, vipps.Object, _log, Ct),
+            "cancel" => await AdminOrders.Cancel(orderId, db, vipps.Object, _notifier.Object, _log, Ct),
+            _ => await AdminOrders.Refund(orderId, db, vipps.Object, _notifier.Object, _log, Ct)
         };
 
         AssertProblem(result, StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+        Assert.Equal("Vipps did not confirm the change. Check the payment in the Vipps portal before you try again.",
+            Assert.IsType<ProblemHttpResult>(result).ProblemDetails.Detail);
+        Assert.DoesNotContain(_log.Entries, e => e.Message.Contains("nothing was changed", StringComparison.OrdinalIgnoreCase));
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(orderBefore.Version, order.Version);
         Assert.Equal(orderBefore.Status, order.Status);
@@ -476,6 +480,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
         AssertProblem(await Capture(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
 
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains($"captured {Total} øre") && e.Message.Contains("Failed"));
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Failed, order.Status);
         Assert.Equal(0, order.CapturedInOre);
@@ -505,6 +510,71 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(OrderStatus.Paid, order.Status);
         Assert.Equal(BuildAvailability.Available, build.Availability);
         Assert.Null(build.SoldOn);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("not marked sold"));
+    }
+
+    [Fact]
+    public async Task Capture_ThatSellsTheBuild_LogsNoUnsoldWarning()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        SetupCapture();
+
+        AssertOk(await Capture(db, orderId));
+
+        Assert.DoesNotContain(_log.Entries, e => e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task Refund_WhenTheOrderMovesDuringTheCall_Returns409_AndLogsTheRefundedAmount()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        _vipps.Setup(v => v.RefundPaymentAsync(Reference, Total, "refund-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await WebhookChangesAsync(db, orderId, (o, _) => o.Status = OrderStatus.Cancelled);
+                return Payment(captured: Total, refunded: Total);
+            });
+
+        AssertProblem(await Refund(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains($"refunded {Total} øre") && e.Message.Contains("Cancelled"));
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("capture")]
+    [InlineData("cancel")]
+    [InlineData("refund")]
+    public async Task Action_WhenTheAdminRequestIsAbortedAfterVippsAnswered_StillSavesAndNotifies(string action)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, action == "refund" ? OrderStatus.Paid : OrderStatus.Reserved);
+        using var aborted = new CancellationTokenSource();
+        _vipps.Setup(v => v.CapturePaymentAsync(Reference, Total, "capture-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(() => { aborted.Cancel(); return Task.FromResult(Payment(captured: Total)); });
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(() => { aborted.Cancel(); return Task.CompletedTask; });
+        _vipps.Setup(v => v.RefundPaymentAsync(Reference, Total, "refund-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(() => { aborted.Cancel(); return Task.FromResult(Payment(captured: Total, refunded: Total)); });
+
+        var result = action switch
+        {
+            "capture" => await AdminOrders.Capture(orderId, db, _vipps.Object, _log, aborted.Token),
+            "cancel" => await AdminOrders.Cancel(orderId, db, _vipps.Object, _notifier.Object, _log, aborted.Token),
+            _ => await AdminOrders.Refund(orderId, db, _vipps.Object, _notifier.Object, _log, aborted.Token)
+        };
+
+        var expected = action switch { "capture" => "Paid", "cancel" => "Cancelled", _ => "Refunded" };
+        Assert.Equal(expected, AssertOk(result).Status);
+        await using var fresh = postgres.NewContextOn(db);
+        Assert.Equal(expected, (await fresh.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status.ToString());
+        if (action == "cancel")
+            _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.Is<CancellationToken>(t => !t.CanBeCanceled)), Times.Once);
+        if (action == "refund")
+            _notifier.Verify(n => n.OrderRefundedAsync(orderId, It.Is<CancellationToken>(t => !t.CanBeCanceled)), Times.Once);
+        _notifier.VerifyNoOtherCalls();
     }
 
     [Fact]
