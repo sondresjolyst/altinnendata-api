@@ -141,6 +141,7 @@ public class OrderEmailsTests : TestBase
         Assert.Equal("Order ae-000001-abcdef12 is cancelled", OrderEmails.BuyerCancelled(en, s).Subject);
         Assert.Equal("Pengene for ordre ae-000001-abcdef12 er betalt tilbake", OrderEmails.BuyerRefunded(no, s).Subject);
         Assert.Equal("Order ae-000001-abcdef12 is refunded", OrderEmails.BuyerRefunded(en, s).Subject);
+        Assert.Contains("It can take a few days before the amount appears in your account.", OrderEmails.BuyerRefunded(en, s).HtmlBody);
     }
 
     [Fact]

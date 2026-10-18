@@ -116,7 +116,7 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
                 ? $"<p>Vi har betalt tilbake {amount} kr til Vipps. Det kan ta noen dager før beløpet vises hos deg.</p>"
-                : $"<p>We have refunded {amount} kr to Vipps. It can take a few days before the amount shows with you.</p>");
+                : $"<p>We have refunded {amount} kr to Vipps. It can take a few days before the amount appears in your account.</p>");
             AppendFooter(body, s, no);
             return new EmailMessage(o.BuyerEmail, no ? $"Pengene for ordre {o.Reference} er betalt tilbake" : $"Order {o.Reference} is refunded", body.ToString());
         }
