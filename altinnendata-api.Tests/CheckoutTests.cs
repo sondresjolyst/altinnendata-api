@@ -477,4 +477,24 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
         foreach (var action in clientOptions.HttpClientActions) action(client);
         Assert.Equal(TimeSpan.FromSeconds(15), client.Timeout);
     }
+
+    [Fact]
+    public async Task Checkout_AddsADeliveryLine_ForTheSmallestPaidDelivery()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db, editDelivery: options =>
+        {
+            var shipping = options.Single(o => o.Method == DeliveryMethod.Shipping);
+            shipping.Enabled = true;
+            shipping.PriceNok = 1;
+        });
+        var captured = new List<VippsCreatePaymentRequest>();
+
+        await Run(db, Vipps(captured), Request("Shipping"));
+
+        var request = Assert.Single(captured);
+        Assert.Equal(2, request.ReceiptLines.Count);
+        Assert.Equal(100, request.ReceiptLines[1].UnitPriceInOre);
+        Assert.Equal(request.AmountInOre, request.ReceiptLines.Sum(l => l.UnitPriceInOre * l.Quantity));
+    }
 }

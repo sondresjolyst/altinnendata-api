@@ -680,4 +680,25 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
             lock (Entries) Entries.Add((logLevel, formatter(state, exception)));
         }
     }
+
+    [Theory]
+    [InlineData(OrderStatus.Paid)]
+    [InlineData(OrderStatus.Failed)]
+    [InlineData(OrderStatus.Cancelled)]
+    [InlineData(OrderStatus.Refunded)]
+    public async Task Cancelled_AfterTheOrderEnded_ChangesNothing(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, status);
+
+        var outcome = await DeliverAsync(db, Delivery("CANCELLED"));
+
+        Assert.Null(outcome.AfterCommit);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(status, order.Status);
+        Assert.Null(order.CancelledAt);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        VerifyNoEmails();
+    }
 }

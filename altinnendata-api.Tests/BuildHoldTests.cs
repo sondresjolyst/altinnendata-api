@@ -239,4 +239,31 @@ public class BuildHoldTests(PostgresDatabase postgres) : TestBase
         Assert.Null(other.SoldOn);
         Assert.Equal(7, other.HeldByOrderId);
     }
+
+    [Fact]
+    public async Task TryHold_LeavesEveryOtherBuildAlone()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (build, order) = await SeedAsync(db);
+        var other = NewBuild();
+        other.Slug = "other-pc";
+        db.PcBuilds.Add(other);
+        await db.SaveChangesAsync(Ct);
+
+        Assert.True(await BuildHold.TryHoldAsync(db, build.Id, order.Id, 1, Ct));
+
+        var untouched = await ReloadAsync(db, other.Id);
+        Assert.Equal(BuildAvailability.Available, untouched.Availability);
+        Assert.Null(untouched.HeldByOrderId);
+    }
+
+    [Fact]
+    public void Release_LeavesASoldBuild_EvenWithAStaleHold()
+    {
+        var sold = new PcBuild { Slug = "s", Availability = BuildAvailability.Sold, HeldByOrderId = 8 };
+
+        Assert.False(BuildHold.Release(sold, 8));
+        Assert.Equal(BuildAvailability.Sold, sold.Availability);
+        Assert.Equal(8, sold.HeldByOrderId);
+    }
 }
