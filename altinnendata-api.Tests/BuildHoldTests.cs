@@ -170,6 +170,74 @@ public class BuildHoldTests(PostgresDatabase postgres) : TestBase
         var reloaded = await ReloadAsync(fresh, build.Id);
         Assert.Equal(BuildAvailability.Reserved, reloaded.Availability);
         Assert.Equal(order.Id, reloaded.HeldByOrderId);
+        Assert.Equal("The build was changed by someone else. Reload the page and try again.", problem.ProblemDetails.Detail);
+    }
+
+    private static UpdateBuildDto FormDto(string title, string availability, DateTime? expectedUpdatedAt) => new()
+    {
+        Availability = availability,
+        PriceNok = 18990,
+        Published = true,
+        Translations = [new BuildTranslationInput { Locale = "no", Title = title }],
+        ExpectedUpdatedAt = expectedUpdatedAt
+    };
+
+    [Fact]
+    public async Task AdminUpdate_FromAFormLoadedBeforeTheHold_Returns409_AndChangesNothing()
+    {
+        await using var admin = await postgres.NewContextAsync();
+        var (build, order) = await SeedAsync(admin);
+        admin.PcBuildTranslations.Add(new PcBuildTranslation { PcBuildId = build.Id, Locale = "no", Title = "Gaming-PC" });
+        await admin.SaveChangesAsync(Ct);
+
+        // The admin opens the edit form while the build is Available.
+        DateTime formLoaded;
+        await using (var form = postgres.NewContextOn(admin))
+            formLoaded = (await ReloadAsync(form, build.Id)).UpdatedAt;
+
+        // A buyer starts checkout and the build is held.
+        await using (var checkout = postgres.NewContextOn(admin))
+            Assert.True(await BuildHold.TryHoldAsync(checkout, build.Id, order.Id, 1, Ct));
+
+        // The form still says Available, the admin only meant to change the title.
+        await using var request = postgres.NewContextOn(admin);
+        var result = await BuildCommands.Update(build.Id, FormDto("Ny tittel", "Available", formLoaded), request, CreateImageService(request), Ct);
+
+        var problem = Assert.IsType<ProblemHttpResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, problem.StatusCode);
+        Assert.Equal("buildChanged", problem.ProblemDetails.Extensions["code"]);
+        await using var fresh = postgres.NewContextOn(admin);
+        var reloaded = await fresh.PcBuilds.AsNoTracking().Include(b => b.Translations).SingleAsync(b => b.Id == build.Id, Ct);
+        Assert.Equal(BuildAvailability.Reserved, reloaded.Availability);
+        Assert.Equal(order.Id, reloaded.HeldByOrderId);
+        Assert.Equal("Gaming-PC", Assert.Single(reloaded.Translations).Title);
+    }
+
+    [Theory]
+    [InlineData("exact")]
+    [InlineData("milliseconds")]
+    [InlineData("none")]
+    public async Task AdminUpdate_WithTheUpdatedAtTheFormLoaded_OrWithout_Saves(string expected)
+    {
+        await using var admin = await postgres.NewContextAsync();
+        var (build, _) = await SeedAsync(admin);
+        DateTime stored;
+        await using (var form = postgres.NewContextOn(admin))
+            stored = (await ReloadAsync(form, build.Id)).UpdatedAt;
+        // A browser keeps a date to the millisecond, so a value cut to milliseconds still matches.
+        DateTime? sent = expected switch
+        {
+            "exact" => stored,
+            "milliseconds" => new DateTime(stored.Ticks - stored.Ticks % TimeSpan.TicksPerMillisecond, DateTimeKind.Utc),
+            _ => null
+        };
+
+        await using var request = postgres.NewContextOn(admin);
+        var result = await BuildCommands.Update(build.Id, FormDto("Ny tittel", "Available", sent), request, CreateImageService(request), Ct);
+
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(result);
+        Assert.Equal("Ny tittel", Assert.Single(ok.Value!.Translations).Title);
+        Assert.True(ok.Value.UpdatedAt > stored);
     }
 
     private static async Task WaitForALockWaiterAsync(string connectionString)

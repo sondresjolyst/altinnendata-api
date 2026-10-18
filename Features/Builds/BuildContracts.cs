@@ -39,7 +39,14 @@ namespace altinnendata_api.Features.Builds
         public List<string> ImageIds { get; set; } = [];
     }
 
-    public class UpdateBuildDto : CreateBuildDto { }
+    public class UpdateBuildDto : CreateBuildDto
+    {
+        /// <summary>
+        /// The <c>UpdatedAt</c> the edit form loaded. When given and the build has changed since, for example
+        /// because a checkout now holds it, the update is refused. Left null by older clients, which skips the check.
+        /// </summary>
+        public DateTime? ExpectedUpdatedAt { get; set; }
+    }
 
     public record BuildComponentDto(
         int Id,

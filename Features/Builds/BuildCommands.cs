@@ -55,6 +55,8 @@ namespace altinnendata_api.Features.Builds
                 .Include(b => b.Images)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
             if (build == null) return TypedResults.NotFound();
+            // A form opened before a checkout held the build would otherwise clear the hold and allow a second sale.
+            if (dto.ExpectedUpdatedAt is { } expected && !SameMillisecond(expected, build.UpdatedAt)) return BuildChanged();
 
             if (await UnknownClassAsync(dto.BuildClassId, db, ct))
                 return TypedResults.Problem("That build class does not exist.", statusCode: StatusCodes.Status400BadRequest);
@@ -132,7 +134,13 @@ namespace altinnendata_api.Features.Builds
         }
 
         private static IResult BuildChanged() =>
-            ShopProblems.Code(StatusCodes.Status409Conflict, "buildChanged", "Datamaskinen ble endret av noen andre. Last siden på nytt.");
+            ShopProblems.Code(StatusCodes.Status409Conflict, "buildChanged", "The build was changed by someone else. Reload the page and try again.");
+
+        /// <summary>Compared to the millisecond, because a browser keeps a date no finer than that.</summary>
+        private static bool SameMillisecond(DateTime a, DateTime b) => Milliseconds(a) == Milliseconds(b);
+
+        private static long Milliseconds(DateTime value) =>
+            (value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value).Ticks / TimeSpan.TicksPerMillisecond;
 
         private static async Task<PcBuild?> LoadAsync(int id, ApplicationDbContext db, CancellationToken ct) =>
             await db.PcBuilds
