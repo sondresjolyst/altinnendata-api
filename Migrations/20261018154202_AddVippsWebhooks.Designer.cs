@@ -12,7 +12,7 @@ using altinnendata_api.Models;
 namespace altinnendata_api.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20261018153213_AddVippsWebhooks")]
+    [Migration("20261018154202_AddVippsWebhooks")]
     partial class AddVippsWebhooks
     {
         /// <inheritdoc />
@@ -1093,6 +1093,12 @@ namespace altinnendata_api.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<bool>("WithinDistanceConfirmed")
                         .HasColumnType("boolean");

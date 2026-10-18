@@ -97,6 +97,7 @@ namespace altinnendata_api.Models
                 order.Property(o => o.BuildSlug).HasMaxLength(160);
                 order.Property(o => o.FikenInvoiceNumber).HasMaxLength(50);
                 order.HasIndex(o => o.CreatedAt);
+                order.Property(o => o.Version).IsRowVersion();
 
                 // Deleting a build keeps its orders, which carry their own copy of the build details.
                 order.HasOne(o => o.PcBuild)

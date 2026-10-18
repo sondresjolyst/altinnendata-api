@@ -36,6 +36,12 @@ namespace altinnendata_api.Features.Shop
                 return VippsWebhookOutcome.Rejected;
             }
 
+            if (!e.Success)
+            {
+                log.LogWarning("Shop webhook {EventKey} rejected: {Name} did not succeed for order {OrderId}", eventKey, e.Name, order.Id);
+                return VippsWebhookOutcome.Rejected;
+            }
+
             // AUTHORIZED reserves the whole order. CAPTURED and REFUNDED can each be part of it.
             var amount = e.Amount?.Value;
             var amountFits = e.Name switch
@@ -51,14 +57,8 @@ namespace altinnendata_api.Features.Shop
                 return VippsWebhookOutcome.Rejected;
             }
 
-            if (!e.Success)
-            {
-                log.LogWarning("Shop webhook {EventKey} rejected: {Name} did not succeed for order {OrderId}", eventKey, e.Name, order.Id);
-                return VippsWebhookOutcome.Rejected;
-            }
-
             // Tracked, so a change to the build is saved together with the order and the processed marker.
-            // A build edited after this read fails that save, and Vipps sends the event again.
+            // An order or build changed after this read fails that save, and Vipps sends the event again.
             var build = order.PcBuildId is int buildId ? await db.PcBuilds.FindAsync([buildId], cancellationToken) : null;
             var previous = order.Status;
             var at = e.Timestamp?.UtcDateTime ?? DateTime.UtcNow;
@@ -92,7 +92,7 @@ namespace altinnendata_api.Features.Shop
                         }
                         break;
                     case "CANCELLED":
-                        if (previous == OrderStatus.Reserved)
+                        if (previous is OrderStatus.Pending or OrderStatus.Reserved)
                             Cancel(order, build, at, eventKey);
                         break;
                     default:
@@ -170,8 +170,16 @@ namespace altinnendata_api.Features.Shop
                 return;
             }
 
-            order.Status = OrderStatus.Cancelled;
-            order.CancelledAt = at;
+            // A payment cancelled before the buyer authorized it never reserved anything, so the order fails without an email.
+            if (order.Status == OrderStatus.Pending)
+            {
+                order.Status = OrderStatus.Failed;
+            }
+            else
+            {
+                order.Status = OrderStatus.Cancelled;
+                order.CancelledAt = at;
+            }
             if (build != null) BuildHold.Release(build, order.Id);
         }
     }

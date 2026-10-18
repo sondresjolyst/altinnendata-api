@@ -12,6 +12,15 @@ namespace altinnendata_api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // xmin is a Postgres system column, so Npgsql emits no SQL for it here or in Down.
+            migrationBuilder.AddColumn<uint>(
+                name: "xmin",
+                table: "Orders",
+                type: "xid",
+                rowVersion: true,
+                nullable: false,
+                defaultValue: 0u);
+
             migrationBuilder.CreateTable(
                 name: "DataProtectionKeys",
                 columns: table => new
@@ -75,6 +84,10 @@ namespace altinnendata_api.Migrations
 
             migrationBuilder.DropTable(
                 name: "VippsWebhookRegistrations");
+
+            migrationBuilder.DropColumn(
+                name: "xmin",
+                table: "Orders");
         }
     }
 }

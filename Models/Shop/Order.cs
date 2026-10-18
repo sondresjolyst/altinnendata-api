@@ -54,5 +54,8 @@ namespace altinnendata_api.Models.Shop
         public DateTime? RefundedAt { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>Postgres xmin. A save from a stale read fails, so a webhook and an admin action cannot overwrite each other.</summary>
+        public uint Version { get; set; }
     }
 }

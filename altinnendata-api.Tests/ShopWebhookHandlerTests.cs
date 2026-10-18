@@ -241,6 +241,54 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task AFailedEventWithAnAmountThatDoesNotFit_LogsThatItDidNotSucceed()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db, OrderStatus.Reserved);
+
+        var outcome = await DeliverAsync(db, Delivery("CAPTURED", 0, success: false));
+
+        Assert.Equal(VippsWebhookOutcomeKind.Rejected, outcome.Kind);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("did not succeed"));
+        Assert.DoesNotContain(_log.Entries, e => e.Level == LogLevel.Error);
+        VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Authorized_WhenTheAdminCancelledMeanwhile_SavesNothing_AndSendsNoEmail()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        var delivery = Delivery("AUTHORIZED");
+
+        // The handler reads the Pending order, then an admin cancels it before the endpoint saves.
+        await using (var handlerDb = postgres.NewContextOn(db))
+        {
+            var outcome = await new ShopWebhookHandler(handlerDb, _vipps.Object, _notifier.Object, _log).HandleAsync(delivery, Ct);
+            Assert.NotNull(outcome.AfterCommit);
+
+            await using (var admin = postgres.NewContextOn(db))
+            {
+                var adminOrder = await admin.Orders.SingleAsync(o => o.Id == orderId, Ct);
+                adminOrder.Status = OrderStatus.Cancelled;
+                await admin.SaveChangesAsync(Ct);
+            }
+
+            handlerDb.ProcessedWebhookEvents.Add(new VippsProcessedWebhookEvent { Id = delivery.EventKey, Source = delivery.Slot, ProcessedAt = DateTime.UtcNow });
+            // The library endpoint answers 500 to a failed save and skips the side effects, so Vipps sends the event again.
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => handlerDb.SaveChangesAsync(Ct));
+        }
+
+        var redelivery = await DeliverAsync(db, delivery);
+
+        Assert.Null(redelivery.AfterCommit);
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+        Assert.Null(order.AuthorizedAt);
+        VerifyNoEmails();
+    }
+
+    [Fact]
     public async Task Captured_InFull_MarksPaidAndTheBuildSoldToday()
     {
         await using var db = await postgres.NewContextAsync();
@@ -446,6 +494,61 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
 
         Assert.Null(afterAdmin.AfterCommit);
         _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Cancelled_OnAPendingOrder_FailsAndReleasesTheBuild_WithoutAnEmail()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+
+        var outcome = await DeliverAsync(db, Delivery("CANCELLED"));
+
+        Assert.Null(outcome.AfterCommit);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Failed, order.Status);
+        Assert.Null(order.CancelledAt);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+        Assert.Null(build.HeldByOrderId);
+        VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Cancelled_OnAPendingOrder_DoesNotReleaseABuildTheAdminReservedByHand()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        await using (var admin = postgres.NewContextOn(db))
+        {
+            await admin.PcBuilds.Where(b => b.Id == buildId).ExecuteUpdateAsync(s => s
+                .SetProperty(b => b.Availability, BuildAvailability.Reserved)
+                .SetProperty(b => b.HeldByOrderId, (int?)null), Ct);
+        }
+
+        await DeliverAsync(db, Delivery("CANCELLED"));
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Failed, order.Status);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Null(build.HeldByOrderId);
+        VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Cancelled_OnAPendingOrderAfterAPartialCapture_StaysPending_AndKeepsTheBuild()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        await using (var fresh = postgres.NewContextOn(db))
+            await fresh.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s.SetProperty(o => o.CapturedInOre, 500_000), Ct);
+
+        await DeliverAsync(db, Delivery("CANCELLED"));
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Pending, order.Status);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("manual handling"));
         VerifyNoEmails();
     }
 
