@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SjolystInnovation.AppKit.SiteSettings;
 using altinnendata_api.Models.Admin;
+using altinnendata_api.Models.Shop;
 using SjolystInnovation.AppKit.Auth;
 using SjolystInnovation.AppKit.Storage.Images;
 
@@ -30,6 +31,8 @@ namespace altinnendata_api.Models
         public DbSet<ContentImage> ContentImages { get; set; }
         public DbSet<ContentImageVariant> ContentImageVariants { get; set; }
         public DbSet<DailyStatSnapshot> DailyStatSnapshots { get; set; }
+        public DbSet<ShopSettings> ShopSettings { get; set; }
+        public DbSet<DeliveryOption> DeliveryOptions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -42,6 +45,29 @@ namespace altinnendata_api.Models
                 .IsUnique();
 
             modelBuilder.AddAppKitLegalPages();
+
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.Id)
+                .ValueGeneratedNever();
+
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.BuyButton)
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            modelBuilder.Entity<DeliveryOption>()
+                .Property(o => o.Method)
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            modelBuilder.Entity<DeliveryOption>()
+                .HasIndex(o => o.Method)
+                .IsUnique();
+
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.LabelNo).HasMaxLength(80);
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.LabelEn).HasMaxLength(80);
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.DescriptionNo).HasMaxLength(300);
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.DescriptionEn).HasMaxLength(300);
 
             // The home page sections keep their existing table, which holds one page per locale.
             modelBuilder.AddAppKitPageSections(o =>

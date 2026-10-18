@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Admin;
+using altinnendata_api.Features.Shop;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
@@ -49,6 +50,7 @@ namespace altinnendata_api
             builder.Services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+            builder.Services.AddMemoryCache();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()
@@ -148,6 +150,7 @@ namespace altinnendata_api
                 }
 
                 await SeedData.EnsureComponentCategoriesAsync(context);
+                await ShopSeed.EnsureAsync(context, CancellationToken.None);
                 await app.Services.SeedAppKitLegalPagesAsync<ApplicationDbContext>(LegalSeedText.All);
                 await app.Services.SeedAppKitFirstAdminAsync<User>(app.Configuration, u => new User { FirstName = u.FirstName, LastName = u.LastName });
             }
