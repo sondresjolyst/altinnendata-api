@@ -51,6 +51,7 @@ namespace altinnendata_api
                 options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
             builder.Services.AddMemoryCache();
+            builder.Services.AddShopVipps(builder.Configuration);
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()

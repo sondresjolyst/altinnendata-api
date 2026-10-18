@@ -26,7 +26,10 @@ Production reads these from the cluster secret.
 | `Jwt__Key`, `Jwt__Issuer` | JWT signing key and issuer. The key must match the app's `ALTINNENDATA_API_JWT_SECRET` |
 | `BrevoSettings__ApiKey`, `BrevoSettings__SenderEmail`, `BrevoSettings__SenderName` | Transactional email |
 | `Seed__AdminEmail`, `Seed__AdminPassword` | First admin, created at startup |
-| `Site__BaseUrl` | Used in links sent by email |
+| `Site__BaseUrl` | Used in links sent by email and in the Vipps return link |
+| `Vipps__ClientId`, `Vipps__ClientSecret`, `Vipps__SubscriptionKey`, `Vipps__MerchantSerialNumber` | Vipps ePayment credentials for live payments |
+| `Vipps__TestClientId`, `Vipps__TestClientSecret`, `Vipps__TestSubscriptionKey`, `Vipps__TestMerchantSerialNumber` | Vipps test environment credentials, used while Vipps test mode is on in the shop settings |
+| `Api__PublicBaseUrl` | The API's own public address, where Vipps sends its webhooks |
 | `Storage__ImagesPath` | Mount for uploaded images, `/data/images` in the cluster |
 | `TrustedProxies` | CIDRs allowed to set `X-Forwarded-For`. Defaults to the cluster pod network (`192.169.0.0/16`, where the ingress runs) and the private ranges. A wildcard would let any caller forge the client IP the rate limiter reads |
 
