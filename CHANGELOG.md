@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.9.0...v1.10.0) (2026-10-18)
+
+
+### Features
+
+* **email:** tag Brevo emails with the app name ([#118](https://github.com/sondresjolyst/altinnendata-api/issues/118)) ([5af43dc](https://github.com/sondresjolyst/altinnendata-api/commit/5af43dc27eadca864227393be0cd42869738d74d))
+
 ## [1.9.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.8.4...v1.9.0) (2026-10-18)
 
 
