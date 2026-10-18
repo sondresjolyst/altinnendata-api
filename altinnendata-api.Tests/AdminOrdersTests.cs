@@ -1,0 +1,602 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using SjolystInnovation.AppKit.Vipps;
+using altinnendata_api.Features.Shop;
+using altinnendata_api.Models;
+using altinnendata_api.Models.Shop;
+using Xunit;
+
+namespace altinnendata_api.Tests;
+
+[Collection("postgres")]
+public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
+{
+    private const int Total = 1_299_000;
+    private const string Reference = "ae-000001-abcdef12";
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static readonly DateTime WebhookTime = new(2026, 10, 18, 9, 0, 0, DateTimeKind.Utc);
+
+    private readonly Mock<IVippsClient> _vipps = new(MockBehavior.Strict);
+    private readonly Mock<IOrderNotifier> _notifier = new();
+    private static readonly NullLogger<AdminOrderDto> Log = NullLogger<AdminOrderDto>.Instance;
+
+    /// <summary>
+    /// An order in <paramref name="status"/> for a build. A Pending or Reserved order holds the build,
+    /// a Paid or Refunded one has sold it.
+    /// </summary>
+    private static async Task<(int BuildId, int OrderId)> SeedAsync(
+        ApplicationDbContext db,
+        OrderStatus status = OrderStatus.Reserved,
+        string reference = Reference,
+        string slug = "gaming-pc",
+        DateTime? createdAt = null,
+        Action<Order>? editOrder = null)
+    {
+        var build = new PcBuild { Slug = slug, Published = true, PriceNok = 12990, Availability = BuildAvailability.Available };
+        db.PcBuilds.Add(build);
+        await db.SaveChangesAsync(Ct);
+
+        var order = new Order
+        {
+            Reference = reference,
+            PublicToken = Guid.NewGuid().ToString("N"),
+            Status = status,
+            Locale = "no",
+            BuyerName = "Ola Nordmann",
+            BuyerEmail = "ola@example.com",
+            BuyerPhone = "4791234567",
+            DeliveryMethod = DeliveryMethod.Pickup,
+            DeliveryLabel = "Henting",
+            PcBuildId = build.Id,
+            BuildTitle = "Gaming-PC",
+            BuildSlug = slug,
+            BuildPriceInOre = Total,
+            TotalInOre = Total,
+            CapturedInOre = status is OrderStatus.Paid or OrderStatus.Refunded ? Total : 0,
+            IsTest = true,
+            TermsAcceptedAt = DateTime.UtcNow,
+            CreatedAt = createdAt ?? DateTime.UtcNow
+        };
+        editOrder?.Invoke(order);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        if (status is OrderStatus.Pending or OrderStatus.Reserved)
+        {
+            Assert.True(await BuildHold.TryHoldAsync(db, build.Id, order.Id, 1, Ct));
+        }
+        else if (status is OrderStatus.Paid or OrderStatus.Refunded)
+        {
+            build.Availability = BuildAvailability.Sold;
+            build.SoldOn = new DateOnly(2026, 10, 1);
+            await db.SaveChangesAsync(Ct);
+        }
+
+        db.ChangeTracker.Clear();
+        return (build.Id, order.Id);
+    }
+
+    private async Task<(PcBuild Build, Order Order)> ReloadAsync(ApplicationDbContext existing, int buildId, int orderId)
+    {
+        await using var fresh = postgres.NewContextOn(existing);
+        return (await fresh.PcBuilds.AsNoTracking().SingleAsync(b => b.Id == buildId, Ct),
+            await fresh.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct));
+    }
+
+    /// <summary>Changes the order and its build on a context of its own, the way a webhook does while an admin action waits on Vipps.</summary>
+    private async Task WebhookChangesAsync(ApplicationDbContext existing, int orderId, Action<Order, PcBuild> change)
+    {
+        await using var other = postgres.NewContextOn(existing);
+        var order = await other.Orders.SingleAsync(o => o.Id == orderId, Ct);
+        var build = await other.PcBuilds.SingleAsync(b => b.Id == order.PcBuildId, Ct);
+        change(order, build);
+        await other.SaveChangesAsync(Ct);
+    }
+
+    private static VippsPayment Payment(int captured = 0, int refunded = 0) =>
+        new() { Reference = Reference, State = "AUTHORIZED", CapturedAmountInOre = captured, RefundedAmountInOre = refunded };
+
+    private void SetupCapture(int captured = Total) =>
+        _vipps.Setup(v => v.CapturePaymentAsync(Reference, Total, "capture-" + Reference, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Payment(captured: captured));
+
+    private void SetupCancel() =>
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+    private void SetupRefund(int refunded = Total) =>
+        _vipps.Setup(v => v.RefundPaymentAsync(Reference, Total, "refund-" + Reference, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Payment(captured: Total, refunded: refunded));
+
+    private Task<IResult> Capture(ApplicationDbContext db, int id) => AdminOrders.Capture(id, db, _vipps.Object, Log, Ct);
+    private Task<IResult> Cancel(ApplicationDbContext db, int id) => AdminOrders.Cancel(id, db, _vipps.Object, _notifier.Object, Log, Ct);
+    private Task<IResult> Refund(ApplicationDbContext db, int id) => AdminOrders.Refund(id, db, _vipps.Object, _notifier.Object, Log, Ct);
+
+    private static AdminOrderDto AssertOk(IResult result) => Assert.IsType<Ok<AdminOrderDto>>(result).Value!;
+
+    private static void AssertProblem(IResult result, int status, string code)
+    {
+        var problem = Assert.IsType<ProblemHttpResult>(result);
+        Assert.Equal(status, problem.StatusCode);
+        Assert.Equal(code, problem.ProblemDetails.Extensions["code"]);
+    }
+
+    private static VippsWebhookDelivery<VippsPaymentEvent> Delivery(string name) => new()
+    {
+        Event = new VippsPaymentEvent
+        {
+            Msn = "123456",
+            Reference = Reference,
+            PspReference = Guid.NewGuid().ToString("N"),
+            Name = name,
+            Amount = new VippsWebhookAmount { Value = Total, Currency = "NOK" },
+            Timestamp = new DateTimeOffset(WebhookTime),
+            Success = true
+        },
+        IsTest = true,
+        EventKey = Guid.NewGuid().ToString("N"),
+        Slot = ShopVipps.Slot
+    };
+
+    [Fact]
+    public async Task List_IsNewestFirst_WithTheGuaranteeAndInvoiceNumber()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var guarantee = new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero);
+        var (_, olderId) = await SeedAsync(db, OrderStatus.Paid, "ae-000001-older000", "older-pc", DateTime.UtcNow.AddDays(-2));
+        var (newerBuildId, newerId) = await SeedAsync(db, OrderStatus.Reserved, "ae-000002-newer000", "newer-pc", DateTime.UtcNow,
+            o =>
+            {
+                o.CaptureGuaranteedUntil = guarantee;
+                o.InvoiceNumber = "10042";
+                o.DeliveryMethod = DeliveryMethod.Shipping;
+            });
+
+        var result = await AdminOrders.List(db, Ct);
+
+        var list = Assert.IsType<Ok<List<AdminOrderSummaryDto>>>(result).Value!;
+        Assert.Equal([newerId, olderId], list.Select(o => o.Id));
+        var newer = list[0];
+        Assert.Equal("ae-000002-newer000", newer.Reference);
+        Assert.Equal("Reserved", newer.Status);
+        Assert.Equal("Ola Nordmann", newer.BuyerName);
+        Assert.Equal("Gaming-PC", newer.BuildTitle);
+        Assert.Equal(newerBuildId, newer.PcBuildId);
+        Assert.Equal("Shipping", newer.DeliveryMethod);
+        Assert.Equal(Total, newer.TotalInOre);
+        Assert.True(newer.IsTest);
+        Assert.Equal(guarantee, newer.CaptureGuaranteedUntil);
+        Assert.Equal("10042", newer.InvoiceNumber);
+        Assert.Null(list[1].CaptureGuaranteedUntil);
+        Assert.Null(list[1].InvoiceNumber);
+    }
+
+    [Fact]
+    public async Task Get_ReturnsTheWholeOrder_Or404()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, editOrder: o =>
+        {
+            o.DeliveryMethod = DeliveryMethod.HomeDelivery;
+            o.StreetAddress = "Storgata 1";
+            o.PostalCode = "0155";
+            o.City = "Oslo";
+            o.WithinDistanceConfirmed = true;
+            o.DeliveryPriceInOre = 50000;
+        });
+
+        var dto = AssertOk(await AdminOrders.Get(orderId, db, Ct));
+
+        Assert.Equal(orderId, dto.Id);
+        Assert.Equal(Reference, dto.Reference);
+        Assert.Equal("Reserved", dto.Status);
+        Assert.Equal("no", dto.Locale);
+        Assert.Equal("ola@example.com", dto.BuyerEmail);
+        Assert.Equal("4791234567", dto.BuyerPhone);
+        Assert.Equal("Storgata 1", dto.StreetAddress);
+        Assert.Equal("0155", dto.PostalCode);
+        Assert.Equal("Oslo", dto.City);
+        Assert.Equal("HomeDelivery", dto.DeliveryMethod);
+        Assert.Equal("Henting", dto.DeliveryLabel);
+        Assert.Equal(50000, dto.DeliveryPriceInOre);
+        Assert.True(dto.WithinDistanceConfirmed);
+        Assert.Equal(buildId, dto.PcBuildId);
+        Assert.Equal("gaming-pc", dto.BuildSlug);
+        Assert.Equal(Total, dto.BuildPriceInOre);
+        Assert.Equal(Total, dto.TotalInOre);
+        Assert.IsType<NotFound>(await AdminOrders.Get(orderId + 100, db, Ct));
+    }
+
+    [Fact]
+    public async Task Actions_OnAnUnknownOrder_Return404()
+    {
+        await using var db = await postgres.NewContextAsync();
+
+        Assert.IsType<NotFound>(await Capture(db, 999));
+        Assert.IsType<NotFound>(await Cancel(db, 999));
+        Assert.IsType<NotFound>(await Refund(db, 999));
+        Assert.IsType<NotFound>(await AdminOrders.SetInvoiceNumber(999, new InvoiceNumberRequest("1"), db, Ct));
+        _vipps.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Capture_MarksPaidAndSold_WithAnIdempotencyKeyFromTheReference()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        SetupCapture();
+        var before = DateTime.UtcNow;
+
+        var dto = AssertOk(await Capture(db, orderId));
+
+        _vipps.Verify(v => v.CapturePaymentAsync("ae-000001-abcdef12", 1299000, "capture-ae-000001-abcdef12", true, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("Paid", dto.Status);
+        Assert.Equal(Total, dto.CapturedInOre);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(Total, order.CapturedInOre);
+        Assert.InRange(order.CapturedAt!.Value, before.AddSeconds(-1), DateTime.UtcNow.AddSeconds(1));
+        Assert.True(order.UpdatedAt >= before.AddSeconds(-1));
+        Assert.Equal(BuildAvailability.Sold, build.Availability);
+        Assert.Equal(DateOnly.FromDateTime(DateTime.UtcNow), build.SoldOn);
+        Assert.Null(build.HeldByOrderId);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Capture_Partial_Returns502_AndStaysReserved()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        SetupCapture(captured: 500_000);
+
+        var result = await Capture(db, orderId);
+
+        AssertProblem(result, StatusCodes.Status502BadGateway, "captureIncomplete");
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(500_000, order.CapturedInOre);
+        Assert.Null(order.CapturedAt);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Equal(orderId, build.HeldByOrderId);
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Pending)]
+    [InlineData(OrderStatus.Paid)]
+    [InlineData(OrderStatus.Cancelled)]
+    public async Task Capture_OnAnOrderThatIsNotReserved_Returns409(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, status);
+
+        var result = await Capture(db, orderId);
+
+        AssertProblem(result, StatusCodes.Status409Conflict, "wrongStatus");
+        _vipps.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Pending)]
+    [InlineData(OrderStatus.Paid)]
+    [InlineData(OrderStatus.Failed)]
+    public async Task Cancel_OnAnOrderThatIsNotReserved_Returns409(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, status);
+
+        AssertProblem(await Cancel(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+        _vipps.VerifyNoOtherCalls();
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Cancel_OnAPartlyCapturedOrder_Returns409_AndKeepsTheHold()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, editOrder: o => o.CapturedInOre = 500_000);
+
+        AssertProblem(await Cancel(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+
+        _vipps.VerifyNoOtherCalls();
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(orderId, build.HeldByOrderId);
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Pending)]
+    [InlineData(OrderStatus.Reserved)]
+    [InlineData(OrderStatus.Refunded)]
+    public async Task Refund_OnAnOrderThatIsNotPaid_Returns409(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, status);
+
+        AssertProblem(await Refund(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+        _vipps.VerifyNoOtherCalls();
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cancel_ReleasesOnlyItsOwnHold_AndNotifies(bool adminTookTheBuild)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        if (adminTookTheBuild)
+        {
+            // An admin edit clears the hold and keeps the admin's availability.
+            var held = await db.PcBuilds.SingleAsync(b => b.Id == buildId, Ct);
+            held.HeldByOrderId = null;
+            await db.SaveChangesAsync(Ct);
+            db.ChangeTracker.Clear();
+        }
+        SetupCancel();
+        var before = DateTime.UtcNow;
+
+        var dto = AssertOk(await Cancel(db, orderId));
+
+        _vipps.Verify(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("Cancelled", dto.Status);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+        Assert.InRange(order.CancelledAt!.Value, before.AddSeconds(-1), DateTime.UtcNow.AddSeconds(1));
+        Assert.Null(build.HeldByOrderId);
+        Assert.Equal(adminTookTheBuild ? BuildAvailability.Reserved : BuildAvailability.Available, build.Availability);
+        _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Refund_KeepsTheBuildSold_AndNotifies()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        SetupRefund();
+        var before = DateTime.UtcNow;
+
+        var dto = AssertOk(await Refund(db, orderId));
+
+        _vipps.Verify(v => v.RefundPaymentAsync(Reference, Total, "refund-" + Reference, true, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("Refunded", dto.Status);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Refunded, order.Status);
+        Assert.Equal(Total, order.RefundedInOre);
+        Assert.InRange(order.RefundedAt!.Value, before.AddSeconds(-1), DateTime.UtcNow.AddSeconds(1));
+        Assert.Equal(BuildAvailability.Sold, build.Availability);
+        Assert.Equal(new DateOnly(2026, 10, 1), build.SoldOn);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Refund_Partial_Returns502_AndStaysPaid()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        SetupRefund(refunded: 300_000);
+
+        AssertProblem(await Refund(db, orderId), StatusCodes.Status502BadGateway, "refundIncomplete");
+
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(300_000, order.RefundedInOre);
+        Assert.Null(order.RefundedAt);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    public static TheoryData<string, string> VippsFailures => new()
+    {
+        { "capture", "http" }, { "capture", "timeout" },
+        { "cancel", "http" }, { "cancel", "timeout" },
+        { "refund", "http" }, { "refund", "timeout" }
+    };
+
+    [Theory]
+    [MemberData(nameof(VippsFailures))]
+    public async Task Action_WhenVippsFails_ChangesNothing(string action, string failure)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, action == "refund" ? OrderStatus.Paid : OrderStatus.Reserved);
+        var (buildBefore, orderBefore) = await ReloadAsync(db, buildId, orderId);
+        // HttpClient reports its own timeout as a TaskCanceledException around a TimeoutException.
+        Exception error = failure == "http"
+            ? new HttpRequestException("Vipps is down")
+            : new TaskCanceledException("The request was canceled.", new TimeoutException());
+        var vipps = new Mock<IVippsClient>();
+        vipps.Setup(v => v.CapturePaymentAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>())).ThrowsAsync(error);
+        vipps.Setup(v => v.CancelPaymentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>())).ThrowsAsync(error);
+        vipps.Setup(v => v.RefundPaymentAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>())).ThrowsAsync(error);
+
+        var result = action switch
+        {
+            "capture" => await AdminOrders.Capture(orderId, db, vipps.Object, Log, Ct),
+            "cancel" => await AdminOrders.Cancel(orderId, db, vipps.Object, _notifier.Object, Log, Ct),
+            _ => await AdminOrders.Refund(orderId, db, vipps.Object, _notifier.Object, Log, Ct)
+        };
+
+        AssertProblem(result, StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(orderBefore.Version, order.Version);
+        Assert.Equal(orderBefore.Status, order.Status);
+        Assert.Equal(buildBefore.Version, build.Version);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Capture_WhenTheCapturedWebhookWinsTheRace_AnswersOkWithTheWebhooksResult()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.CapturePaymentAsync(Reference, Total, "capture-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await WebhookChangesAsync(db, orderId, (o, b) =>
+                {
+                    o.Status = OrderStatus.Paid;
+                    o.CapturedInOre = Total;
+                    o.CapturedAt = WebhookTime;
+                    BuildHold.MarkSold(b, o.Id, new DateOnly(2026, 10, 18));
+                });
+                return Payment(captured: Total);
+            });
+
+        var dto = AssertOk(await Capture(db, orderId));
+
+        Assert.Equal("Paid", dto.Status);
+        Assert.Equal(WebhookTime, dto.CapturedAt);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(WebhookTime, order.CapturedAt);
+        Assert.Equal(BuildAvailability.Sold, build.Availability);
+        Assert.Equal(new DateOnly(2026, 10, 18), build.SoldOn);
+    }
+
+    [Fact]
+    public async Task Capture_WhenTheOrderFailsDuringTheCall_Returns409_AndKeepsTheWebhooksState()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.CapturePaymentAsync(Reference, Total, "capture-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await WebhookChangesAsync(db, orderId, (o, b) =>
+                {
+                    o.Status = OrderStatus.Failed;
+                    BuildHold.Release(b, o.Id);
+                });
+                return Payment(captured: Total);
+            });
+
+        AssertProblem(await Capture(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Failed, order.Status);
+        Assert.Equal(0, order.CapturedInOre);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+    }
+
+    [Fact]
+    public async Task Capture_WhenAnAdminEditsTheBuildDuringTheCall_PaysTheOrder_AndKeepsTheAdminsBuild()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.CapturePaymentAsync(Reference, Total, "capture-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await WebhookChangesAsync(db, orderId, (_, b) =>
+                {
+                    b.HeldByOrderId = null;
+                    b.Availability = BuildAvailability.Available;
+                });
+                return Payment(captured: Total);
+            });
+
+        var dto = AssertOk(await Capture(db, orderId));
+
+        Assert.Equal("Paid", dto.Status);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+        Assert.Null(build.SoldOn);
+    }
+
+    [Fact]
+    public async Task Cancel_WhenTheCancelledWebhookWinsTheRace_AnswersOk_AndSendsNoSecondEmail()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(() => WebhookChangesAsync(db, orderId, (o, b) =>
+            {
+                o.Status = OrderStatus.Cancelled;
+                o.CancelledAt = WebhookTime;
+                BuildHold.Release(b, o.Id);
+            }));
+
+        var dto = AssertOk(await Cancel(db, orderId));
+
+        Assert.Equal("Cancelled", dto.Status);
+        Assert.Equal(WebhookTime, dto.CancelledAt);
+        var (build, _) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Refund_WhenTheRefundedWebhookWinsTheRace_AnswersOk_AndSendsNoSecondEmail()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        _vipps.Setup(v => v.RefundPaymentAsync(Reference, Total, "refund-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await WebhookChangesAsync(db, orderId, (o, _) =>
+                {
+                    o.Status = OrderStatus.Refunded;
+                    o.RefundedInOre = Total;
+                    o.RefundedAt = WebhookTime;
+                });
+                return Payment(captured: Total, refunded: Total);
+            });
+
+        var dto = AssertOk(await Refund(db, orderId));
+
+        Assert.Equal("Refunded", dto.Status);
+        Assert.Equal(WebhookTime, dto.RefundedAt);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("CANCELLED")]
+    [InlineData("REFUNDED")]
+    public async Task AdminActionThenItsWebhook_SendsTheEmailOnce(string webhook)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, webhook == "REFUNDED" ? OrderStatus.Paid : OrderStatus.Reserved);
+        SetupCancel();
+        SetupRefund();
+
+        AssertOk(webhook == "REFUNDED" ? await Refund(db, orderId) : await Cancel(db, orderId));
+        await using var other = postgres.NewContextOn(db);
+        var outcome = await new ShopWebhookHandler(other, _vipps.Object, _notifier.Object, NullLogger<ShopWebhookHandler>.Instance)
+            .HandleAsync(Delivery(webhook), Ct);
+
+        Assert.Equal(VippsWebhookOutcomeKind.Applied, outcome.Kind);
+        Assert.Null(outcome.AfterCommit);
+        if (webhook == "REFUNDED")
+            _notifier.Verify(n => n.OrderRefundedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        else
+            _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task SetInvoiceNumber_TrimsAndClears()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Refunded);
+
+        var set = AssertOk(await AdminOrders.SetInvoiceNumber(orderId, new InvoiceNumberRequest("  10042 "), db, Ct));
+        Assert.Equal("10042", set.InvoiceNumber);
+        Assert.Equal("10042", (await ReloadAsync(db, buildId, orderId)).Order.InvoiceNumber);
+
+        var cleared = AssertOk(await AdminOrders.SetInvoiceNumber(orderId, new InvoiceNumberRequest(""), db, Ct));
+        Assert.Null(cleared.InvoiceNumber);
+        Assert.Null((await ReloadAsync(db, buildId, orderId)).Order.InvoiceNumber);
+        Assert.Equal("Refunded", cleared.Status);
+
+        var validator = new InvoiceNumberRequestValidator();
+        Assert.True(validator.Validate(new InvoiceNumberRequest(new string('1', 50))).IsValid);
+        Assert.True(validator.Validate(new InvoiceNumberRequest(null)).IsValid);
+        var tooLong = validator.Validate(new InvoiceNumberRequest(new string('1', 51)));
+        Assert.False(tooLong.IsValid);
+        Assert.Contains(tooLong.Errors, e => e.PropertyName == nameof(InvoiceNumberRequest.InvoiceNumber));
+    }
+}
