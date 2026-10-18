@@ -3,6 +3,7 @@ using altinnendata_api.Constants;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
+using altinnendata_api.Models.Shop;
 using SjolystInnovation.AppKit.AdminStats;
 using SjolystInnovation.AppKit.Storage;
 using SjolystInnovation.AppKit.Storage.Images;
@@ -31,6 +32,9 @@ namespace altinnendata_api.Features.Admin
                 AvailableBuilds = await db.PcBuilds.CountAsync(b => b.Availability == BuildAvailability.Available, ct),
                 RevenueNok = sold.Where(b => b.PriceNok.HasValue).Sum(b => (long)b.PriceNok!.Value),
                 SoldWithoutPrice = sold.Count(b => !b.PriceNok.HasValue),
+                CapturedRevenueInOre = await db.Orders
+                    .Where(o => o.Status == OrderStatus.Paid && !o.IsTest)
+                    .SumAsync(o => (long)o.CapturedInOre, ct),
                 SoldWithoutDate = sold.Count(b => !b.SoldOn.HasValue),
                 CatalogParts = await db.ComponentParts.CountAsync(ct),
                 ContentImages = await db.ContentImages.CountAsync(ct),
