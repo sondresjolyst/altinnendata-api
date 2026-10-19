@@ -1,7 +1,10 @@
+using System.Globalization;
 using System.Net;
+using System.Net.Mail;
 using System.Text;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Builds;
 using altinnendata_api.Infrastructure;
@@ -30,7 +33,13 @@ namespace altinnendata_api.Features.Contact
         public ContactRequestValidator()
         {
             RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
-            RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(200);
+            RuleFor(x => x.Email)
+                .NotEmpty()
+                .EmailAddress()
+                .MaximumLength(200)
+                .Must(IsSingleAddress).WithMessage("'{PropertyName}' is not a valid email address.")
+                .WithName("Email")
+                .OverridePropertyName(EmailField);
             RuleFor(x => x.Phone).MaximumLength(30);
             RuleFor(x => x.UseCase).MaximumLength(160);
             RuleFor(x => x.BudgetNok).Must(v => AllowedBudgetRanges.Contains(v)).When(x => x.BudgetNok != null);
@@ -38,18 +47,51 @@ namespace altinnendata_api.Features.Contact
             RuleFor(x => x.Message).NotEmpty().MaximumLength(4000);
             RuleFor(x => x.Locale).MaximumLength(10);
         }
+
+        public const string EmailField = "email";
+
+        private static readonly char[] Forbidden = [',', ';', '<', '>', '\r', '\n'];
+
+        /// <summary>
+        /// True when <paramref name="value"/> is one plain address and nothing else, so it cannot add recipients
+        /// or a display name to the emails it is used in.
+        /// </summary>
+        public static bool IsSingleAddress(string? value)
+        {
+            var trimmed = value?.Trim();
+            if (string.IsNullOrEmpty(trimmed) || value!.IndexOfAny(Forbidden) >= 0) return false;
+            try
+            {
+                return new MailAddress(trimmed).Address == trimmed;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+        }
     }
 
-    /// <summary>Sends a contact / build enquiry to the configured recipient, and a copy to the sender as a receipt.</summary>
+    /// <summary>Sends a contact / build enquiry to the configured recipient, and a receipt to the sender.</summary>
     public static class SendEnquiry
     {
+        /// <summary>One receipt per address in this window, so the form cannot be used to flood an inbox.</summary>
+        public static readonly TimeSpan ReceiptWindow = TimeSpan.FromMinutes(10);
+
+        private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Oslo"); }
+            catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
+        });
+
         public static async Task<IResult> Handle(
             ContactRequest req,
             ApplicationDbContext db,
             IEmailSender email,
             IConfiguration config,
+            IMemoryCache cache,
             CancellationToken ct)
         {
+            var sender = req.Email.Trim();
             var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
 
             var build = string.IsNullOrWhiteSpace(req.BuildSlug)
@@ -61,11 +103,16 @@ namespace altinnendata_api.Features.Contact
             await email.SendAsync(
                 new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config))
                 {
-                    ReplyTo = req.Email,
+                    ReplyTo = sender,
                 },
                 ct);
 
-            await email.SendAsync(BuildReceipt(req, settings), ct);
+            var receiptKey = $"contact-receipt:{sender.ToLowerInvariant()}";
+            if (!cache.TryGetValue(receiptKey, out _))
+            {
+                cache.Set(receiptKey, true, ReceiptWindow);
+                await email.SendAsync(BuildReceipt(sender, req.Locale, settings, DateTime.UtcNow), ct);
+            }
 
             return TypedResults.Ok(new MessageResponse("Thanks — we'll be in touch."));
         }
@@ -95,23 +142,21 @@ namespace altinnendata_api.Features.Contact
         }
 
         /// <summary>
-        /// The receipt to the sender, in the locale of the page they wrote from. It repeats their message, so a
-        /// withdrawal sent through the form is confirmed at once.
+        /// The receipt to the sender, in the locale of the page they wrote from, so a withdrawal sent through the
+        /// form is confirmed at once. It holds nothing the sender typed, so it cannot carry text to someone else.
         /// </summary>
-        internal static EmailMessage BuildReceipt(ContactRequest req, AppSettings settings)
+        internal static EmailMessage BuildReceipt(string to, string? locale, AppSettings settings, DateTime receivedUtc)
         {
-            var no = Locales.Normalize(req.Locale) == "no";
+            var no = Locales.Normalize(locale) == "no";
+            var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(receivedUtc, DateTimeKind.Utc), Oslo.Value);
             var subject = no ? "Vi har mottatt meldingen din" : "We have received your message";
             var body = new StringBuilder($"<h2>{subject}</h2>");
-            body.Append($"<p>{(no ? "Hei" : "Hi")} {WebUtility.HtmlEncode(req.Name)},</p>");
             body.Append(no
-                ? "<p>Takk for meldingen. Vi svarer så snart vi kan. Dette er en kopi av det du sendte oss.</p>"
-                : "<p>Thank you for your message. We will reply as soon as we can. This is a copy of what you sent us.</p>");
-            body.Append($"<p><strong>{(no ? "Meldingen din" : "Your message")}:</strong></p>");
-            body.Append($"<p>{WebUtility.HtmlEncode(req.Message).Replace("\n", "<br/>")}</p>");
+                ? $"<p>Vi har mottatt meldingen din {local.ToString("dd.MM.yyyy 'kl.' HH:mm", CultureInfo.InvariantCulture)} og svarer så snart vi kan.</p>"
+                : $"<p>We received your message on {local.ToString("d MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture)} and will reply as soon as we can.</p>");
             EmailFooter.Append(body, settings, no);
 
-            return new EmailMessage(req.Email, subject, body.ToString()) { ReplyTo = settings.PublicEmail };
+            return new EmailMessage(to, subject, body.ToString()) { ReplyTo = settings.PublicEmail };
         }
 
         private static string? BuildLink(string? slug, PcBuild? build, IConfiguration config)
