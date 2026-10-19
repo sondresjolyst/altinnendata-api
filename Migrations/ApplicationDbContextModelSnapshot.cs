@@ -1122,6 +1122,22 @@ namespace altinnendata_api.Migrations
                     b.ToTable("Orders");
                 });
 
+            modelBuilder.Entity("altinnendata_api.Models.Shop.OutsideSalesMonth", b =>
+                {
+                    b.Property<DateOnly>("Month")
+                        .HasColumnType("date");
+
+                    b.Property<int>("AmountInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Month");
+
+                    b.ToTable("OutsideSalesMonths");
+                });
+
             modelBuilder.Entity("altinnendata_api.Models.Shop.ShopSettings", b =>
                 {
                     b.Property<int>("Id")
