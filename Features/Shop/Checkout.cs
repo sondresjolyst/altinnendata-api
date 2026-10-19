@@ -4,6 +4,7 @@ using Npgsql;
 using SjolystInnovation.AppKit.Vipps;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Builds;
+using altinnendata_api.Helpers;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Shop;
@@ -45,8 +46,20 @@ namespace altinnendata_api.Features.Shop
                 return BuildUnavailable();
 
             var locale = Locales.Normalize(req.Locale);
+            // The buyer accepted the terms they read. Terms saved since then must be read first.
+            var terms = await ShopTerms.FindAsync(db, locale, ct);
+            if (terms != null && req.TermsVersion != ShopTerms.VersionOf(terms))
+                return ShopProblems.Code(StatusCodes.Status409Conflict, "termsChanged",
+                    "The terms have changed. Read the new terms and accept them again.");
+
             VippsPhoneNumber.TryNormalize(req.Phone, out var phone);
             var order = NewOrder(req, locale, phone, build, delivery);
+            // A copy of the terms as they read now, for the confirmation email (angrerettloven § 18).
+            order.TermsVersion = req.TermsVersion;
+            order.TermsAcceptedIp = NullIfEmpty(IpTruncator.Truncate(http.Connection.RemoteIpAddress?.ToString()));
+            order.TermsTitle = terms?.Title;
+            order.TermsMarkdown = terms?.BodyMarkdown;
+            order.TermsLocale = terms?.Locale;
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             // A second checkout of the same build waits on this hold's row lock, so bound the wait.
@@ -91,12 +104,14 @@ namespace altinnendata_api.Features.Shop
             }
         }
 
-        /// <summary>The Vipps reference and idempotency key, <c>ae-000042-1a2b3c4d</c>.</summary>
+        /// <summary>The order number, also the Vipps reference and idempotency key, <c>AID-000042-1A2B3C4D</c>.</summary>
         public static string NewReference(int orderId) =>
-            $"ae-{orderId:D6}-{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(4))}";
+            $"AID-{orderId:D6}-{Convert.ToHexString(RandomNumberGenerator.GetBytes(4))}";
 
         /// <summary>The buyer's secret for the order status page, 32 lowercase hex characters.</summary>
         public static string NewToken() => Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+
+        private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;
 
         private static IResult BuildUnavailable() =>
             ShopProblems.Code(StatusCodes.Status409Conflict, "buildUnavailable", "The computer is no longer available.");

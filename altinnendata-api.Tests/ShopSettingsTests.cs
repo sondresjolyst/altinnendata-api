@@ -67,6 +67,32 @@ public class ShopSettingsTests : TestBase
     }
 
     [Fact]
+    public async Task Public_ReportsNone_AsTheTermsVersion_WhileThereAreNoTerms()
+    {
+        await using var db = await SeededDb();
+
+        var ok = Assert.IsType<Ok<ShopConfigDto>>(await ShopSettingsEndpoints.GetPublic(db, default, "no"));
+
+        Assert.Equal("none", ok.Value!.TermsVersion);
+    }
+
+    [Fact]
+    public async Task Public_ReportsTheTermsVersion_OfTheAskedLocale_OrTheNorwegianPage()
+    {
+        await using var db = await SeededDb();
+        AddTerms(db, "no", new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc).AddTicks(1234560));
+        await db.SaveChangesAsync();
+
+        var en = Assert.IsType<Ok<ShopConfigDto>>(await ShopSettingsEndpoints.GetPublic(db, default, "en")).Value!;
+        Assert.Equal("2026-10-01T08:00:00.123456Z", en.TermsVersion);
+
+        AddTerms(db, "en", new DateTime(2026, 10, 2, 9, 30, 0, DateTimeKind.Utc));
+        await db.SaveChangesAsync();
+        Assert.Equal("2026-10-02T09:30:00.000000Z", Assert.IsType<Ok<ShopConfigDto>>(await ShopSettingsEndpoints.GetPublic(db, default, "en")).Value!.TermsVersion);
+        Assert.Equal("2026-10-01T08:00:00.123456Z", Assert.IsType<Ok<ShopConfigDto>>(await ShopSettingsEndpoints.GetPublic(db, default, "no")).Value!.TermsVersion);
+    }
+
+    [Fact]
     public async Task Update_RefusesEveryone_UntilBothTermsPagesAreSavedAfterTheShop()
     {
         await using var db = await SeededDb();

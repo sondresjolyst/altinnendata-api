@@ -16,7 +16,7 @@ namespace altinnendata_api.Tests;
 public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 {
     private const int Total = 1_299_000;
-    private const string Reference = "ae-000001-abcdef12";
+    private const string Reference = "AID-000001-ABCDEF12";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -164,9 +164,9 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
     {
         await using var db = await postgres.NewContextAsync();
         var guarantee = new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero);
-        var (_, olderId) = await SeedAsync(db, OrderStatus.Paid, "ae-000001-older000", "older-pc", DateTime.UtcNow.AddDays(-2),
+        var (_, olderId) = await SeedAsync(db, OrderStatus.Paid, "AID-000001-0000AAAA", "older-pc", DateTime.UtcNow.AddDays(-2),
             o => o.RefundedInOre = 300_000);
-        var (newerBuildId, newerId) = await SeedAsync(db, OrderStatus.Reserved, "ae-000002-newer000", "newer-pc", DateTime.UtcNow,
+        var (newerBuildId, newerId) = await SeedAsync(db, OrderStatus.Reserved, "AID-000002-0000BBBB", "newer-pc", DateTime.UtcNow,
             o =>
             {
                 o.CaptureGuaranteedUntil = guarantee;
@@ -179,7 +179,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         var list = Assert.IsType<Ok<List<AdminOrderSummaryDto>>>(result).Value!;
         Assert.Equal([newerId, olderId], list.Select(o => o.Id));
         var newer = list[0];
-        Assert.Equal("ae-000002-newer000", newer.Reference);
+        Assert.Equal("AID-000002-0000BBBB", newer.Reference);
         Assert.Equal("Reserved", newer.Status);
         Assert.Equal("Ola Nordmann", newer.BuyerName);
         Assert.Equal("Gaming-PC", newer.BuildTitle);
@@ -256,7 +256,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
         var dto = AssertOk(await Capture(db, orderId));
 
-        _vipps.Verify(v => v.CapturePaymentAsync("ae-000001-abcdef12", 1299000, "capture-ae-000001-abcdef12", true, It.IsAny<CancellationToken>()), Times.Once);
+        _vipps.Verify(v => v.CapturePaymentAsync("AID-000001-ABCDEF12", 1299000, "capture-AID-000001-ABCDEF12", true, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal("Paid", dto.Status);
         Assert.Equal(Total, dto.CapturedInOre);
         var (build, order) = await ReloadAsync(db, buildId, orderId);
@@ -417,7 +417,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
         var dto = AssertOk(await Refund(db, orderId));
 
-        _vipps.Verify(v => v.RefundPaymentAsync(Reference, Total, "refund-ae-000001-abcdef12-0", true, It.IsAny<CancellationToken>()), Times.Once);
+        _vipps.Verify(v => v.RefundPaymentAsync(Reference, Total, "refund-AID-000001-ABCDEF12-0", true, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal("Refunded", dto.Status);
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Refunded, order.Status);
@@ -452,9 +452,9 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(Total, rest.RefundedInOre);
         Assert.NotNull(rest.RefundedAt);
 
-        _vipps.Verify(v => v.RefundPaymentAsync(Reference, 300_000, "refund-ae-000001-abcdef12-0", true, It.IsAny<CancellationToken>()), Times.Once);
-        _vipps.Verify(v => v.RefundPaymentAsync(Reference, 400_000, "refund-ae-000001-abcdef12-300000", true, It.IsAny<CancellationToken>()), Times.Once);
-        _vipps.Verify(v => v.RefundPaymentAsync(Reference, Total - 700_000, "refund-ae-000001-abcdef12-700000", true, It.IsAny<CancellationToken>()), Times.Once);
+        _vipps.Verify(v => v.RefundPaymentAsync(Reference, 300_000, "refund-AID-000001-ABCDEF12-0", true, It.IsAny<CancellationToken>()), Times.Once);
+        _vipps.Verify(v => v.RefundPaymentAsync(Reference, 400_000, "refund-AID-000001-ABCDEF12-300000", true, It.IsAny<CancellationToken>()), Times.Once);
+        _vipps.Verify(v => v.RefundPaymentAsync(Reference, Total - 700_000, "refund-AID-000001-ABCDEF12-700000", true, It.IsAny<CancellationToken>()), Times.Once);
         _notifier.Verify(n => n.OrderRefundedAsync(orderId, 300_000, It.IsAny<CancellationToken>()), Times.Once);
         _notifier.Verify(n => n.OrderRefundedAsync(orderId, 400_000, It.IsAny<CancellationToken>()), Times.Once);
         _notifier.Verify(n => n.OrderRefundedAsync(orderId, Total - 700_000, It.IsAny<CancellationToken>()), Times.Once);
@@ -1003,5 +1003,223 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         var tooLong = validator.Validate(new InvoiceNumberRequest(new string('1', 51)));
         Assert.False(tooLong.IsValid);
         Assert.Contains(tooLong.Errors, e => e.PropertyName == nameof(InvoiceNumberRequest.InvoiceNumber));
+    }
+
+    private Task<IResult> Shipped(ApplicationDbContext db, int id, string? note = null) =>
+        AdminOrders.MarkShipped(id, new ShippedRequest(note), db, _notifier.Object, _log, Ct);
+
+    /// <summary>A context on the same database that runs <paramref name="beforeFirstSave"/> once, just before its first save.</summary>
+    private ApplicationDbContext ContextWithRace(ApplicationDbContext existing, Func<Task> beforeFirstSave) =>
+        new(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(existing.Database.GetConnectionString())
+            .AddInterceptors(new RaceBeforeSave(beforeFirstSave))
+            .Options);
+
+    private sealed class RaceBeforeSave(Func<Task> race) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private bool _ran;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_ran)
+            {
+                _ran = true;
+                await race();
+            }
+            return result;
+        }
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Reserved)]
+    [InlineData(OrderStatus.Paid)]
+    public async Task Shipped_MarksTheOrder_WithTheTrimmedNote_AndEmailsTheBuyerOnce(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db, status);
+
+        var dto = AssertOk(await Shipped(db, id, "  Sporing 123  "));
+
+        Assert.NotNull(dto.ShippedAt);
+        Assert.Equal("Sporing 123", dto.ShippingNote);
+        var order = await OrderAsync(db, id);
+        Assert.Equal(dto.ShippedAt, order.ShippedAt);
+        Assert.Equal("Sporing 123", order.ShippingNote);
+        Assert.Equal(status, order.Status);
+        _notifier.Verify(n => n.OrderShippedAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Shipped_WithoutANote_StoresNone(string? note)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+
+        var dto = AssertOk(await Shipped(db, id, note));
+
+        Assert.Null(dto.ShippingNote);
+        Assert.Null((await OrderAsync(db, id)).ShippingNote);
+    }
+
+    [Fact]
+    public async Task Shipped_WithoutABody_Works()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+
+        AssertOk(await AdminOrders.MarkShipped(id, null, db, _notifier.Object, _log, Ct));
+    }
+
+    [Fact]
+    public async Task Shipped_TakesANoteOf500Characters_AndRefuses501OnTheNoteField()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+
+        var refused = Assert.IsType<ValidationProblem>(await Shipped(db, id, new string('a', 501)));
+        Assert.Equal(["Use 500 or fewer characters."], refused.ProblemDetails.Errors["note"]);
+        Assert.Null((await OrderAsync(db, id)).ShippedAt);
+        _notifier.Verify(n => n.OrderShippedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        Assert.Equal(500, AssertOk(await Shipped(db, id, new string('a', 500) + "  ")).ShippingNote!.Length);
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Pending)]
+    [InlineData(OrderStatus.Failed)]
+    [InlineData(OrderStatus.Cancelled)]
+    [InlineData(OrderStatus.Refunded)]
+    public async Task Shipped_OnAnOrderThatIsNotReservedOrPaid_Returns409WrongStatus(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db, status);
+
+        AssertProblem(await Shipped(db, id), StatusCodes.Status409Conflict, "wrongStatus");
+
+        Assert.Null((await OrderAsync(db, id)).ShippedAt);
+        _notifier.Verify(n => n.OrderShippedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Shipped_Twice_Returns409AlreadyShipped_AndKeepsTheFirstMark()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+        var first = AssertOk(await Shipped(db, id, "Første"));
+        db.ChangeTracker.Clear();
+
+        AssertProblem(await Shipped(db, id, "Andre"), StatusCodes.Status409Conflict, "alreadyShipped");
+
+        var order = await OrderAsync(db, id);
+        Assert.Equal(first.ShippedAt, order.ShippedAt);
+        Assert.Equal("Første", order.ShippingNote);
+        _notifier.Verify(n => n.OrderShippedAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Shipped_OnAnUnknownOrder_Returns404()
+    {
+        await using var db = await postgres.NewContextAsync();
+
+        Assert.IsType<NotFound>(await Shipped(db, 999));
+    }
+
+    [Fact]
+    public async Task Shipped_WhenAWebhookPaysTheOrderMeanwhile_MarksItAgainOnTheFreshRead()
+    {
+        await using var seed = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(seed);
+        await using var db = ContextWithRace(seed, () => WebhookChangesAsync(seed, id, (o, b) =>
+        {
+            o.Status = OrderStatus.Paid;
+            o.CapturedInOre = o.TotalInOre;
+        }));
+
+        var dto = AssertOk(await Shipped(db, id, "Sendt"));
+
+        Assert.Equal("Paid", dto.Status);
+        var order = await OrderAsync(seed, id);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.NotNull(order.ShippedAt);
+        Assert.Equal("Sendt", order.ShippingNote);
+        _notifier.Verify(n => n.OrderShippedAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Shipped_WhenAnotherTabMarksItMeanwhile_Returns409AlreadyShipped_AndSendsNoSecondEmail()
+    {
+        await using var seed = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(seed);
+        var otherAt = DateTime.UtcNow.AddMinutes(-1);
+        await using var db = ContextWithRace(seed, () => WebhookChangesAsync(seed, id, (o, _) =>
+        {
+            o.ShippedAt = otherAt;
+            o.ShippingNote = "Fra den andre fanen";
+        }));
+
+        AssertProblem(await Shipped(db, id, "Min"), StatusCodes.Status409Conflict, "alreadyShipped");
+
+        Assert.Equal("Fra den andre fanen", (await OrderAsync(seed, id)).ShippingNote);
+        _notifier.Verify(n => n.OrderShippedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Shipped_WhenTheOrderIsCancelledMeanwhile_Returns409WrongStatus()
+    {
+        await using var seed = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(seed);
+        await using var db = ContextWithRace(seed, () => WebhookChangesAsync(seed, id, (o, b) =>
+        {
+            o.Status = OrderStatus.Cancelled;
+            BuildHold.Release(b, o.Id);
+        }));
+
+        AssertProblem(await Shipped(db, id), StatusCodes.Status409Conflict, "wrongStatus");
+
+        var order = await OrderAsync(seed, id);
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+        Assert.Null(order.ShippedAt);
+        _notifier.Verify(n => n.OrderShippedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Shipped_WhenTheAdminRequestIsAborted_AfterTheSave_StillEmails()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+
+        AssertOk(await AdminOrders.MarkShipped(id, new ShippedRequest(null), db, _notifier.Object, _log, Ct));
+
+        _notifier.Verify(n => n.OrderShippedAsync(id, CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task Dtos_CarryTheShippingConfirmationAndTermsFields()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var shippedAt = new DateTime(2026, 10, 19, 10, 0, 0, DateTimeKind.Utc);
+        var confirmedAt = new DateTime(2026, 10, 19, 9, 0, 0, DateTimeKind.Utc);
+        var (_, id) = await SeedAsync(db, OrderStatus.Paid, editOrder: o =>
+        {
+            o.ShippedAt = shippedAt;
+            o.ShippingNote = "Posten";
+            o.ConfirmationSentAt = confirmedAt;
+            o.TermsVersion = "2026-10-01T08:00:00.000000Z";
+            o.TermsAcceptedIp = "203.0.113.0";
+        });
+
+        var dto = Assert.IsType<Ok<AdminOrderDto>>(await AdminOrders.Get(id, db, Ct)).Value!;
+        var summary = Assert.Single(Assert.IsType<Ok<List<AdminOrderSummaryDto>>>(await AdminOrders.List(db, Ct)).Value!);
+
+        Assert.Equal((shippedAt, "Posten", confirmedAt, "2026-10-01T08:00:00.000000Z", "203.0.113.0"),
+            (dto.ShippedAt, dto.ShippingNote, dto.ConfirmationSentAt, dto.TermsVersion, dto.TermsAcceptedIp));
+        Assert.Equal((shippedAt, "Posten", confirmedAt, "2026-10-01T08:00:00.000000Z"),
+            (summary.ShippedAt, summary.ShippingNote, summary.ConfirmationSentAt, summary.TermsVersion));
+        Assert.Equal(dto.TermsAcceptedAt, summary.TermsAcceptedAt);
     }
 }

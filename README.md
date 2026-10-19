@@ -31,6 +31,8 @@ Production reads these from the cluster secret.
 | `Vipps__TestClientId`, `Vipps__TestClientSecret`, `Vipps__TestSubscriptionKey`, `Vipps__TestMerchantSerialNumber` | Vipps test environment credentials, used while Vipps test mode is on in the shop settings |
 | `Api__PublicBaseUrl` | The API's own public address, where Vipps sends its webhooks |
 | `Storage__ImagesPath` | Mount for uploaded images, `/data/images` in the cluster |
+| `PUPPETEER_EXECUTABLE_PATH` | The Chrome that renders the order PDFs. The image sets it to `/usr/bin/google-chrome-stable` |
+| `PUPPETEER_NO_SANDBOX` | `1` runs Chrome without its sandbox, for a pod that already runs unprivileged with the default seccomp profile, where the sandbox cannot start |
 | `TrustedProxies` | CIDRs allowed to set `X-Forwarded-For`. Defaults to the cluster pod network (`192.169.0.0/16`, where the ingress runs) and the private ranges. A wildcard would let any caller forge the client IP the rate limiter reads |
 
 ## What it serves

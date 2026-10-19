@@ -259,6 +259,67 @@ namespace altinnendata_api.Features.Shop
         private static IResult RefundChanged() =>
             ShopProblems.Code(StatusCodes.Status409Conflict, "refundChanged", "The order was refunded meanwhile. Reload the order.");
 
+        /// <summary>
+        /// Marks a reserved or paid order as sent, or as ready for pickup, and emails the buyer once. A webhook or a second
+        /// tab that changed the order after the read fails the save. Then the order is read again: one that was marked
+        /// meanwhile answers <c>alreadyShipped</c>, one that moved to another status answers <c>wrongStatus</c>, and one that
+        /// is still open gets the mark again.
+        /// </summary>
+        public static async Task<IResult> MarkShipped(int id, ShippedRequest? req, ApplicationDbContext db, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
+        {
+            var note = string.IsNullOrWhiteSpace(req?.Note) ? null : req.Note.Trim();
+            if (note?.Length > ShippedRequest.MaxNoteLength)
+                return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [ShippedRequest.NoteField] = [$"Use {ShippedRequest.MaxNoteLength} or fewer characters."]
+                });
+
+            var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+            if (order == null) return TypedResults.NotFound();
+
+            for (var attempt = 1; ; attempt++)
+            {
+                if (order.ShippedAt != null) return AlreadyShipped(order);
+                if (order.Status is not (OrderStatus.Reserved or OrderStatus.Paid))
+                    return WrongStatus(order, "Only a reserved or paid order can be marked as sent.");
+
+                // To the microsecond Postgres keeps, so the answer shows the time as stored.
+                var now = DateTime.UtcNow;
+                now = now.AddTicks(-(now.Ticks % 10));
+                order.ShippedAt = now;
+                order.ShippingNote = note;
+                order.UpdatedAt = now;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    break;
+                }
+                catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts)
+                {
+                    db.ChangeTracker.Clear();
+                    order = await db.Orders.FirstAsync(o => o.Id == id, ct);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    db.ChangeTracker.Clear();
+                    order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, ct);
+                    return order.ShippedAt != null
+                        ? AlreadyShipped(order)
+                        : WrongStatus(order, "The order changed while it was being marked as sent.");
+                }
+            }
+
+            // The mark is saved, so an aborted admin request must not stop the email.
+            await notifier.OrderShippedAsync(order.Id, CancellationToken.None);
+            log.LogInformation("Order {OrderId} marked as {Mark} by an admin", order.Id,
+                order.DeliveryMethod == DeliveryMethod.Pickup ? "ready for pickup" : "sent");
+            return TypedResults.Ok(AdminOrderDto.From(order));
+        }
+
+        private static IResult AlreadyShipped(Order order) =>
+            ShopProblems.Code(StatusCodes.Status409Conflict, "alreadyShipped",
+                $"The order was already marked as sent on {order.ShippedAt:yyyy-MM-dd}.");
+
         public static async Task<IResult> SetInvoiceNumber(int id, InvoiceNumberRequest req, ApplicationDbContext db, CancellationToken ct)
         {
             var number = string.IsNullOrWhiteSpace(req.InvoiceNumber) ? null : req.InvoiceNumber.Trim();
@@ -347,6 +408,7 @@ namespace altinnendata_api.Features.Shop
                 admin.MapPost("{id:int}/capture", Capture);
                 admin.MapPost("{id:int}/cancel", Cancel);
                 admin.MapPost("{id:int}/refund", Refund);
+                admin.MapPost("{id:int}/shipped", MarkShipped);
                 admin.MapPut("{id:int}/invoice-number", SetInvoiceNumber).WithValidation<InvoiceNumberRequest>();
             }
         }

@@ -10,17 +10,19 @@ namespace altinnendata_api.Features.Shop
         Task OrderReservedAsync(int orderId, CancellationToken ct);
         Task OrderCancelledAsync(int orderId, CancellationToken ct);
         Task OrderRefundedAsync(int orderId, int amountInOre, CancellationToken ct);
+        Task OrderShippedAsync(int orderId, CancellationToken ct);
     }
 
     /// <summary>Emails the buyer and the owner about an order. A failed send is logged and never thrown.</summary>
-    public class OrderNotifier(ApplicationDbContext db, IEmailSender email, IConfiguration config, ILogger<OrderNotifier> log) : IOrderNotifier
+    public class OrderNotifier(ApplicationDbContext db, IEmailSender email, OrderConfirmation confirmation, IConfiguration config, ILogger<OrderNotifier> log) : IOrderNotifier
     {
         public async Task OrderReservedAsync(int orderId, CancellationToken ct)
         {
             var (order, settings) = await LoadAsync(orderId, ct);
             if (order == null) return;
 
-            await SendAsync(OrderEmails.BuyerConfirmation(order, settings, config), order, ct);
+            // A confirmation that fails here is sent again by OrderConfirmationRetryService. The owner hears once.
+            await confirmation.TrySendAsync(order.Id, order.ConfirmationAttempts, ct);
             await SendAsync(OrderEmails.OwnerNewOrder(order, settings, config), order, ct);
         }
 
@@ -38,6 +40,14 @@ namespace altinnendata_api.Features.Shop
             if (order == null) return;
 
             await SendAsync(OrderEmails.BuyerRefunded(order, amountInOre, settings), order, ct);
+        }
+
+        public async Task OrderShippedAsync(int orderId, CancellationToken ct)
+        {
+            var (order, settings) = await LoadAsync(orderId, ct);
+            if (order == null) return;
+
+            await SendAsync(OrderEmails.BuyerShipped(order, settings), order, ct);
         }
 
         private async Task<(Models.Shop.Order? Order, AppSettings Settings)> LoadAsync(int orderId, CancellationToken ct)

@@ -97,6 +97,11 @@ namespace altinnendata_api.Models
                 order.Property(o => o.BuildSlug).HasMaxLength(160);
                 order.Property(o => o.InvoiceNumber).HasMaxLength(50);
                 order.Property(o => o.PendingRefundKey).HasMaxLength(100);
+                order.Property(o => o.TermsVersion).HasMaxLength(40);
+                order.Property(o => o.TermsAcceptedIp).HasMaxLength(45);
+                order.Property(o => o.TermsTitle).HasMaxLength(200);
+                order.Property(o => o.TermsLocale).HasMaxLength(5);
+                order.Property(o => o.ShippingNote).HasMaxLength(500);
                 order.HasIndex(o => o.CreatedAt);
                 order.Property(o => o.Version).IsRowVersion();
 

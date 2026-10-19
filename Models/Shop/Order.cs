@@ -55,6 +55,28 @@ namespace altinnendata_api.Models.Shop
         public string? InvoiceNumber { get; set; }
 
         public DateTime TermsAcceptedAt { get; set; }
+
+        /// <summary>The version stamp of the terms the buyer accepted, as the checkout sent it.</summary>
+        public string? TermsVersion { get; set; }
+
+        /// <summary>The buyer's IP address at checkout, cut to /24 for IPv4 and /48 for IPv6.</summary>
+        public string? TermsAcceptedIp { get; set; }
+
+        /// <summary>The terms page as it read at checkout, in <see cref="TermsLocale"/>. Empty when there was no terms page.</summary>
+        public string? TermsTitle { get; set; }
+        public string? TermsMarkdown { get; set; }
+        public string? TermsLocale { get; set; }
+
+        /// <summary>When the buyer's order confirmation with its PDF attachments was accepted for sending.</summary>
+        public DateTime? ConfirmationSentAt { get; set; }
+
+        /// <summary>How many times the confirmation was tried, and when last, so a retry can back off.</summary>
+        public int ConfirmationAttempts { get; set; }
+        public DateTime? ConfirmationAttemptedAt { get; set; }
+
+        /// <summary>When the admin marked the order as sent or ready for pickup, with the note for the buyer.</summary>
+        public DateTime? ShippedAt { get; set; }
+        public string? ShippingNote { get; set; }
         public DateTime? AuthorizedAt { get; set; }
         public DateTime? CapturedAt { get; set; }
         public DateTime? CancelledAt { get; set; }

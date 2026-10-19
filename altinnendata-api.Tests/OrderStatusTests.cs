@@ -14,7 +14,7 @@ public class OrderStatusTests : TestBase
 
     private static Order NewOrder() => new()
     {
-        Reference = "ae-000001-abcdef12",
+        Reference = "AID-000001-ABCDEF12",
         PublicToken = Token,
         Status = OrderStatus.Paid,
         Locale = "no",
@@ -38,7 +38,7 @@ public class OrderStatusTests : TestBase
 
         var ok = Assert.IsType<Ok<OrderStatusDto>>(await OrderStatusEndpoint.Get(Token, db, Ct));
 
-        Assert.Equal(new OrderStatusDto("Paid", "ae-000001-abcdef12", "Gaming-PC", 1_299_000, "Pickup"), ok.Value);
+        Assert.Equal(new OrderStatusDto("Paid", "AID-000001-ABCDEF12", "Gaming-PC", 1_299_000, "Pickup"), ok.Value);
         var json = JsonSerializer.Serialize(ok.Value);
         Assert.DoesNotContain("BuyerEmail", json);
         Assert.DoesNotContain("BuyerName", json);

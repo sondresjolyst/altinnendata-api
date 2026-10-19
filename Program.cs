@@ -24,6 +24,7 @@ using SjolystInnovation.AppKit.Email;
 using SjolystInnovation.AppKit.Storage.Images;
 using SjolystInnovation.AppKit.AdminStats;
 using SjolystInnovation.AppKit.Vipps;
+using SjolystInnovation.AppKit.Pdf;
 
 namespace altinnendata_api
 {
@@ -54,6 +55,10 @@ namespace altinnendata_api
             builder.Services.AddMemoryCache();
             builder.Services.AddShopVipps(builder.Configuration);
             builder.Services.AddScoped<IOrderNotifier, OrderNotifier>();
+            builder.Services.AddAppKitPdf();
+            builder.Services.AddScoped<OrderConfirmation>();
+            builder.Services.AddScoped<OrderConfirmationRetry>();
+            builder.Services.AddHostedService<OrderConfirmationRetryService>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()

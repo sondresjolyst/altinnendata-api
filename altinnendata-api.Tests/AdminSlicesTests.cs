@@ -60,10 +60,10 @@ public class AdminSlicesTests : TestBase
     {
         await using var db = CreateDbContext();
         db.Orders.AddRange(
-            Order("ae-1", OrderStatus.Paid, 1_299_000, isTest: false),
-            Order("ae-2", OrderStatus.Paid, 50_000, isTest: true),
-            Order("ae-3", OrderStatus.Refunded, 70_000, isTest: false),
-            Order("ae-4", OrderStatus.Reserved, 90_000, isTest: false));
+            Order("AID-000001-00000001", OrderStatus.Paid, 1_299_000, isTest: false),
+            Order("AID-000002-00000002", OrderStatus.Paid, 50_000, isTest: true),
+            Order("AID-000003-00000003", OrderStatus.Refunded, 70_000, isTest: false),
+            Order("AID-000004-00000004", OrderStatus.Reserved, 90_000, isTest: false));
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, new FakeStorageUsage(), TestContext.Current.CancellationToken));

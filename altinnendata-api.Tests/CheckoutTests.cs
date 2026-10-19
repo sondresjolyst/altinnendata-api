@@ -35,16 +35,18 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
             method == "Pickup" ? null : "Storgata 1",
             method == "Pickup" ? null : "0155",
             method == "Pickup" ? null : "Oslo",
-            method == "HomeDelivery", null, true, "en");
+            method == "HomeDelivery", null, true, "en", ShopTerms.NoTermsVersion);
 
-    private static HttpContext Caller(bool admin)
+    private static HttpContext Caller(bool admin, string? ip = null)
     {
         var claims = new List<Claim>();
         if (admin) claims.Add(new(ClaimTypes.Role, RoleNames.Admin));
-        return new DefaultHttpContext
+        var http = new DefaultHttpContext
         {
             User = admin ? new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")) : new ClaimsPrincipal(new ClaimsIdentity())
         };
+        if (ip != null) http.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(ip);
+        return http;
     }
 
     private static Mock<IVippsClient> Vipps(List<VippsCreatePaymentRequest>? captured = null)
@@ -61,8 +63,26 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
         return vipps;
     }
 
-    private static Task<IResult> Run(ApplicationDbContext db, Mock<IVippsClient> vipps, CheckoutRequest? request = null, bool admin = true) =>
-        Checkout.Handle(request ?? Request(), Caller(admin), db, vipps.Object, Config, NullLogger<CheckoutRequest>.Instance, Ct);
+    private static Task<IResult> Run(ApplicationDbContext db, Mock<IVippsClient> vipps, CheckoutRequest? request = null, bool admin = true, string? ip = null) =>
+        Checkout.Handle(request ?? Request(), Caller(admin, ip), db, vipps.Object, Config, NullLogger<CheckoutRequest>.Instance, Ct);
+
+    private static async Task<SjolystInnovation.AppKit.SiteSettings.LegalPage> AddTermsAsync(ApplicationDbContext db, string locale, string body, DateTime? updatedAt = null)
+    {
+        var page = new SjolystInnovation.AppKit.SiteSettings.LegalPage
+        {
+            Key = "terms", Locale = locale, Title = locale == "en" ? "Terms of Service" : "Vilkår", BodyMarkdown = body,
+            UpdatedAt = updatedAt ?? new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc)
+        };
+        db.LegalPages.Add(page);
+        await db.SaveChangesAsync(Ct);
+        return page;
+    }
+
+    private static async Task<Order> OnlyOrderAsync(PostgresDatabase postgres, ApplicationDbContext db)
+    {
+        await using var fresh = postgres.NewContextOn(db);
+        return await fresh.Orders.AsNoTracking().SingleAsync(Ct);
+    }
 
     private static async Task<PcBuild> SeedAsync(
         ApplicationDbContext db,
@@ -149,9 +169,9 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(order.Id, reloaded.HeldByOrderId);
 
         var request = Assert.Single(captured);
-        Assert.Matches(@"^ae-\d{6}-[0-9a-f]{8}$", request.Reference);
+        Assert.Matches(@"^AID-\d{6}-[0-9A-F]{8}$", request.Reference);
         Assert.Equal(order.Reference, request.Reference);
-        Assert.StartsWith($"ae-{order.Id:D6}-", request.Reference);
+        Assert.StartsWith($"AID-{order.Id:D6}-", request.Reference);
         Assert.Equal(1_299_000, request.AmountInOre);
         Assert.Equal("4791234567", request.PhoneNumber);
         Assert.Equal($"Altinnendata {order.Reference}", request.Description);
@@ -357,8 +377,8 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
     [Fact]
     public void NewReference_And_NewToken_HaveTheirFormats()
     {
-        Assert.Matches(@"^ae-000042-[0-9a-f]{8}$", Checkout.NewReference(42));
-        Assert.Matches(@"^ae-1234567-[0-9a-f]{8}$", Checkout.NewReference(1234567));
+        Assert.Matches(@"^AID-000042-[0-9A-F]{8}$", Checkout.NewReference(42));
+        Assert.Matches(@"^AID-1234567-[0-9A-F]{8}$", Checkout.NewReference(1234567));
         Assert.Matches("^[0-9a-f]{32}$", Checkout.NewToken());
         Assert.NotEqual(Checkout.NewToken(), Checkout.NewToken());
     }
@@ -496,5 +516,109 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(2, request.ReceiptLines.Count);
         Assert.Equal(100, request.ReceiptLines[1].UnitPriceInOre);
         Assert.Equal(request.AmountInOre, request.ReceiptLines.Sum(l => l.UnitPriceInOre * l.Quantity));
+    }
+
+    [Fact]
+    public async Task Checkout_WithTheCurrentTermsVersion_StoresTheTermsAsTheyRead_TheVersion_AndTheCutIp()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        await AddTermsAsync(db, "no", "## Vilkår\n\nNorsk.");
+        var en = await AddTermsAsync(db, "en", "## Terms\n\nEnglish.", new DateTime(2026, 10, 2, 9, 30, 0, DateTimeKind.Utc));
+
+        var result = await Run(db, Vipps(), Request() with { TermsVersion = "2026-10-02T09:30:00.000000Z" }, ip: "203.0.113.77");
+
+        Assert.IsType<Ok<CheckoutResponse>>(result);
+        var order = await OnlyOrderAsync(postgres, db);
+        Assert.Equal("2026-10-02T09:30:00.000000Z", order.TermsVersion);
+        Assert.Equal("Terms of Service", order.TermsTitle);
+        Assert.Equal("## Terms\n\nEnglish.", order.TermsMarkdown);
+        Assert.Equal("en", order.TermsLocale);
+        Assert.Equal("203.0.113.0", order.TermsAcceptedIp);
+
+        // Editing the page afterwards does not change what the buyer accepted.
+        en.BodyMarkdown = "Changed.";
+        await db.SaveChangesAsync(Ct);
+        Assert.Equal("## Terms\n\nEnglish.", (await OnlyOrderAsync(postgres, db)).TermsMarkdown);
+    }
+
+    [Fact]
+    public async Task Checkout_InEnglish_WithoutEnglishTerms_UsesTheNorwegianPage()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        await AddTermsAsync(db, "no", "Norsk tekst.");
+
+        var result = await Run(db, Vipps(), Request() with { TermsVersion = "2026-10-01T08:00:00.000000Z" });
+
+        Assert.IsType<Ok<CheckoutResponse>>(result);
+        var order = await OnlyOrderAsync(postgres, db);
+        Assert.Equal("no", order.TermsLocale);
+        Assert.Equal("Norsk tekst.", order.TermsMarkdown);
+    }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("2026-10-01T08:00:00.000001Z")]
+    [InlineData("2026-10-01T08:00:00Z")]
+    public async Task Checkout_WithAnotherTermsVersion_Returns409TermsChanged_AndHoldsNothing(string version)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var build = await SeedAsync(db);
+        await AddTermsAsync(db, "en", "Text.");
+        var vipps = Vipps();
+
+        var result = await Run(db, vipps, Request() with { TermsVersion = version });
+
+        AssertProblem(result, StatusCodes.Status409Conflict, "termsChanged");
+        Assert.Equal(0, await CountOrdersAsync(db));
+        Assert.Equal(BuildAvailability.Available, (await ReloadBuildAsync(db, build.Id)).Availability);
+        vipps.Verify(v => v.CreatePaymentAsync(It.IsAny<VippsCreatePaymentRequest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Checkout_WithoutATermsPage_AcceptsTheSentVersion_AndStoresNoSnapshot()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+
+        var result = await Run(db, Vipps(), Request() with { TermsVersion = "whatever-the-app-saw" });
+
+        Assert.IsType<Ok<CheckoutResponse>>(result);
+        var order = await OnlyOrderAsync(postgres, db);
+        Assert.Equal("whatever-the-app-saw", order.TermsVersion);
+        Assert.Null(order.TermsMarkdown);
+        Assert.Null(order.TermsTitle);
+        Assert.Null(order.TermsLocale);
+        Assert.Null(order.TermsAcceptedIp);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Validator_RequiresTheTermsVersion(string? version)
+    {
+        var result = new CheckoutRequestValidator().Validate(Request() with { TermsVersion = version! });
+
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(CheckoutRequest.TermsVersion));
+    }
+
+    [Fact]
+    public void Validator_RefusesATermsVersionOver40Characters()
+    {
+        var validator = new CheckoutRequestValidator();
+
+        Assert.True(validator.Validate(Request() with { TermsVersion = new string('a', 40) }).IsValid);
+        Assert.Contains(validator.Validate(Request() with { TermsVersion = new string('a', 41) }).Errors,
+            e => e.PropertyName == nameof(CheckoutRequest.TermsVersion));
+    }
+
+    [Fact]
+    public void NewReference_FitsVippsReferenceRules()
+    {
+        var reference = Checkout.NewReference(1);
+
+        Assert.InRange(reference.Length, 8, 64);
+        Assert.Matches("^[A-Za-z0-9-]+$", reference);
     }
 }

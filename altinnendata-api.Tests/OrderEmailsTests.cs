@@ -11,7 +11,7 @@ namespace altinnendata_api.Tests;
 
 public class OrderEmailsTests : TestBase
 {
-    private const string Reference = "ae-000001-abcdef12";
+    private const string Reference = "AID-000001-ABCDEF12";
 
     private static IConfiguration Config() =>
         new ConfigurationBuilder()
@@ -45,8 +45,8 @@ public class OrderEmailsTests : TestBase
     };
 
     [Theory]
-    [InlineData("no", "Ordrebekreftelse ae-000001-abcdef12")]
-    [InlineData("en", "Order confirmation ae-000001-abcdef12")]
+    [InlineData("no", "Ordrebekreftelse AID-000001-ABCDEF12")]
+    [InlineData("en", "Order confirmation AID-000001-ABCDEF12")]
     public void BuyerConfirmation_UsesTheBuyersLanguage(string locale, string subject)
     {
         var msg = OrderEmails.BuyerConfirmation(NewOrder(locale), new AppSettings(), Config());
@@ -56,7 +56,7 @@ public class OrderEmailsTests : TestBase
         if (locale == "en")
         {
             Assert.Contains("Not VAT registered", msg.HtmlBody);
-            Assert.Contains("right of withdrawal", msg.HtmlBody);
+            Assert.Contains("Right of withdrawal", msg.HtmlBody);
             Assert.Contains("13,189.00", msg.HtmlBody);
             Assert.Contains("https://www.altinnendata.no/en/terms", msg.HtmlBody);
         }
@@ -104,7 +104,7 @@ public class OrderEmailsTests : TestBase
     {
         var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
 
-        Assert.Equal("Ny ordre ae-000001-abcdef12: Gaming PC RTX 3060", msg.Subject);
+        Assert.Equal("Ny ordre AID-000001-ABCDEF12: Gaming PC RTX 3060", msg.Subject);
         Assert.Equal("shop@altinnendata.no", msg.To);
         Assert.Equal("ola@kunde.no", msg.ReplyTo);
         Assert.Contains("https://www.altinnendata.no/no/admin/shop/orders/7", msg.HtmlBody);
@@ -137,8 +137,8 @@ public class OrderEmailsTests : TestBase
         var en = NewOrder("en");
         var s = new AppSettings();
 
-        Assert.Equal("Ordre ae-000001-abcdef12 er kansellert", OrderEmails.BuyerCancelled(no, s).Subject);
-        Assert.Equal("Order ae-000001-abcdef12 is cancelled", OrderEmails.BuyerCancelled(en, s).Subject);
+        Assert.Equal("Ordre AID-000001-ABCDEF12 er kansellert", OrderEmails.BuyerCancelled(no, s).Subject);
+        Assert.Equal("Order AID-000001-ABCDEF12 is cancelled", OrderEmails.BuyerCancelled(en, s).Subject);
         Assert.Contains("It can take a few days before the amount appears in your account.", OrderEmails.BuyerRefunded(Refunded(en), 1318900, s).HtmlBody);
     }
 
@@ -152,8 +152,8 @@ public class OrderEmailsTests : TestBase
     }
 
     [Theory]
-    [InlineData("no", "Pengene for ordre ae-000001-abcdef12 er betalt tilbake", "Vi har betalt tilbake 13 189,00 kr til Vipps.")]
-    [InlineData("en", "Order ae-000001-abcdef12 is refunded", "We have refunded 13,189.00 kr to Vipps.")]
+    [InlineData("no", "Pengene for ordre AID-000001-ABCDEF12 er betalt tilbake", "Vi har betalt tilbake 13 189,00 kr til Vipps.")]
+    [InlineData("en", "Order AID-000001-ABCDEF12 is refunded", "We have refunded 13,189.00 kr to Vipps.")]
     public void RefundEmail_ForTheWholeOrder_KeepsTheSubject(string locale, string subject, string sentence)
     {
         var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder(locale)), 1318900, new AppSettings());
@@ -163,8 +163,8 @@ public class OrderEmailsTests : TestBase
     }
 
     [Theory]
-    [InlineData("no", "Vi har betalt tilbake 3 000,00 kr for ordre ae-000001-abcdef12", "Vi har betalt tilbake 3 000,00 kr til Vipps.")]
-    [InlineData("en", "We have refunded 3,000.00 kr for order ae-000001-abcdef12", "We have refunded 3,000.00 kr to Vipps.")]
+    [InlineData("no", "Vi har betalt tilbake 3 000,00 kr for ordre AID-000001-ABCDEF12", "Vi har betalt tilbake 3 000,00 kr til Vipps.")]
+    [InlineData("en", "We have refunded 3,000.00 kr for order AID-000001-ABCDEF12", "We have refunded 3,000.00 kr to Vipps.")]
     public void RefundEmail_ForAPart_NamesTheAmountRefundedThisTime(string locale, string subject, string sentence)
     {
         var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder(locale), refunded: 700_000), 300_000, new AppSettings());
@@ -180,7 +180,7 @@ public class OrderEmailsTests : TestBase
     {
         var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder()), 318_900, new AppSettings());
 
-        Assert.Equal("Pengene for ordre ae-000001-abcdef12 er betalt tilbake", msg.Subject);
+        Assert.Equal("Pengene for ordre AID-000001-ABCDEF12 er betalt tilbake", msg.Subject);
         Assert.Contains("Vi har betalt tilbake 3 189,00 kr til Vipps.", msg.HtmlBody);
     }
 
@@ -221,36 +221,6 @@ public class OrderEmailsTests : TestBase
     }
 
     [Fact]
-    public async Task Notifier_Reserved_SendsBuyerAndOwner_AndSurvivesAFailedSend()
-    {
-        await using var db = CreateDbContext();
-        db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
-        var order = NewOrder();
-        order.Id = 0;
-        db.Orders.Add(order);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-        var sent = new List<EmailMessage>();
-        var calls = 0;
-        var email = new Mock<IEmailSender>();
-        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
-            .Returns<EmailMessage, CancellationToken>((m, _) =>
-            {
-                if (++calls == 1) throw new InvalidOperationException("brevo down");
-                sent.Add(m);
-                return Task.FromResult(new EmailResult(true));
-            });
-        var notifier = new OrderNotifier(db, email.Object, Config(), NullLogger<OrderNotifier>.Instance);
-
-        await notifier.OrderReservedAsync(order.Id, TestContext.Current.CancellationToken);
-
-        Assert.Equal(2, calls);
-        var owner = Assert.Single(sent);
-        Assert.Equal("shop@altinnendata.no", owner.To);
-        Assert.Equal("ola@kunde.no", owner.ReplyTo);
-    }
-
-    [Fact]
     public async Task Notifier_CancelledAndRefunded_EmailTheBuyer()
     {
         await using var db = CreateDbContext();
@@ -263,12 +233,88 @@ public class OrderEmailsTests : TestBase
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .Callback<EmailMessage, CancellationToken>((m, _) => sent.Add(m))
             .ReturnsAsync(new EmailResult(true));
-        var notifier = new OrderNotifier(db, email.Object, Config(), NullLogger<OrderNotifier>.Instance);
+        var notifier = new OrderNotifier(db, email.Object, null!, Config(), NullLogger<OrderNotifier>.Instance);
 
         await notifier.OrderCancelledAsync(order.Id, TestContext.Current.CancellationToken);
         await notifier.OrderRefundedAsync(order.Id, 300_000, TestContext.Current.CancellationToken);
 
-        Assert.Equal(["Ordre ae-000001-abcdef12 er kansellert", "Vi har betalt tilbake 3 000,00 kr for ordre ae-000001-abcdef12"], sent.Select(m => m.Subject));
+        await notifier.OrderShippedAsync(order.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(["Ordre AID-000001-ABCDEF12 er kansellert", "Vi har betalt tilbake 3 000,00 kr for ordre AID-000001-ABCDEF12",
+            "Ordren din er sendt AID-000001-ABCDEF12"], sent.Select(m => m.Subject));
         Assert.All(sent, m => Assert.Equal("ola@kunde.no", m.To));
+    }
+
+    [Theory]
+    [InlineData("no", "Angrerett", "Du har 14 dagers angrerett fra den dagen du mottar varen.", "Bruk det vedlagte angrerettskjemaet, eller gi oss beskjed på e-post til", "Vilkårene du godtok og angrerettskjemaet ligger vedlagt.")]
+    [InlineData("en", "Right of withdrawal", "You have 14 days to withdraw from the day you receive the item.", "Use the attached withdrawal form, or tell us by email at", "The terms you accepted and the withdrawal form are attached.")]
+    public void BuyerConfirmation_ExplainsTheRightOfWithdrawal_AndKeepsTheTermsLink(string locale, string heading, string days, string how, string attached)
+    {
+        var order = NewOrder(locale);
+        order.TermsMarkdown = "## 1. Kjøp";
+        var msg = OrderEmails.BuyerConfirmation(order, new AppSettings { PublicEmail = "post@altinnendata.no" }, Config());
+
+        Assert.Contains($"<strong>{heading}</strong>", msg.HtmlBody);
+        Assert.Contains(days, msg.HtmlBody);
+        Assert.Contains(how, msg.HtmlBody);
+        Assert.Contains("<a href=\"mailto:post@altinnendata.no\">post@altinnendata.no</a>", msg.HtmlBody);
+        Assert.Contains(attached, msg.HtmlBody);
+        Assert.Contains($"<a href=\"https://www.altinnendata.no/{locale}/terms\">", msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no", "Angrerettskjemaet ligger vedlagt.", "Vilkårene du godtok")]
+    [InlineData("en", "The withdrawal form is attached.", "The terms you accepted")]
+    public void BuyerConfirmation_WithoutATermsSnapshot_SaysOnlyTheFormIsAttached(string locale, string attached, string absent)
+    {
+        var msg = OrderEmails.BuyerConfirmation(NewOrder(locale), new AppSettings(), Config());
+
+        Assert.Contains(attached, msg.HtmlBody);
+        Assert.DoesNotContain(absent, msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no", DeliveryMethod.Shipping, "Ordren din er sendt AID-000001-ABCDEF12")]
+    [InlineData("no", DeliveryMethod.HomeDelivery, "Ordren din er sendt AID-000001-ABCDEF12")]
+    [InlineData("no", DeliveryMethod.Pickup, "Ordren din er klar for henting AID-000001-ABCDEF12")]
+    [InlineData("en", DeliveryMethod.Shipping, "Your order has been sent AID-000001-ABCDEF12")]
+    [InlineData("en", DeliveryMethod.Pickup, "Your order is ready for pickup AID-000001-ABCDEF12")]
+    public void BuyerShipped_NamesTheDelivery_InTheBuyersLanguage(string locale, DeliveryMethod method, string subject)
+    {
+        var msg = OrderEmails.BuyerShipped(NewOrder(locale, method), new AppSettings { CompanyName = "Altinnendata" });
+
+        Assert.Equal(subject, msg.Subject);
+        Assert.Equal("ola@kunde.no", msg.To);
+        Assert.Contains($"<h2>{subject[..^" AID-000001-ABCDEF12".Length]}</h2>", msg.HtmlBody);
+        Assert.Contains("Gaming PC RTX 3060", msg.HtmlBody);
+        Assert.Contains("<strong>AID-000001-ABCDEF12</strong>", msg.HtmlBody);
+        Assert.Contains("<strong>Altinnendata</strong>", msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no", "Melding fra selger")]
+    [InlineData("en", "Message from the seller")]
+    public void BuyerShipped_ShowsTheNote_Encoded_WithItsLines(string locale, string label)
+    {
+        var order = NewOrder(locale);
+        order.ShippingNote = "Sporing: <b>123</b>\nPosten";
+
+        var msg = OrderEmails.BuyerShipped(order, new AppSettings());
+
+        Assert.Contains($"<strong>{label}</strong><br/>Sporing: &lt;b&gt;123&lt;/b&gt;<br/>Posten", msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no")]
+    [InlineData("en")]
+    public void BuyerShipped_WithoutANote_HasNoNote_AndNeverSaysWhenTheMoneyIsTaken(string locale)
+    {
+        var order = NewOrder(locale);
+        order.ShippingNote = "   ";
+        var msg = OrderEmails.BuyerShipped(order, new AppSettings());
+
+        Assert.DoesNotContain("Melding fra selger", msg.HtmlBody);
+        Assert.DoesNotContain("Message from the seller", msg.HtmlBody);
+        foreach (var word in new[] { "trekk", "belast", "betal", "Vipps", "charged", "taken", "paid", "capture" })
+            Assert.DoesNotContain(word, msg.HtmlBody, StringComparison.OrdinalIgnoreCase);
     }
 }

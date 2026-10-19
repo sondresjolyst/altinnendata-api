@@ -50,9 +50,18 @@ namespace altinnendata_api.Features.Shop
             }
 
             var terms = Enc(SiteLinks.Terms(config, o.Locale));
+            var email = Enc(s.PublicEmail);
+            var withTerms = !string.IsNullOrWhiteSpace(o.TermsMarkdown);
             body.Append(no
-                ? $"<p>Les <a href=\"{terms}\">vilkårene</a>. Du har 14 dagers angrerett fra du mottar varen.</p>"
-                : $"<p>Read the <a href=\"{terms}\">terms</a>. You have a 14 day right of withdrawal from the day you receive the item.</p>");
+                ? "<p><strong>Angrerett</strong><br/>Du har 14 dagers angrerett fra den dagen du mottar varen. "
+                  + $"Bruk det vedlagte angrerettskjemaet, eller gi oss beskjed på e-post til <a href=\"mailto:{email}\">{email}</a>. "
+                  + (withTerms ? "Vilkårene du godtok og angrerettskjemaet ligger vedlagt.</p>" : "Angrerettskjemaet ligger vedlagt.</p>")
+                : "<p><strong>Right of withdrawal</strong><br/>You have 14 days to withdraw from the day you receive the item. "
+                  + $"Use the attached withdrawal form, or tell us by email at <a href=\"mailto:{email}\">{email}</a>. "
+                  + (withTerms ? "The terms you accepted and the withdrawal form are attached.</p>" : "The withdrawal form is attached.</p>"));
+            body.Append(no
+                ? $"<p>Les <a href=\"{terms}\">vilkårene</a> på nettsiden.</p>"
+                : $"<p>Read the <a href=\"{terms}\">terms</a> on the website.</p>");
 
             AppendFooter(body, s, no);
             return new EmailMessage(o.BuyerEmail, no ? $"Ordrebekreftelse {o.Reference}" : $"Order confirmation {o.Reference}", body.ToString());
@@ -92,6 +101,24 @@ namespace altinnendata_api.Features.Shop
             {
                 ReplyTo = o.BuyerEmail,
             };
+        }
+
+        /// <summary>The order is on its way, or ready for pickup. Says nothing about when the money is taken.</summary>
+        public static EmailMessage BuyerShipped(Order o, AppSettings s)
+        {
+            var no = IsNorwegian(o);
+            var pickup = o.DeliveryMethod == DeliveryMethod.Pickup;
+            var heading = pickup
+                ? (no ? "Ordren din er klar for henting" : "Your order is ready for pickup")
+                : (no ? "Ordren din er sendt" : "Your order has been sent");
+            var body = new StringBuilder();
+            body.Append($"<h2>{heading}</h2>");
+            body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
+            body.Append($"<p>{(no ? "Vare" : "Item")}: {Enc(o.BuildTitle)}</p>");
+            if (!string.IsNullOrWhiteSpace(o.ShippingNote))
+                body.Append($"<p><strong>{(no ? "Melding fra selger" : "Message from the seller")}</strong><br/>{EncMultiline(o.ShippingNote)}</p>");
+            AppendFooter(body, s, no);
+            return new EmailMessage(o.BuyerEmail, $"{heading} {o.Reference}", body.ToString());
         }
 
         public static EmailMessage BuyerCancelled(Order o, AppSettings s)
@@ -167,7 +194,7 @@ namespace altinnendata_api.Features.Shop
 
         private static string EncMultiline(string value) => Enc(value).Replace("\n", "<br/>");
 
-        private static string OsloDate(DateTime utc) =>
+        internal static string OsloDate(DateTime utc) =>
             TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value)
                 .ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 

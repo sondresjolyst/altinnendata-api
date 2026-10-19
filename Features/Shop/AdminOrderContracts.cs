@@ -17,11 +17,17 @@ namespace altinnendata_api.Features.Shop
         bool IsTest,
         DateTimeOffset? CaptureGuaranteedUntil,
         string? InvoiceNumber,
-        DateTime CreatedAt)
+        DateTime CreatedAt,
+        DateTime? ShippedAt,
+        string? ShippingNote,
+        DateTime? ConfirmationSentAt,
+        DateTime TermsAcceptedAt,
+        string? TermsVersion)
     {
         public static AdminOrderSummaryDto From(Order o) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.BuyerName, o.BuildTitle, o.PcBuildId, o.DeliveryMethod.ToString(),
-                o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber, o.CreatedAt);
+                o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber, o.CreatedAt,
+                o.ShippedAt, o.ShippingNote, o.ConfirmationSentAt, o.TermsAcceptedAt, o.TermsVersion);
     }
 
     public record AdminOrderDto(
@@ -56,14 +62,20 @@ namespace altinnendata_api.Features.Shop
         DateTime? CancelledAt,
         DateTime? RefundedAt,
         DateTime CreatedAt,
-        DateTime UpdatedAt)
+        DateTime UpdatedAt,
+        string? TermsVersion,
+        string? TermsAcceptedIp,
+        DateTime? ConfirmationSentAt,
+        DateTime? ShippedAt,
+        string? ShippingNote)
     {
         public static AdminOrderDto From(Order o) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.Locale, o.BuyerName, o.BuyerEmail, o.BuyerPhone,
                 o.StreetAddress, o.PostalCode, o.City, o.DeliveryMethod.ToString(), o.DeliveryLabel, o.DeliveryPriceInOre,
                 o.WithinDistanceConfirmed, o.PickupNote, o.PcBuildId, o.BuildTitle, o.BuildSlug, o.BuildPriceInOre,
                 o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber,
-                o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt);
+                o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt,
+                o.TermsVersion, o.TermsAcceptedIp, o.ConfirmationSentAt, o.ShippedAt, o.ShippingNote);
     }
 
     /// <summary>
@@ -77,6 +89,15 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>The field a missing refunded total is reported on.</summary>
         public const string ExpectedField = "expectedRefundedInOre";
+    }
+
+    /// <summary>The optional note to the buyer when the admin marks an order as sent or ready for pickup.</summary>
+    public record ShippedRequest(string? Note)
+    {
+        public const int MaxNoteLength = 500;
+
+        /// <summary>The field a note that is too long is reported on.</summary>
+        public const string NoteField = "note";
     }
 
     /// <summary>The invoice number the admin made for the order. Surrounding spaces are dropped and an empty value clears it.</summary>

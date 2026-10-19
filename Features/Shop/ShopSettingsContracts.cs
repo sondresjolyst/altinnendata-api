@@ -29,7 +29,11 @@ namespace altinnendata_api.Features.Shop
 
     public record PublicDeliveryOptionDto(string Method, int PriceNok, string Label, string? Description, int? MaxDistanceKm);
 
-    public record ShopConfigDto(string BuyButton, IReadOnlyList<PublicDeliveryOptionDto> Delivery);
+    /// <param name="TermsVersion">
+    /// The version stamp of the terms page in the requested locale, or <c>none</c> while there is no terms page.
+    /// The checkout sends it back as <c>termsVersion</c>.
+    /// </param>
+    public record ShopConfigDto(string BuyButton, IReadOnlyList<PublicDeliveryOptionDto> Delivery, string TermsVersion);
 
     public class UpdateShopSettingsValidator : AbstractValidator<UpdateShopSettingsDto>
     {

@@ -17,7 +17,8 @@ namespace altinnendata_api.Features.Shop
         bool WithinDistance,
         string? PickupNote,
         bool AcceptTerms,
-        string Locale);
+        string Locale,
+        string TermsVersion);
 
     public record CheckoutResponse(string RedirectUrl, string Token);
 
@@ -51,6 +52,7 @@ namespace altinnendata_api.Features.Shop
 
             RuleFor(x => x.PickupNote).MaximumLength(500);
             RuleFor(x => x.AcceptTerms).Equal(true).WithMessage("Accept the terms.");
+            RuleFor(x => x.TermsVersion).NotEmpty().MaximumLength(ShopTerms.MaxVersionLength);
             RuleFor(x => x.Locale).Must(Locales.IsSupported).WithMessage("Unsupported locale.");
         }
 

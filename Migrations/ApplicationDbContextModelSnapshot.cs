@@ -1018,6 +1018,15 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<DateTime?>("ConfirmationAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ConfirmationAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ConfirmationSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1080,6 +1089,13 @@ namespace altinnendata_api.Migrations
                     b.Property<int>("RefundedInOre")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("ShippedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ShippingNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -1091,6 +1107,25 @@ namespace altinnendata_api.Migrations
 
                     b.Property<DateTime>("TermsAcceptedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TermsAcceptedIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<string>("TermsLocale")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<string>("TermsMarkdown")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TermsTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TermsVersion")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
 
                     b.Property<int>("TotalInOre")
                         .HasColumnType("integer");

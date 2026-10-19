@@ -69,7 +69,9 @@ namespace altinnendata_api.Features.Shop
                 : new PublicDeliveryOptionDto(o.Method.ToString(), o.PriceNok, o.LabelNo, o.DescriptionNo, o.MaxDistanceKm))
                 .ToList();
 
-            return TypedResults.Ok(new ShopConfigDto(settings.BuyButton.ToString(), delivery));
+            var terms = await ShopTerms.FindAsync(db, resolved, ct);
+
+            return TypedResults.Ok(new ShopConfigDto(settings.BuyButton.ToString(), delivery, ShopTerms.VersionOf(terms)));
         }
 
         /// <summary>True only when both the Norwegian and the English terms were saved after <paramref name="since"/>.</summary>
