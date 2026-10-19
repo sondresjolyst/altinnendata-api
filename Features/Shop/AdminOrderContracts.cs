@@ -12,6 +12,8 @@ namespace altinnendata_api.Features.Shop
         int? PcBuildId,
         string DeliveryMethod,
         int TotalInOre,
+        int CapturedInOre,
+        int RefundedInOre,
         bool IsTest,
         DateTimeOffset? CaptureGuaranteedUntil,
         string? InvoiceNumber,
@@ -19,7 +21,7 @@ namespace altinnendata_api.Features.Shop
     {
         public static AdminOrderSummaryDto From(Order o) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.BuyerName, o.BuildTitle, o.PcBuildId, o.DeliveryMethod.ToString(),
-                o.TotalInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber, o.CreatedAt);
+                o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber, o.CreatedAt);
     }
 
     public record AdminOrderDto(

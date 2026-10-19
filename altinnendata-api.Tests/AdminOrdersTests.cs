@@ -164,7 +164,8 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
     {
         await using var db = await postgres.NewContextAsync();
         var guarantee = new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero);
-        var (_, olderId) = await SeedAsync(db, OrderStatus.Paid, "ae-000001-older000", "older-pc", DateTime.UtcNow.AddDays(-2));
+        var (_, olderId) = await SeedAsync(db, OrderStatus.Paid, "ae-000001-older000", "older-pc", DateTime.UtcNow.AddDays(-2),
+            o => o.RefundedInOre = 300_000);
         var (newerBuildId, newerId) = await SeedAsync(db, OrderStatus.Reserved, "ae-000002-newer000", "newer-pc", DateTime.UtcNow,
             o =>
             {
@@ -188,8 +189,12 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         Assert.True(newer.IsTest);
         Assert.Equal(guarantee, newer.CaptureGuaranteedUntil);
         Assert.Equal("10042", newer.InvoiceNumber);
+        Assert.Equal(0, newer.CapturedInOre);
+        Assert.Equal(0, newer.RefundedInOre);
         Assert.Null(list[1].CaptureGuaranteedUntil);
         Assert.Null(list[1].InvoiceNumber);
+        Assert.Equal(Total, list[1].CapturedInOre);
+        Assert.Equal(300_000, list[1].RefundedInOre);
     }
 
     [Fact]
