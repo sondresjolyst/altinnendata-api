@@ -134,12 +134,29 @@ namespace altinnendata_api.Features.Shop
             }
             catch (HttpRequestException ex) when (ShopVipps.IsRejection(ex))
             {
-                // Vipps said no, so nothing was paid back and the refund no longer blocks another amount.
-                // Vipps has answered, so an aborted admin request must not stop the save.
-                await ClearPendingRefundAsync(db, order, key, CancellationToken.None);
-                log.LogError(ex, "Vipps refused the refund of {Amount} øre on order {OrderId} with {Status}",
-                    amount, order.Id, (int)ex.StatusCode!.Value);
-                return ShopProblems.Code(StatusCodes.Status502BadGateway, "refundRefused", "Vipps refused the refund. Nothing was paid back.");
+                // A rejection can still follow an earlier try that Vipps did pay, so the payment says what happened.
+                // Vipps has answered, so an aborted admin request must not stop the lookup or the save.
+                VippsPayment current;
+                try
+                {
+                    current = await vipps.GetPaymentAsync(order.Reference, order.IsTest, CancellationToken.None);
+                }
+                catch (Exception lookup) when (ShopVipps.IsProviderFailure(lookup, CancellationToken.None))
+                {
+                    return ProviderUnavailable(log, lookup, "refund", order);
+                }
+
+                if (current.RefundedAmountInOre <= order.RefundedInOre)
+                {
+                    await ClearPendingRefundAsync(db, order, key, CancellationToken.None);
+                    log.LogError(ex, "Vipps refused the refund of {Amount} øre on order {OrderId} with {Status} and shows nothing new refunded",
+                        amount, order.Id, (int)ex.StatusCode!.Value);
+                    return ShopProblems.Code(StatusCodes.Status502BadGateway, "refundRefused", "Vipps refused the refund. Nothing was paid back.");
+                }
+
+                log.LogWarning(ex, "Vipps refused the refund of {Amount} øre on order {OrderId} with {Status} but shows {Refunded} øre refunded, recording that",
+                    amount, order.Id, (int)ex.StatusCode!.Value, current.RefundedAmountInOre);
+                payment = current;
             }
             catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {

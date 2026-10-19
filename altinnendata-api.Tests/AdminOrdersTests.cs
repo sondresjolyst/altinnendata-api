@@ -540,9 +540,12 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
                     await WebhookChangesAsync(db, orderId, (o, _) => o.UpdatedAt = DateTime.UtcNow);
                 throw new HttpRequestException("Bad Request", null, System.Net.HttpStatusCode.BadRequest);
             });
+        // Vipps shows no refund, so nothing was paid back.
+        SetupGetPayment(refunded: 0);
 
         var rejected = await Refund(db, orderId, 300_000);
 
+        _vipps.Verify(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()), Times.Once);
         AssertProblem(rejected, StatusCodes.Status502BadGateway, "refundRefused");
         Assert.Equal("Vipps refused the refund. Nothing was paid back.", Assert.IsType<ProblemHttpResult>(rejected).ProblemDetails.Detail);
         var cleared = await OrderAsync(db, orderId);
@@ -560,10 +563,36 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         _notifier.Verify(n => n.OrderRefundedAsync(orderId, 200_000, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task Refund_ThatVippsRejectsButShowsAsPaid_RecordsIt_AndEmails()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        _vipps.Setup(v => v.RefundPaymentAsync(Reference, 300_000, $"refund-{Reference}-0", true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Bad Request", null, System.Net.HttpStatusCode.BadRequest));
+        SetupGetPayment(refunded: 300_000);
+
+        var dto = AssertOk(await Refund(db, orderId, 300_000));
+
+        Assert.Equal("Paid", dto.Status);
+        Assert.Equal(300_000, dto.RefundedInOre);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, 300_000, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+        var order = await OrderAsync(db, orderId);
+        Assert.Equal(300_000, order.RefundedInOre);
+        Assert.Null(order.PendingRefundKey);
+        Assert.Null(order.PendingRefundInOre);
+    }
+
     [Theory]
     [InlineData("timeout")]
     [InlineData("server")]
     [InlineData("transport")]
+    [InlineData("408")]
+    [InlineData("409")]
+    [InlineData("429")]
+    [InlineData("400, then the lookup fails")]
+    [InlineData("400, then the lookup times out")]
     public async Task Refund_ThatVippsMayHaveMade_KeepsThePendingRefund_AndRefusesAnotherAmount(string failure)
     {
         await using var db = await postgres.NewContextAsync();
@@ -572,11 +601,22 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         {
             "timeout" => new TaskCanceledException("The request was canceled.", new TimeoutException()),
             "server" => new HttpRequestException("Internal Server Error", null, System.Net.HttpStatusCode.InternalServerError),
-            _ => new HttpRequestException("Connection refused")
+            "transport" => new HttpRequestException("Connection refused"),
+            "408" or "409" or "429" => new HttpRequestException(failure, null, (System.Net.HttpStatusCode)int.Parse(failure)),
+            _ => new HttpRequestException("Bad Request", null, System.Net.HttpStatusCode.BadRequest)
         };
         _vipps.Setup(v => v.RefundPaymentAsync(Reference, 300_000, $"refund-{Reference}-0", true, It.IsAny<CancellationToken>())).ThrowsAsync(error);
+        if (failure.Contains("lookup"))
+            _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>())).ThrowsAsync(failure.EndsWith("times out")
+                ? new TaskCanceledException("The request was canceled.", new TimeoutException())
+                : new HttpRequestException("Vipps is down"));
 
-        AssertProblem(await Refund(db, orderId, 300_000), StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+        var result = await Refund(db, orderId, 300_000);
+
+        AssertProblem(result, StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+        Assert.DoesNotContain("Nothing was paid back", Assert.IsType<ProblemHttpResult>(result).ProblemDetails.Detail);
+        _vipps.Verify(v => v.GetPaymentAsync(It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>()),
+            failure.Contains("lookup") ? Times.Once() : Times.Never());
         var pending = await OrderAsync(db, orderId);
         Assert.Equal($"refund-{Reference}-0", pending.PendingRefundKey);
         Assert.Equal(300_000, pending.PendingRefundInOre);

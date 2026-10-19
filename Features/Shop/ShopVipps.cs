@@ -39,10 +39,13 @@ namespace altinnendata_api.Features.Shop
             ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested);
 
         /// <summary>
-        /// Vipps answered and refused the request with a 4xx status, so the change did not happen. A timeout, a 5xx
-        /// or a transport error may still have reached Vipps and is not a rejection.
+        /// Vipps answered and refused the request with a 4xx status. 408, 409 and 429 are left out, since they can
+        /// follow an earlier try that went through (409 can be an idempotency conflict). A timeout, a 5xx or a
+        /// transport error may also have reached Vipps and is not a rejection either. A rejection does not prove an
+        /// earlier try failed, so a caller that must know reads the payment.
         /// </summary>
-        public static bool IsRejection(HttpRequestException ex) => ex.StatusCode is { } status && (int)status is >= 400 and < 500;
+        public static bool IsRejection(HttpRequestException ex) =>
+            ex.StatusCode is { } status && (int)status is >= 400 and < 500 and not (408 or 409 or 429);
 
         /// <summary>The name of the shop's ePayment webhook.</summary>
         public const string Slot = "shop";
