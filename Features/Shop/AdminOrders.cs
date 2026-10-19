@@ -132,6 +132,15 @@ namespace altinnendata_api.Features.Shop
             {
                 payment = await vipps.RefundPaymentAsync(order.Reference, amount, key, order.IsTest, ct);
             }
+            catch (HttpRequestException ex) when (ShopVipps.IsRejection(ex))
+            {
+                // Vipps said no, so nothing was paid back and the refund no longer blocks another amount.
+                // Vipps has answered, so an aborted admin request must not stop the save.
+                await ClearPendingRefundAsync(db, order, key, CancellationToken.None);
+                log.LogError(ex, "Vipps refused the refund of {Amount} øre on order {OrderId} with {Status}",
+                    amount, order.Id, (int)ex.StatusCode!.Value);
+                return ShopProblems.Code(StatusCodes.Status502BadGateway, "refundRefused", "Vipps refused the refund. Nothing was paid back.");
+            }
             catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "refund", order);
@@ -203,6 +212,29 @@ namespace altinnendata_api.Features.Shop
                     // A webhook or another refund changed the order after the read. Check again on a fresh read.
                     db.ChangeTracker.Clear();
                     if (attempt == MaxSaveAttempts) return (order, RefundChanged(), 0, "");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Forgets the pending refund with <paramref name="key"/>. A webhook that changed the order after the read
+        /// fails the save, so the order is read again and cleared again while it still holds that key.
+        /// </summary>
+        private static async Task ClearPendingRefundAsync(ApplicationDbContext db, Order order, string key, CancellationToken ct)
+        {
+            for (var attempt = 1; order.PendingRefundKey == key; attempt++)
+            {
+                order.PendingRefundKey = null;
+                order.PendingRefundInOre = null;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    return;
+                }
+                catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts)
+                {
+                    db.ChangeTracker.Clear();
+                    order = await db.Orders.FirstAsync(o => o.Id == order.Id, ct);
                 }
             }
         }

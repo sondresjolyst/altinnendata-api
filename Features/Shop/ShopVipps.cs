@@ -38,6 +38,12 @@ namespace altinnendata_api.Features.Shop
         public static bool IsProviderFailure(Exception ex, CancellationToken ct) =>
             ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested);
 
+        /// <summary>
+        /// Vipps answered and refused the request with a 4xx status, so the change did not happen. A timeout, a 5xx
+        /// or a transport error may still have reached Vipps and is not a rejection.
+        /// </summary>
+        public static bool IsRejection(HttpRequestException ex) => ex.StatusCode is { } status && (int)status is >= 400 and < 500;
+
         /// <summary>The name of the shop's ePayment webhook.</summary>
         public const string Slot = "shop";
 
