@@ -90,11 +90,50 @@ public class ShopSettingsTests : TestBase
         en.UpdatedAt = created.AddMinutes(2);
         await db.SaveChangesAsync();
 
-        var ok = Assert.IsType<Ok<ShopSettingsDto>>(await ShopSettingsEndpoints.Update(Update("Everyone"), db, cache, default));
+        var ok = Assert.IsType<Ok<ShopSettingsDto>>(await ShopSettingsEndpoints.Update(Update("Everyone", vippsTestMode: false), db, cache, default));
 
         Assert.Equal("Everyone", ok.Value!.BuyButton);
-        Assert.True(ok.Value.VippsTestMode);
+        Assert.False(ok.Value.VippsTestMode);
         Assert.Equal(BuyButtonMode.Everyone, (await db.ShopSettings.AsNoTracking().SingleAsync()).BuyButton);
+    }
+
+    [Fact]
+    public async Task Update_RefusesEveryone_WhileVippsIsInTestMode()
+    {
+        await using var db = await SeededDb();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var created = (await db.ShopSettings.SingleAsync()).CreatedAt;
+        AddTerms(db, "no", created.AddMinutes(1));
+        AddTerms(db, "en", created.AddMinutes(1));
+        await db.SaveChangesAsync();
+
+        var refused = Assert.IsType<ValidationProblem>(await ShopSettingsEndpoints.Update(
+            Update("Everyone", vippsTestMode: true, edit: d => d[0] = d[0] with { Enabled = true }), db, cache, default));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
+        Assert.Equal(["buyButtonMode"], refused.ProblemDetails.Errors.Keys);
+        var unchanged = await db.ShopSettings.AsNoTracking().SingleAsync();
+        Assert.Equal(BuyButtonMode.Off, unchanged.BuyButton);
+        Assert.False((await db.DeliveryOptions.AsNoTracking().SingleAsync(o => o.Method == DeliveryMethod.Shipping)).Enabled);
+    }
+
+    [Fact]
+    public async Task Update_RefusesTurningTestModeOn_WhileTheBuyButtonIsForEveryone()
+    {
+        await using var db = await SeededDb();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var settings = await db.ShopSettings.SingleAsync();
+        settings.BuyButton = BuyButtonMode.Everyone;
+        settings.VippsTestMode = false;
+        AddTerms(db, "no", settings.CreatedAt.AddMinutes(1));
+        AddTerms(db, "en", settings.CreatedAt.AddMinutes(1));
+        await db.SaveChangesAsync();
+
+        Assert.IsType<ValidationProblem>(await ShopSettingsEndpoints.Update(Update("Everyone", vippsTestMode: true), db, cache, default));
+        Assert.False((await db.ShopSettings.AsNoTracking().SingleAsync()).VippsTestMode);
+
+        var ok = Assert.IsType<Ok<ShopSettingsDto>>(await ShopSettingsEndpoints.Update(Update("AdminsOnly", vippsTestMode: true), db, cache, default));
+        Assert.True(ok.Value!.VippsTestMode);
     }
 
     [Fact]

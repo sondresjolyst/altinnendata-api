@@ -15,6 +15,9 @@ namespace altinnendata_api.Features.Shop
         /// <summary>The cache key the Vipps environment lookup shares, cleared when the mode changes.</summary>
         public const string VippsTestModeCacheKey = "shop_vipps_test_mode";
 
+        /// <summary>The field error key for a buy button mode the other settings do not allow.</summary>
+        public const string BuyButtonModeField = "buyButtonMode";
+
         public static async Task<IResult> GetAdmin(ApplicationDbContext db, CancellationToken ct)
         {
             var settings = await db.ShopSettings.AsNoTracking().FirstAsync(s => s.Id == 1, ct);
@@ -31,6 +34,12 @@ namespace altinnendata_api.Features.Shop
             var terms = await db.LegalPages.AsNoTracking().Where(p => p.Key == "terms").ToListAsync(ct);
 
             var mode = Enum.Parse<BuyButtonMode>(dto.BuyButton, true);
+            if (mode == BuyButtonMode.Everyone && dto.VippsTestMode)
+                return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [BuyButtonModeField] = ["Turn off Vipps test mode before the buy button is shown to everyone."]
+                });
+
             if (mode == BuyButtonMode.Everyone && !TermsUpdatedSince(terms, settings.CreatedAt))
                 return ShopProblems.Code(StatusCodes.Status409Conflict, "termsNotUpdated",
                     "Save the terms in both languages before the buy button is shown to everyone.");
