@@ -36,6 +36,7 @@ namespace altinnendata_api.Models
         public DbSet<ShopSettings> ShopSettings { get; set; }
         public DbSet<DeliveryOption> DeliveryOptions { get; set; }
         public DbSet<Order> Orders { get; set; }
+        public DbSet<OutsideSalesMonth> OutsideSalesMonths { get; set; }
         public DbSet<VippsProcessedWebhookEvent> ProcessedWebhookEvents { get; set; }
         public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
 
@@ -111,6 +112,9 @@ namespace altinnendata_api.Models
                     .HasForeignKey(o => o.PcBuildId)
                     .OnDelete(DeleteBehavior.SetNull);
             });
+
+            modelBuilder.Entity<OutsideSalesMonth>()
+                .HasKey(m => m.Month);
 
             modelBuilder.Entity<PcBuild>()
                 .Property(b => b.Version)
