@@ -4,6 +4,7 @@ using MapsterMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.OpenApi;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Admin;
@@ -59,6 +60,8 @@ namespace altinnendata_api
             builder.Services.AddScoped<OrderConfirmation>();
             builder.Services.AddScoped<OrderConfirmationRetry>();
             builder.Services.AddHostedService<OrderConfirmationRetryService>();
+            builder.Services.TryAddSingleton(TimeProvider.System);
+            builder.Services.AddHostedService<OrderRetentionService>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()
