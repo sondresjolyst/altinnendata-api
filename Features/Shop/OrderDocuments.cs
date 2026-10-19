@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using Markdig;
+using Markdig.Renderers;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
 
@@ -10,12 +13,15 @@ namespace altinnendata_api.Features.Shop
     /// <summary>
     /// The HTML of the two PDFs the order confirmation carries: the terms as the buyer accepted them, and the
     /// standard withdrawal form from the annex to angrerettloven. Every value is HTML encoded, the CSS is inline
-    /// and nothing loads from the network.
+    /// and nothing loads from the network: images in the terms are dropped, links show their address as text, and a
+    /// Content-Security-Policy blocks anything else.
     /// </summary>
     public static class OrderDocuments
     {
         // Raw HTML in the admin's Markdown is shown as text, never rendered.
         private static readonly MarkdownPipeline Markdown = new MarkdownPipelineBuilder().DisableHtml().Build();
+
+        private const string Csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";
 
         private const string Blank = "<span class=\"blank\"></span>";
 
@@ -57,7 +63,7 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<p class=\"meta\">{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append($"<p class=\"meta\">{(no ? "Vilkårene ble godtatt" : "Terms accepted on")}: <strong>{OsloDate(o.TermsAcceptedAt)}</strong></p>");
             body.Append("</header>");
-            body.Append(Markdig.Markdown.ToHtml(o.TermsMarkdown, Markdown));
+            body.Append(TermsBodyHtml(o.TermsMarkdown));
             return Page(o, o.TermsTitle ?? (no ? "Vilkår" : "Terms"), body.ToString());
         }
 
@@ -98,11 +104,37 @@ namespace altinnendata_api.Features.Shop
             return Page(o, "Model withdrawal form", body.ToString());
         }
 
+        /// <summary>The terms Markdown as HTML, with images left out and each link as its text followed by its address.</summary>
+        internal static string TermsBodyHtml(string markdown)
+        {
+            var document = Markdig.Markdown.Parse(markdown, Markdown);
+            foreach (var link in document.Descendants<LinkInline>().ToList())
+            {
+                if (link.IsImage)
+                {
+                    link.Remove();
+                    continue;
+                }
+                var label = string.Concat(link.Descendants<LiteralInline>().Select(l => l.Content.ToString()));
+                var text = string.IsNullOrWhiteSpace(link.Url) || label == link.Url ? label : $"{label} ({link.Url})";
+                link.ReplaceBy(new LiteralInline(text), copyChildren: false);
+            }
+            foreach (var autolink in document.Descendants<AutolinkInline>().ToList())
+                autolink.ReplaceBy(new LiteralInline(autolink.Url), copyChildren: false);
+
+            using var writer = new StringWriter(CultureInfo.InvariantCulture);
+            var renderer = new HtmlRenderer(writer);
+            Markdown.Setup(renderer);
+            renderer.Render(document);
+            writer.Flush();
+            return writer.ToString();
+        }
+
         private static void Field(StringBuilder body, string label, string value) =>
             body.Append($"<div class=\"field\"><span class=\"label\">{Enc(label)}:</span> {value}</div>");
 
         private static string Page(Order o, string title, string body) =>
-            $"<!doctype html><html lang=\"{(IsNorwegian(o) ? "nb" : "en")}\"><head><meta charset=\"utf-8\"><title>{Enc(title)}</title>{Style}</head><body>{body}</body></html>";
+            $"<!doctype html><html lang=\"{(IsNorwegian(o) ? "nb" : "en")}\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{Csp}\"><title>{Enc(title)}</title>{Style}</head><body>{body}</body></html>";
 
         private static string CompanyName(AppSettings s) =>
             string.IsNullOrWhiteSpace(s.CompanyLegalName) ? s.CompanyName : s.CompanyLegalName;

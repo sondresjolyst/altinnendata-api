@@ -80,6 +80,30 @@ public class OrderDocumentsTests
     }
 
     [Fact]
+    public void Terms_DropImages_AndShowLinksAsTextWithTheirAddress()
+    {
+        var html = OrderDocuments.TermsHtml(NewOrder(markdown:
+            "Se ![logo](http://10.0.0.1/logo.png) og [personvern](/no/privacy), [her](https://example.com/vilkar) eller <https://example.com/a>.\n\n![](http://169.254.169.254/x)"), Seller)!;
+
+        Assert.DoesNotContain("<img", html);
+        Assert.DoesNotContain("10.0.0.1", html);
+        Assert.DoesNotContain("169.254.169.254", html);
+        Assert.DoesNotContain("<a ", html);
+        Assert.Contains("personvern (/no/privacy)", html);
+        Assert.Contains("her (https://example.com/vilkar)", html);
+        Assert.Contains("eller https://example.com/a.", html);
+    }
+
+    [Fact]
+    public void Documents_CarryAContentSecurityPolicy_ThatAllowsOnlyInlineStylesAndDataImages()
+    {
+        const string csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\">";
+
+        Assert.Contains(csp, OrderDocuments.TermsHtml(NewOrder(), Seller)!);
+        Assert.Contains(csp, OrderDocuments.WithdrawalFormHtml(NewOrder(), Seller));
+    }
+
+    [Fact]
     public void Terms_UseTheCompanyName_WhenThereIsNoLegalName()
     {
         var html = OrderDocuments.TermsHtml(NewOrder(), new AppSettings { CompanyName = "Altinnendata", CompanyLegalName = "" })!;
