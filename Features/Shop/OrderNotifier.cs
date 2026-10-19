@@ -9,7 +9,7 @@ namespace altinnendata_api.Features.Shop
     {
         Task OrderReservedAsync(int orderId, CancellationToken ct);
         Task OrderCancelledAsync(int orderId, CancellationToken ct);
-        Task OrderRefundedAsync(int orderId, CancellationToken ct);
+        Task OrderRefundedAsync(int orderId, int amountInOre, CancellationToken ct);
     }
 
     /// <summary>Emails the buyer and the owner about an order. A failed send is logged and never thrown.</summary>
@@ -32,12 +32,12 @@ namespace altinnendata_api.Features.Shop
             await SendAsync(OrderEmails.BuyerCancelled(order, settings), order, ct);
         }
 
-        public async Task OrderRefundedAsync(int orderId, CancellationToken ct)
+        public async Task OrderRefundedAsync(int orderId, int amountInOre, CancellationToken ct)
         {
             var (order, settings) = await LoadAsync(orderId, ct);
             if (order == null) return;
 
-            await SendAsync(OrderEmails.BuyerRefunded(order, settings), order, ct);
+            await SendAsync(OrderEmails.BuyerRefunded(order, amountInOre, settings), order, ct);
         }
 
         private async Task<(Models.Shop.Order? Order, AppSettings Settings)> LoadAsync(int orderId, CancellationToken ct)

@@ -115,16 +115,26 @@ namespace altinnendata_api.Features.Shop
             return TypedResults.Ok(AdminOrderDto.From(fresh));
         }
 
-        public static async Task<IResult> Refund(int id, ApplicationDbContext db, IVippsClient vipps, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
+        public static async Task<IResult> Refund(int id, RefundRequest? req, ApplicationDbContext db, IVippsClient vipps, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
         {
             var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
             if (order == null) return TypedResults.NotFound();
-            if (order.Status != OrderStatus.Paid) return WrongStatus(order, "Only a paid order can be refunded.");
+            if (order.Status != OrderStatus.Paid || order.RefundedInOre >= order.CapturedInOre)
+                return WrongStatus(order, "Only a paid order with money left to refund can be refunded.");
+
+            var left = order.CapturedInOre - order.RefundedInOre;
+            var amount = req?.AmountInOre ?? left;
+            if (amount < 1 || amount > left)
+                return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [RefundRequest.AmountField] = [$"The amount must be between 1 and {left} øre."]
+                });
 
             VippsPayment payment;
             try
             {
-                payment = await vipps.RefundPaymentAsync(order.Reference, order.TotalInOre, $"refund-{order.Reference}", order.IsTest, ct);
+                // Keyed by the total refunded before, so every refund has its own key and a retry of one reuses it.
+                payment = await vipps.RefundPaymentAsync(order.Reference, amount, $"refund-{order.Reference}-{order.RefundedInOre}", order.IsTest, ct);
             }
             catch (Exception ex) when (IsProviderFailure(ex, ct))
             {
@@ -133,13 +143,11 @@ namespace altinnendata_api.Features.Shop
 
             // The build stays sold. Whether it goes back on sale is the admin's own choice.
             // Vipps has paid the money back, so an aborted admin request must not stop the save or the email.
+            // Only the side that records a refund emails about it, so a REFUNDED webhook that got there first wins.
+            var refundedNow = 0;
             var (saved, fresh) = await SaveAsync(db, order, OrderStatus.Paid, OrderStatus.Refunded, (o, _) =>
             {
-                o.RefundedInOre = Math.Clamp(Math.Max(o.RefundedInOre, payment.RefundedAmountInOre), 0, o.TotalInOre);
-                if (o.RefundedInOre < o.TotalInOre) return;
-
-                o.Status = OrderStatus.Refunded;
-                o.RefundedAt = DateTime.UtcNow;
+                refundedNow = OrderRefunds.Record(o, payment.RefundedAmountInOre, DateTime.UtcNow);
             }, CancellationToken.None);
 
             if (saved == Saved.Moved)
@@ -148,17 +156,12 @@ namespace altinnendata_api.Features.Shop
                     payment.RefundedAmountInOre, fresh.Id, fresh.Status);
                 return WrongStatus(fresh, "The order changed while it was being refunded.");
             }
-            if (fresh.Status != OrderStatus.Refunded)
-            {
-                log.LogError("Admin refund of order {OrderId} refunded {Refunded} of {Total} øre, the order stays {Status}",
-                    fresh.Id, fresh.RefundedInOre, fresh.TotalInOre, fresh.Status);
-                return ShopProblems.Code(StatusCodes.Status502BadGateway, "refundIncomplete",
-                    "Vipps did not confirm the full refund. Check the payment in the Vipps portal.");
-            }
 
-            if (saved == Saved.Applied) await notifier.OrderRefundedAsync(fresh.Id, CancellationToken.None);
+            if (saved == Saved.Applied && refundedNow > 0)
+                await notifier.OrderRefundedAsync(fresh.Id, refundedNow, CancellationToken.None);
 
-            log.LogInformation("Order {OrderId} refunded by an admin", fresh.Id);
+            log.LogInformation("Admin refund of {Amount} øre on order {OrderId}, {Refunded} of {Captured} øre refunded, the order is {Status}",
+                amount, fresh.Id, fresh.RefundedInOre, fresh.CapturedInOre, fresh.Status);
             return TypedResults.Ok(AdminOrderDto.From(fresh));
         }
 

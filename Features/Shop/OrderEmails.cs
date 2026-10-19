@@ -27,8 +27,8 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<h2>{(no ? "Takk for bestillingen" : "Thank you for your order")}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
-                ? "<p>Betalingen er reservert i Vipps. Pengene trekkes når du får varen utlevert eller sendt.</p>"
-                : "<p>The payment is reserved in Vipps. The money is taken when the item is handed over or shipped.</p>");
+                ? "<p>Beløpet er reservert i Vipps.</p>"
+                : "<p>The amount is reserved in Vipps.</p>");
 
             AppendLines(body, o, no);
 
@@ -107,18 +107,29 @@ namespace altinnendata_api.Features.Shop
             return new EmailMessage(o.BuyerEmail, no ? $"Ordre {o.Reference} er kansellert" : $"Order {o.Reference} is cancelled", body.ToString());
         }
 
-        public static EmailMessage BuyerRefunded(Order o, AppSettings s)
+        /// <summary>
+        /// One refund of <paramref name="amountInOre"/>. Once everything captured is paid back the subject says the
+        /// order is refunded, before that it names the amount refunded this time.
+        /// </summary>
+        public static EmailMessage BuyerRefunded(Order o, int amountInOre, AppSettings s)
         {
             var no = IsNorwegian(o);
-            var amount = Kroner(o.RefundedInOre > 0 ? o.RefundedInOre : o.TotalInOre, o.Locale);
+            var amount = Kroner(amountInOre, o.Locale);
+            var all = o.Status == OrderStatus.Refunded;
+            var partSubject = no
+                ? $"Vi har betalt tilbake {amount} kr for ordre {o.Reference}"
+                : $"We have refunded {amount} kr for order {o.Reference}";
             var body = new StringBuilder();
-            body.Append($"<h2>{(no ? "Pengene er betalt tilbake" : "Your money is refunded")}</h2>");
+            var heading = all ? (no ? "Pengene er betalt tilbake" : "Your money is refunded") : partSubject;
+            body.Append($"<h2>{Enc(heading)}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
                 ? $"<p>Vi har betalt tilbake {amount} kr til Vipps. Det kan ta noen dager før beløpet vises hos deg.</p>"
                 : $"<p>We have refunded {amount} kr to Vipps. It can take a few days before the amount appears in your account.</p>");
             AppendFooter(body, s, no);
-            return new EmailMessage(o.BuyerEmail, no ? $"Pengene for ordre {o.Reference} er betalt tilbake" : $"Order {o.Reference} is refunded", body.ToString());
+            var subject = !all ? partSubject
+                : no ? $"Pengene for ordre {o.Reference} er betalt tilbake" : $"Order {o.Reference} is refunded";
+            return new EmailMessage(o.BuyerEmail, subject, body.ToString());
         }
 
         private static void AppendLines(StringBuilder body, Order o, bool no)

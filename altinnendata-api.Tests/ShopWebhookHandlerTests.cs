@@ -17,7 +17,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private readonly Mock<IVippsClient> _vipps = new(MockBehavior.Strict);
+    private readonly Mock<IVippsClient> _vipps = VippsWith(captured: Total);
     private readonly Mock<IOrderNotifier> _notifier = new();
     private readonly ListLogger<ShopWebhookHandler> _log = new();
 
@@ -103,6 +103,20 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
     }
 
     private void VerifyNoEmails() => _notifier.VerifyNoOtherCalls();
+
+    private static VippsPayment Payment(int captured, int refunded) =>
+        new() { Reference = Reference, State = "AUTHORIZED", CapturedAmountInOre = captured, RefundedAmountInOre = refunded };
+
+    /// <summary>A Vipps whose payment has captured and refunded these totals. Only the payment lookup is allowed.</summary>
+    private static Mock<IVippsClient> VippsWith(int captured = 0, int refunded = 0)
+    {
+        var vipps = new Mock<IVippsClient>(MockBehavior.Strict);
+        vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>())).ReturnsAsync(Payment(captured, refunded));
+        return vipps;
+    }
+
+    private void VippsHas(int captured = Total, int refunded = 0) =>
+        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>())).ReturnsAsync(Payment(captured, refunded));
 
     [Fact]
     public async Task Authorized_ReservesThePendingOrder_AndNotifiesOnce()
@@ -308,6 +322,27 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task Captured_ThatVippsDoesNotConfirm_LeavesTheOrderUnpaid()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        VippsHas(captured: 0);
+
+        var outcome = await DeliverAsync(db, Delivery("CAPTURED"));
+
+        Assert.Equal(VippsWebhookOutcomeKind.Applied, outcome.Kind);
+        Assert.Null(outcome.AfterCommit);
+        _vipps.Verify(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()), Times.Once);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(0, order.CapturedInOre);
+        Assert.Null(order.CapturedAt);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        VerifyNoEmails();
+    }
+
+    [Fact]
     public async Task Captured_Partly_StaysReserved_AndRecordsTheVippsTotal()
     {
         await using var db = await postgres.NewContextAsync();
@@ -344,20 +379,33 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(BuildAvailability.Sold, build.Availability);
     }
 
-    [Fact]
-    public async Task Captured_WhenVippsCannotBeRead_AsksForARetry()
+    [Theory]
+    [InlineData("CAPTURED", "http")]
+    [InlineData("CAPTURED", "timeout")]
+    [InlineData("REFUNDED", "http")]
+    [InlineData("REFUNDED", "timeout")]
+    public async Task CapturedOrRefunded_WhenVippsCannotBeRead_AsksForARetry(string name, string failure)
     {
         await using var db = await postgres.NewContextAsync();
-        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
-        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Vipps is down"));
+        var (buildId, orderId) = await SeedAsync(db, name == "CAPTURED" ? OrderStatus.Reserved : OrderStatus.Paid);
+        if (name == "REFUNDED")
+        {
+            await using var fresh = postgres.NewContextOn(db);
+            await fresh.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s.SetProperty(o => o.CapturedInOre, Total), Ct);
+        }
+        // HttpClient reports its own timeout as a TaskCanceledException around a TimeoutException.
+        Exception error = failure == "http"
+            ? new HttpRequestException("Vipps is down")
+            : new TaskCanceledException("The request was canceled.", new TimeoutException());
+        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>())).ThrowsAsync(error);
 
-        var outcome = await DeliverAsync(db, Delivery("CAPTURED", 500_000));
+        var outcome = await DeliverAsync(db, Delivery(name));
 
         Assert.Equal(VippsWebhookOutcomeKind.Retry, outcome.Kind);
         var (_, order) = await ReloadAsync(db, buildId, orderId);
-        Assert.Equal(OrderStatus.Reserved, order.Status);
-        Assert.Equal(0, order.CapturedInOre);
+        Assert.Equal(name == "CAPTURED" ? OrderStatus.Reserved : OrderStatus.Paid, order.Status);
+        Assert.Equal(name == "CAPTURED" ? 0 : Total, order.CapturedInOre);
+        Assert.Equal(0, order.RefundedInOre);
         VerifyNoEmails();
     }
 
@@ -577,6 +625,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
         await DeliverAsync(db, Delivery("CAPTURED"));
+        VippsHas(refunded: Total);
 
         var first = await DeliverAsync(db, Delivery("REFUNDED"));
         var again = await DeliverAsync(db, Delivery("REFUNDED"));
@@ -588,26 +637,37 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(Total, order.RefundedInOre);
         Assert.Equal(EventTime.UtcDateTime, order.RefundedAt);
         Assert.Equal(BuildAvailability.Sold, build.Availability);
-        _notifier.Verify(n => n.OrderRefundedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, Total, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
     }
 
     [Fact]
-    public async Task Refunded_Partly_StaysPaid_AndRecordsTheVippsTotal()
+    public async Task Refunded_InParts_EmailsEachPartOnce_AndRefundsAtTheCapturedTotal()
     {
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
         await DeliverAsync(db, Delivery("CAPTURED"));
-        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VippsPayment { Reference = Reference, State = "AUTHORIZED", CapturedAmountInOre = Total, RefundedAmountInOre = 300_000 });
+        VippsHas(refunded: 300_000);
 
-        var outcome = await DeliverAsync(db, Delivery("REFUNDED", 300_000));
+        var first = await DeliverAsync(db, Delivery("REFUNDED", 300_000));
+        var again = await DeliverAsync(db, Delivery("REFUNDED", 300_000));
 
-        Assert.Null(outcome.AfterCommit);
+        Assert.NotNull(first.AfterCommit);
+        Assert.Null(again.AfterCommit);
         var (_, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Paid, order.Status);
         Assert.Equal(300_000, order.RefundedInOre);
         Assert.Null(order.RefundedAt);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, 300_000, It.IsAny<CancellationToken>()), Times.Once);
+
+        VippsHas(refunded: Total);
+        await DeliverAsync(db, Delivery("REFUNDED", Total - 300_000));
+
+        (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Refunded, order.Status);
+        Assert.Equal(Total, order.RefundedInOre);
+        Assert.Equal(EventTime.UtcDateTime, order.RefundedAt);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, Total - 300_000, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
     }
 
@@ -617,6 +677,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
         await DeliverAsync(db, Delivery("CAPTURED"));
+        VippsHas(refunded: Total);
         await DeliverAsync(db, Delivery("REFUNDED"));
 
         var outcome = await DeliverAsync(db, Delivery("CAPTURED"));
@@ -629,7 +690,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Refunded, order.Status);
         Assert.Equal(BuildAvailability.Sold, build.Availability);
-        _notifier.Verify(n => n.OrderRefundedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, Total, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
     }
 

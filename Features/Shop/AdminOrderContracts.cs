@@ -64,6 +64,13 @@ namespace altinnendata_api.Features.Shop
                 o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt);
     }
 
+    /// <summary>How much of a paid order to refund, in øre. Left out, it refunds everything not yet refunded.</summary>
+    public record RefundRequest(int? AmountInOre)
+    {
+        /// <summary>The field a refund amount outside 1 to what is left is reported on.</summary>
+        public const string AmountField = "amountInOre";
+    }
+
     /// <summary>The invoice number the admin made for the order. Surrounding spaces are dropped and an empty value clears it.</summary>
     public record InvoiceNumberRequest(string? InvoiceNumber);
 

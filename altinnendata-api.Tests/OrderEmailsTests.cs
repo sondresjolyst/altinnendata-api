@@ -139,9 +139,63 @@ public class OrderEmailsTests : TestBase
 
         Assert.Equal("Ordre ae-000001-abcdef12 er kansellert", OrderEmails.BuyerCancelled(no, s).Subject);
         Assert.Equal("Order ae-000001-abcdef12 is cancelled", OrderEmails.BuyerCancelled(en, s).Subject);
-        Assert.Equal("Pengene for ordre ae-000001-abcdef12 er betalt tilbake", OrderEmails.BuyerRefunded(no, s).Subject);
-        Assert.Equal("Order ae-000001-abcdef12 is refunded", OrderEmails.BuyerRefunded(en, s).Subject);
-        Assert.Contains("It can take a few days before the amount appears in your account.", OrderEmails.BuyerRefunded(en, s).HtmlBody);
+        Assert.Contains("It can take a few days before the amount appears in your account.", OrderEmails.BuyerRefunded(Refunded(en), 1318900, s).HtmlBody);
+    }
+
+    /// <summary>The order after its refunds, with <paramref name="refunded"/> paid back of a full capture.</summary>
+    private static Order Refunded(Order o, int? refunded = null)
+    {
+        o.CapturedInOre = o.TotalInOre;
+        o.RefundedInOre = refunded ?? o.TotalInOre;
+        o.Status = o.RefundedInOre >= o.CapturedInOre ? OrderStatus.Refunded : OrderStatus.Paid;
+        return o;
+    }
+
+    [Theory]
+    [InlineData("no", "Pengene for ordre ae-000001-abcdef12 er betalt tilbake", "Vi har betalt tilbake 13 189,00 kr til Vipps.")]
+    [InlineData("en", "Order ae-000001-abcdef12 is refunded", "We have refunded 13,189.00 kr to Vipps.")]
+    public void RefundEmail_ForTheWholeOrder_KeepsTheSubject(string locale, string subject, string sentence)
+    {
+        var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder(locale)), 1318900, new AppSettings());
+
+        Assert.Equal(subject, msg.Subject);
+        Assert.Contains(sentence, msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no", "Vi har betalt tilbake 3 000,00 kr for ordre ae-000001-abcdef12", "Vi har betalt tilbake 3 000,00 kr til Vipps.")]
+    [InlineData("en", "We have refunded 3,000.00 kr for order ae-000001-abcdef12", "We have refunded 3,000.00 kr to Vipps.")]
+    public void RefundEmail_ForAPart_NamesTheAmountRefundedThisTime(string locale, string subject, string sentence)
+    {
+        var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder(locale), refunded: 700_000), 300_000, new AppSettings());
+
+        Assert.Equal(subject, msg.Subject);
+        Assert.Contains(sentence, msg.HtmlBody);
+        Assert.DoesNotContain("7 000,00", msg.HtmlBody);
+        Assert.DoesNotContain("7,000.00", msg.HtmlBody);
+    }
+
+    [Fact]
+    public void RefundEmail_ForTheLastPart_KeepsTheSubject_AndNamesTheLastAmount()
+    {
+        var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder()), 318_900, new AppSettings());
+
+        Assert.Equal("Pengene for ordre ae-000001-abcdef12 er betalt tilbake", msg.Subject);
+        Assert.Contains("Vi har betalt tilbake 3 189,00 kr til Vipps.", msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no", "Beløpet er reservert i Vipps.")]
+    [InlineData("en", "The amount is reserved in Vipps.")]
+    public void BuyerConfirmation_SaysTheAmountIsReserved_WithoutSayingWhenItIsTaken(string locale, string sentence)
+    {
+        var body = OrderEmails.BuyerConfirmation(NewOrder(locale), new AppSettings(), Config()).HtmlBody;
+
+        Assert.Contains(sentence, body);
+        Assert.DoesNotContain("trekkes", body);
+        Assert.DoesNotContain("utlevert", body);
+        Assert.DoesNotContain("is taken", body);
+        Assert.DoesNotContain("handed over", body);
     }
 
     [Fact]
@@ -158,7 +212,7 @@ public class OrderEmailsTests : TestBase
             OrderEmails.BuyerConfirmation(o, s, config).HtmlBody,
             OrderEmails.OwnerNewOrder(o, s, config).HtmlBody,
             OrderEmails.BuyerCancelled(o, s).HtmlBody,
-            OrderEmails.BuyerRefunded(o, s).HtmlBody,
+            OrderEmails.BuyerRefunded(o, 1318900, s).HtmlBody,
         };
 
         foreach (var body in bodies)
@@ -212,9 +266,9 @@ public class OrderEmailsTests : TestBase
         var notifier = new OrderNotifier(db, email.Object, Config(), NullLogger<OrderNotifier>.Instance);
 
         await notifier.OrderCancelledAsync(order.Id, TestContext.Current.CancellationToken);
-        await notifier.OrderRefundedAsync(order.Id, TestContext.Current.CancellationToken);
+        await notifier.OrderRefundedAsync(order.Id, 300_000, TestContext.Current.CancellationToken);
 
-        Assert.Equal(["Ordre ae-000001-abcdef12 er kansellert", "Pengene for ordre ae-000001-abcdef12 er betalt tilbake"], sent.Select(m => m.Subject));
+        Assert.Equal(["Ordre ae-000001-abcdef12 er kansellert", "Vi har betalt tilbake 3 000,00 kr for ordre ae-000001-abcdef12"], sent.Select(m => m.Subject));
         Assert.All(sent, m => Assert.Equal("ola@kunde.no", m.To));
     }
 }

@@ -62,6 +62,7 @@ namespace altinnendata_api.Features.Shop
             var build = order.PcBuildId is int buildId ? await db.PcBuilds.FindAsync([buildId], cancellationToken) : null;
             var previous = order.Status;
             var at = e.Timestamp?.UtcDateTime ?? DateTime.UtcNow;
+            var refundedNow = 0;
 
             try
             {
@@ -76,11 +77,11 @@ namespace altinnendata_api.Features.Shop
                         break;
                     case "CAPTURED":
                         if (previous is OrderStatus.Pending or OrderStatus.Reserved)
-                            await CaptureAsync(order, build, amount!.Value, at, eventKey, cancellationToken);
+                            await CaptureAsync(order, build, at, eventKey, cancellationToken);
                         break;
                     case "REFUNDED":
                         if (previous == OrderStatus.Paid)
-                            await RefundAsync(order, amount!.Value, at, eventKey, cancellationToken);
+                            refundedNow = await RefundAsync(order, at, eventKey, cancellationToken);
                         break;
                     case "ABORTED":
                     case "EXPIRED":
@@ -97,35 +98,46 @@ namespace altinnendata_api.Features.Shop
                         break;
                 }
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
             {
+                // HttpClient reports its own timeout as a cancellation.
                 log.LogWarning(ex, "Shop webhook {EventKey}: could not read the payment of order {OrderId} from Vipps, left for a retry", eventKey, order.Id);
                 return VippsWebhookOutcome.Retry;
             }
 
             if (db.Entry(order).State == EntityState.Modified) order.UpdatedAt = DateTime.UtcNow;
+
+            var orderId = order.Id;
+            // Every refund this event recorded gets its email, whether or not it refunded the whole order.
+            // A refund the admin already recorded adds nothing here, so it sends nothing.
+            if (refundedNow > 0)
+            {
+                log.LogInformation("Shop webhook {EventKey}: recorded a refund of {Amount} øre on order {OrderId}, the order is {Status}",
+                    eventKey, refundedNow, order.Id, order.Status);
+                return VippsWebhookOutcome.Applied(ct => notifier.OrderRefundedAsync(orderId, refundedNow, ct));
+            }
+
             if (order.Status == previous) return VippsWebhookOutcome.Applied();
 
             log.LogInformation("Shop webhook {EventKey}: order {OrderId} {Previous} -> {Status}", eventKey, order.Id, previous, order.Status);
 
-            var orderId = order.Id;
             return order.Status switch
             {
                 // AUTHORIZED never arrived, so the buyer and the owner have not heard about the order yet.
                 OrderStatus.Paid when previous == OrderStatus.Pending => VippsWebhookOutcome.Applied(ct => notifier.OrderReservedAsync(orderId, ct)),
                 OrderStatus.Reserved => VippsWebhookOutcome.Applied(ct => notifier.OrderReservedAsync(orderId, ct)),
                 OrderStatus.Cancelled => VippsWebhookOutcome.Applied(ct => notifier.OrderCancelledAsync(orderId, ct)),
-                OrderStatus.Refunded => VippsWebhookOutcome.Applied(ct => notifier.OrderRefundedAsync(orderId, ct)),
                 _ => VippsWebhookOutcome.Applied()
             };
         }
 
-        /// <summary>A full capture pays the order and sells the build. A partial one records what Vipps has captured so far.</summary>
-        private async Task CaptureAsync(Order order, PcBuild? build, int amount, DateTime at, string eventKey, CancellationToken ct)
+        /// <summary>
+        /// Vipps confirms the capture: the captured amount comes from the payment, never from the event alone.
+        /// A full capture pays the order and sells the build. A partial one records what Vipps has captured so far.
+        /// </summary>
+        private async Task CaptureAsync(Order order, PcBuild? build, DateTime at, string eventKey, CancellationToken ct)
         {
-            var captured = amount == order.TotalInOre
-                ? order.TotalInOre
-                : (await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct)).CapturedAmountInOre;
+            var captured = (await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct)).CapturedAmountInOre;
             order.CapturedInOre = Math.Clamp(Math.Max(order.CapturedInOre, captured), 0, order.TotalInOre);
 
             if (order.CapturedInOre < order.TotalInOre)
@@ -142,23 +154,18 @@ namespace altinnendata_api.Features.Shop
                     eventKey, order.Id, build.Id);
         }
 
-        /// <summary>A full refund refunds the order. A partial one records what Vipps has refunded so far. The build stays sold.</summary>
-        private async Task RefundAsync(Order order, int amount, DateTime at, string eventKey, CancellationToken ct)
+        /// <summary>
+        /// Records what Vipps has refunded in total. The order is refunded once that reaches the captured total.
+        /// The build stays sold. Returns how much this event added.
+        /// </summary>
+        private async Task<int> RefundAsync(Order order, DateTime at, string eventKey, CancellationToken ct)
         {
-            var refunded = amount == order.TotalInOre
-                ? order.TotalInOre
-                : (await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct)).RefundedAmountInOre;
-            order.RefundedInOre = Math.Clamp(Math.Max(order.RefundedInOre, refunded), 0, order.TotalInOre);
-
-            if (order.RefundedInOre < order.TotalInOre)
-            {
-                log.LogWarning("Shop webhook {EventKey}: partial refund of {Refunded} of {Total} øre on order {OrderId}, the order stays {Status}",
-                    eventKey, order.RefundedInOre, order.TotalInOre, order.Id, order.Status);
-                return;
-            }
-
-            order.Status = OrderStatus.Refunded;
-            order.RefundedAt = at;
+            var payment = await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct);
+            var added = OrderRefunds.Record(order, payment.RefundedAmountInOre, at);
+            if (added == 0)
+                log.LogInformation("Shop webhook {EventKey}: order {OrderId} already has the {Refunded} øre Vipps has refunded",
+                    eventKey, order.Id, order.RefundedInOre);
+            return added;
         }
 
         private void Fail(Order order, PcBuild? build, string name, string eventKey)
