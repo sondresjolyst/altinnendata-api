@@ -19,7 +19,8 @@ namespace altinnendata_api.Features.Contact
         string? UseCase,
         string? BudgetNok,
         string? BuildSlug,
-        string Message);
+        string Message,
+        string? Locale = null);
 
     public class ContactRequestValidator : AbstractValidator<ContactRequest>
     {
@@ -35,10 +36,11 @@ namespace altinnendata_api.Features.Contact
             RuleFor(x => x.BudgetNok).Must(v => AllowedBudgetRanges.Contains(v)).When(x => x.BudgetNok != null);
             RuleFor(x => x.BuildSlug).MaximumLength(160);
             RuleFor(x => x.Message).NotEmpty().MaximumLength(4000);
+            RuleFor(x => x.Locale).MaximumLength(10);
         }
     }
 
-    /// <summary>Sends a contact / build enquiry to the configured recipient.</summary>
+    /// <summary>Sends a contact / build enquiry to the configured recipient, and a copy to the sender as a receipt.</summary>
     public static class SendEnquiry
     {
         public static async Task<IResult> Handle(
@@ -62,6 +64,8 @@ namespace altinnendata_api.Features.Contact
                     ReplyTo = req.Email,
                 },
                 ct);
+
+            await email.SendAsync(BuildReceipt(req, settings), ct);
 
             return TypedResults.Ok(new MessageResponse("Thanks — we'll be in touch."));
         }
@@ -88,6 +92,26 @@ namespace altinnendata_api.Features.Contact
             body.Append("<p><strong>Message:</strong></p>");
             body.Append($"<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>");
             return body.ToString();
+        }
+
+        /// <summary>
+        /// The receipt to the sender, in the locale of the page they wrote from. It repeats their message, so a
+        /// withdrawal sent through the form is confirmed at once.
+        /// </summary>
+        internal static EmailMessage BuildReceipt(ContactRequest req, AppSettings settings)
+        {
+            var no = Locales.Normalize(req.Locale) == "no";
+            var subject = no ? "Vi har mottatt meldingen din" : "We have received your message";
+            var body = new StringBuilder($"<h2>{subject}</h2>");
+            body.Append($"<p>{(no ? "Hei" : "Hi")} {WebUtility.HtmlEncode(req.Name)},</p>");
+            body.Append(no
+                ? "<p>Takk for meldingen. Vi svarer så snart vi kan. Dette er en kopi av det du sendte oss.</p>"
+                : "<p>Thank you for your message. We will reply as soon as we can. This is a copy of what you sent us.</p>");
+            body.Append($"<p><strong>{(no ? "Meldingen din" : "Your message")}:</strong></p>");
+            body.Append($"<p>{WebUtility.HtmlEncode(req.Message).Replace("\n", "<br/>")}</p>");
+            EmailFooter.Append(body, settings, no);
+
+            return new EmailMessage(req.Email, subject, body.ToString()) { ReplyTo = settings.PublicEmail };
         }
 
         private static string? BuildLink(string? slug, PcBuild? build, IConfiguration config)
