@@ -1049,6 +1049,13 @@ namespace altinnendata_api.Migrations
                     b.Property<int?>("PcBuildId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("PendingRefundInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PendingRefundKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("PickupNote")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");

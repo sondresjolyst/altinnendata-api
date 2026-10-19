@@ -31,6 +31,13 @@ namespace altinnendata_api.Features.Shop
         /// <summary>How long one Vipps HTTP call may take. Checkout holds the build's row lock while it waits.</summary>
         public static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(15);
 
+        /// <summary>
+        /// Vipps could not be reached or answered with an error. HttpClient reports its own timeout as a cancellation,
+        /// so a cancellation counts only while <paramref name="ct"/>, the caller's own token, is not cancelled.
+        /// </summary>
+        public static bool IsProviderFailure(Exception ex, CancellationToken ct) =>
+            ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested);
+
         /// <summary>The name of the shop's ePayment webhook.</summary>
         public const string Slot = "shop";
 

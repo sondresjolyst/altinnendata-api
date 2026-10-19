@@ -64,11 +64,17 @@ namespace altinnendata_api.Features.Shop
                 o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt);
     }
 
-    /// <summary>How much of a paid order to refund, in øre. Left out, it refunds everything not yet refunded.</summary>
-    public record RefundRequest(int? AmountInOre)
+    /// <summary>
+    /// How much of a paid order to refund, in øre. Left out, it refunds everything not yet refunded.
+    /// <paramref name="ExpectedRefundedInOre"/> is the refunded total the admin's page was loaded with, and is required.
+    /// </summary>
+    public record RefundRequest(int? AmountInOre, int? ExpectedRefundedInOre)
     {
         /// <summary>The field a refund amount outside 1 to what is left is reported on.</summary>
         public const string AmountField = "amountInOre";
+
+        /// <summary>The field a missing refunded total is reported on.</summary>
+        public const string ExpectedField = "expectedRefundedInOre";
     }
 
     /// <summary>The invoice number the admin made for the order. Surrounding spaces are dropped and an empty value clears it.</summary>

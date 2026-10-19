@@ -321,17 +321,18 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         VerifyNoEmails();
     }
 
-    [Fact]
-    public async Task Captured_ThatVippsDoesNotConfirm_LeavesTheOrderUnpaid()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(Total - 1)]
+    public async Task Captured_ThatVippsDoesNotShowYet_AsksForARetry_AndLeavesTheOrderUnpaid(int vippsCaptured)
     {
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
-        VippsHas(captured: 0);
+        VippsHas(captured: vippsCaptured);
 
         var outcome = await DeliverAsync(db, Delivery("CAPTURED"));
 
-        Assert.Equal(VippsWebhookOutcomeKind.Applied, outcome.Kind);
-        Assert.Null(outcome.AfterCommit);
+        Assert.Equal(VippsWebhookOutcomeKind.Retry, outcome.Kind);
         _vipps.Verify(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()), Times.Once);
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Reserved, order.Status);
@@ -339,7 +340,55 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Null(order.CapturedAt);
         Assert.Equal(BuildAvailability.Reserved, build.Availability);
         Assert.Equal(orderId, build.HeldByOrderId);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("does not show"));
+        Assert.DoesNotContain(_log.Entries, e => e.Level == LogLevel.Error);
         VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Refunded_ThatVippsDoesNotShowYet_AsksForARetry_AndRecordsNothing()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        await DeliverAsync(db, Delivery("CAPTURED"));
+        VippsHas(refunded: 200_000);
+
+        var outcome = await DeliverAsync(db, Delivery("REFUNDED", 300_000));
+
+        Assert.Equal(VippsWebhookOutcomeKind.Retry, outcome.Kind);
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(0, order.RefundedInOre);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("does not show"));
+        VerifyNoEmails();
+
+        // Vipps shows it on the redelivery.
+        VippsHas(refunded: 300_000);
+        var again = await DeliverAsync(db, Delivery("REFUNDED", 300_000));
+
+        Assert.NotNull(again.AfterCommit);
+        Assert.Equal(300_000, (await ReloadAsync(db, buildId, orderId)).Order.RefundedInOre);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, 300_000, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Refunded_ClearsTheAdminsPendingRefund()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        await DeliverAsync(db, Delivery("CAPTURED"));
+        await using (var admin = postgres.NewContextOn(db))
+            await admin.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s
+                .SetProperty(o => o.PendingRefundKey, $"refund-{Reference}-0")
+                .SetProperty(o => o.PendingRefundInOre, 300_000), Ct);
+        VippsHas(refunded: 300_000);
+
+        await DeliverAsync(db, Delivery("REFUNDED", 300_000));
+
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(300_000, order.RefundedInOre);
+        Assert.Null(order.PendingRefundKey);
+        Assert.Null(order.PendingRefundInOre);
     }
 
     [Fact]

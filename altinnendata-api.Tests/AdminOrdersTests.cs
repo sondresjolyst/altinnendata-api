@@ -120,8 +120,18 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
     private Task<IResult> Capture(ApplicationDbContext db, int id) => AdminOrders.Capture(id, db, _vipps.Object, _log, Ct);
     private Task<IResult> Cancel(ApplicationDbContext db, int id) => AdminOrders.Cancel(id, db, _vipps.Object, _notifier.Object, _log, Ct);
-    private Task<IResult> Refund(ApplicationDbContext db, int id, int? amountInOre = null) =>
-        AdminOrders.Refund(id, amountInOre == null ? null : new RefundRequest(amountInOre), db, _vipps.Object, _notifier.Object, _log, Ct);
+    /// <summary>A refund from an order page loaded now, unless <paramref name="expected"/> says what an older page showed.</summary>
+    private async Task<IResult> Refund(ApplicationDbContext db, int id, int? amountInOre = null, int? expected = null)
+    {
+        expected ??= await db.Orders.AsNoTracking().Where(o => o.Id == id).Select(o => (int?)o.RefundedInOre).FirstOrDefaultAsync(Ct) ?? 0;
+        return await AdminOrders.Refund(id, new RefundRequest(amountInOre, expected), db, _vipps.Object, _notifier.Object, _log, Ct);
+    }
+
+    private async Task<Order> OrderAsync(ApplicationDbContext existing, int orderId)
+    {
+        await using var fresh = postgres.NewContextOn(existing);
+        return await fresh.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct);
+    }
 
     private static AdminOrderDto AssertOk(IResult result) => Assert.IsType<Ok<AdminOrderDto>>(result).Value!;
 
@@ -132,7 +142,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(code, problem.ProblemDetails.Extensions["code"]);
     }
 
-    private static VippsWebhookDelivery<VippsPaymentEvent> Delivery(string name) => new()
+    private static VippsWebhookDelivery<VippsPaymentEvent> Delivery(string name, int amount = Total) => new()
     {
         Event = new VippsPaymentEvent
         {
@@ -140,7 +150,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
             Reference = Reference,
             PspReference = Guid.NewGuid().ToString("N"),
             Name = name,
-            Amount = new VippsWebhookAmount { Value = Total, Currency = "NOK" },
+            Amount = new VippsWebhookAmount { Value = amount, Currency = "NOK" },
             Timestamp = new DateTimeOffset(WebhookTime),
             Success = true
         },
@@ -492,7 +502,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         {
             "capture" => await AdminOrders.Capture(orderId, db, vipps.Object, _log, Ct),
             "cancel" => await AdminOrders.Cancel(orderId, db, vipps.Object, _notifier.Object, _log, Ct),
-            _ => await AdminOrders.Refund(orderId, null, db, vipps.Object, _notifier.Object, _log, Ct)
+            _ => await AdminOrders.Refund(orderId, new RefundRequest(null, 0), db, vipps.Object, _notifier.Object, _log, Ct)
         };
 
         AssertProblem(result, StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
@@ -500,10 +510,115 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
             Assert.IsType<ProblemHttpResult>(result).ProblemDetails.Detail);
         Assert.DoesNotContain(_log.Entries, e => e.Message.Contains("nothing was changed", StringComparison.OrdinalIgnoreCase));
         var (build, order) = await ReloadAsync(db, buildId, orderId);
-        Assert.Equal(orderBefore.Version, order.Version);
+        if (action == "refund")
+        {
+            // The refund may have happened in Vipps, so the order remembers it until Vipps shows it.
+            Assert.Equal(orderBefore.RefundedInOre, order.RefundedInOre);
+            Assert.Equal($"refund-{Reference}-0", order.PendingRefundKey);
+            Assert.Equal(Total, order.PendingRefundInOre);
+        }
+        else
+        {
+            Assert.Equal(orderBefore.Version, order.Version);
+        }
         Assert.Equal(orderBefore.Status, order.Status);
         Assert.Equal(buildBefore.Version, build.Version);
         _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Refund_WithoutTheRefundedTotalItWasLoadedWith_Returns400()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+
+        foreach (var req in new RefundRequest?[] { null, new(300_000, null) })
+        {
+            var problem = Assert.IsType<ValidationProblem>(await AdminOrders.Refund(orderId, req, db, _vipps.Object, _notifier.Object, _log, Ct));
+            Assert.Equal(["expectedRefundedInOre"], problem.ProblemDetails.Errors.Keys);
+        }
+        _vipps.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Refund_RetriedAfterTheWebhookRecordedTheFirstTry_Returns409RefundChanged_AndRefundsOnce()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        _vipps.Setup(v => v.RefundPaymentAsync(Reference, 300_000, $"refund-{Reference}-0", true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("The request was canceled.", new TimeoutException()));
+
+        AssertProblem(await Refund(db, orderId, 300_000, expected: 0), StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+        // The refund did happen in Vipps, and its REFUNDED webhook records it.
+        SetupGetPayment(refunded: 300_000);
+        await using (var other = postgres.NewContextOn(db))
+        {
+            var outcome = await new ShopWebhookHandler(other, _vipps.Object, _notifier.Object, NullLogger<ShopWebhookHandler>.Instance)
+                .HandleAsync(Delivery("REFUNDED", 300_000), Ct);
+            Assert.NotNull(outcome.AfterCommit);
+            await other.SaveChangesAsync(Ct);
+        }
+        db.ChangeTracker.Clear();
+
+        var retry = await Refund(db, orderId, 300_000, expected: 0);
+
+        AssertProblem(retry, StatusCodes.Status409Conflict, "refundChanged");
+        Assert.Equal("The order was refunded meanwhile. Reload the order.", Assert.IsType<ProblemHttpResult>(retry).ProblemDetails.Detail);
+        _vipps.Verify(v => v.RefundPaymentAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>()), Times.Once);
+        var order = await OrderAsync(db, orderId);
+        Assert.Equal(300_000, order.RefundedInOre);
+        Assert.Null(order.PendingRefundKey);
+        Assert.Null(order.PendingRefundInOre);
+    }
+
+    [Fact]
+    public async Task Refund_FromASecondTabLoadedBeforeTheFirstRefund_Returns409RefundChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        SetupRefund(amount: 300_000);
+
+        AssertOk(await Refund(db, orderId, 300_000, expected: 0));
+        db.ChangeTracker.Clear();
+        AssertProblem(await Refund(db, orderId, 300_000, expected: 0), StatusCodes.Status409Conflict, "refundChanged");
+
+        _vipps.Verify(v => v.RefundPaymentAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, 300_000, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+        Assert.Equal(300_000, (await OrderAsync(db, orderId)).RefundedInOre);
+    }
+
+    [Fact]
+    public async Task Refund_WhileVippsHasNotShownTheLastOne_RefusesAnotherAmount_AndRetriesTheSameOne()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        SetupRefund(amount: 300_000, refunded: 0);
+
+        var first = AssertOk(await Refund(db, orderId, 300_000));
+        Assert.Equal(0, first.RefundedInOre);
+        var pending = await OrderAsync(db, orderId);
+        Assert.Equal($"refund-{Reference}-0", pending.PendingRefundKey);
+        Assert.Equal(300_000, pending.PendingRefundInOre);
+        db.ChangeTracker.Clear();
+
+        var other = await Refund(db, orderId, 200_000);
+
+        AssertProblem(other, StatusCodes.Status409Conflict, "refundPending");
+        Assert.Equal("Wait until Vipps has confirmed the last refund.", Assert.IsType<ProblemHttpResult>(other).ProblemDetails.Detail);
+        _vipps.Verify(v => v.RefundPaymentAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        // The same refund again reuses its key, and now Vipps shows it.
+        db.ChangeTracker.Clear();
+        SetupRefund(amount: 300_000);
+        var same = AssertOk(await Refund(db, orderId, 300_000));
+
+        Assert.Equal(300_000, same.RefundedInOre);
+        _vipps.Verify(v => v.RefundPaymentAsync(Reference, 300_000, $"refund-{Reference}-0", true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _notifier.Verify(n => n.OrderRefundedAsync(orderId, 300_000, It.IsAny<CancellationToken>()), Times.Once);
+        var done = await OrderAsync(db, orderId);
+        Assert.Null(done.PendingRefundKey);
+        Assert.Null(done.PendingRefundInOre);
     }
 
     [Fact]
@@ -635,7 +750,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         {
             "capture" => await AdminOrders.Capture(orderId, db, _vipps.Object, _log, aborted.Token),
             "cancel" => await AdminOrders.Cancel(orderId, db, _vipps.Object, _notifier.Object, _log, aborted.Token),
-            _ => await AdminOrders.Refund(orderId, null, db, _vipps.Object, _notifier.Object, _log, aborted.Token)
+            _ => await AdminOrders.Refund(orderId, new RefundRequest(null, 0), db, _vipps.Object, _notifier.Object, _log, aborted.Token)
         };
 
         var expected = action switch { "capture" => "Paid", "cancel" => "Cancelled", _ => "Refunded" };

@@ -43,6 +43,13 @@ namespace altinnendata_api.Models.Shop
         public int CapturedInOre { get; set; }
         public int RefundedInOre { get; set; }
 
+        /// <summary>
+        /// The idempotency key and amount of the last admin refund sent to Vipps that Vipps has not shown yet.
+        /// Cleared once the refunded total moves past it.
+        /// </summary>
+        public string? PendingRefundKey { get; set; }
+        public int? PendingRefundInOre { get; set; }
+
         public bool IsTest { get; set; }
         public DateTimeOffset? CaptureGuaranteedUntil { get; set; }
         public string? InvoiceNumber { get; set; }

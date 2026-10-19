@@ -44,7 +44,7 @@ namespace altinnendata_api.Features.Shop
             {
                 payment = await vipps.CapturePaymentAsync(order.Reference, order.TotalInOre, $"capture-{order.Reference}", order.IsTest, ct);
             }
-            catch (Exception ex) when (IsProviderFailure(ex, ct))
+            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "capture", order);
             }
@@ -95,7 +95,7 @@ namespace altinnendata_api.Features.Shop
             {
                 await vipps.CancelPaymentAsync(order.Reference, $"cancel-{order.Reference}", order.IsTest, ct);
             }
-            catch (Exception ex) when (IsProviderFailure(ex, ct))
+            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "cancel", order);
             }
@@ -117,26 +117,22 @@ namespace altinnendata_api.Features.Shop
 
         public static async Task<IResult> Refund(int id, RefundRequest? req, ApplicationDbContext db, IVippsClient vipps, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
         {
-            var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
-            if (order == null) return TypedResults.NotFound();
-            if (order.Status != OrderStatus.Paid || order.RefundedInOre >= order.CapturedInOre)
-                return WrongStatus(order, "Only a paid order with money left to refund can be refunded.");
-
-            var left = order.CapturedInOre - order.RefundedInOre;
-            var amount = req?.AmountInOre ?? left;
-            if (amount < 1 || amount > left)
+            if (req?.ExpectedRefundedInOre is not int expected)
                 return TypedResults.ValidationProblem(new Dictionary<string, string[]>
                 {
-                    [RefundRequest.AmountField] = [$"The amount must be between 1 and {left} øre."]
+                    [RefundRequest.ExpectedField] = ["Send the refunded total the order was loaded with."]
                 });
+
+            var (reserved, refused, amount, key) = await ReserveRefundAsync(id, req.AmountInOre, expected, db, ct);
+            if (refused != null) return refused;
+            var order = reserved!;
 
             VippsPayment payment;
             try
             {
-                // Keyed by the total refunded before, so every refund has its own key and a retry of one reuses it.
-                payment = await vipps.RefundPaymentAsync(order.Reference, amount, $"refund-{order.Reference}-{order.RefundedInOre}", order.IsTest, ct);
+                payment = await vipps.RefundPaymentAsync(order.Reference, amount, key, order.IsTest, ct);
             }
-            catch (Exception ex) when (IsProviderFailure(ex, ct))
+            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "refund", order);
             }
@@ -164,6 +160,55 @@ namespace altinnendata_api.Features.Shop
                 amount, fresh.Id, fresh.RefundedInOre, fresh.CapturedInOre, fresh.Status);
             return TypedResults.Ok(AdminOrderDto.From(fresh));
         }
+
+        /// <summary>
+        /// Checks a refund against the order and remembers it on the order before Vipps is called. The idempotency key
+        /// is built from the refunded total the admin's page showed, so a retry of the same refund reuses its key and
+        /// a page from before the last refund is refused. A different amount on a key Vipps has not confirmed yet is
+        /// refused too, since Vipps may already have paid out the first one.
+        /// </summary>
+        private static async Task<(Order? Order, IResult? Refused, int Amount, string Key)> ReserveRefundAsync(
+            int id, int? requested, int expected, ApplicationDbContext db, CancellationToken ct)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+                if (order == null) return (null, TypedResults.NotFound(), 0, "");
+                if (order.Status != OrderStatus.Paid || order.RefundedInOre >= order.CapturedInOre)
+                    return (order, WrongStatus(order, "Only a paid order with money left to refund can be refunded."), 0, "");
+                if (order.RefundedInOre != expected) return (order, RefundChanged(), 0, "");
+
+                var left = order.CapturedInOre - order.RefundedInOre;
+                var amount = requested ?? left;
+                if (amount < 1 || amount > left)
+                    return (order, TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        [RefundRequest.AmountField] = [$"The amount must be between 1 and {left} øre."]
+                    }), 0, "");
+
+                var key = $"refund-{order.Reference}-{expected}";
+                if (order.PendingRefundKey == key && order.PendingRefundInOre != amount)
+                    return (order, ShopProblems.Code(StatusCodes.Status409Conflict, "refundPending",
+                        "Wait until Vipps has confirmed the last refund."), 0, "");
+
+                order.PendingRefundKey = key;
+                order.PendingRefundInOre = amount;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    return (order, null, amount, key);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // A webhook or another refund changed the order after the read. Check again on a fresh read.
+                    db.ChangeTracker.Clear();
+                    if (attempt == MaxSaveAttempts) return (order, RefundChanged(), 0, "");
+                }
+            }
+        }
+
+        private static IResult RefundChanged() =>
+            ShopProblems.Code(StatusCodes.Status409Conflict, "refundChanged", "The order was refunded meanwhile. Reload the order.");
 
         public static async Task<IResult> SetInvoiceNumber(int id, InvoiceNumberRequest req, ApplicationDbContext db, CancellationToken ct)
         {
@@ -227,13 +272,11 @@ namespace altinnendata_api.Features.Shop
         private static async Task<PcBuild?> LoadBuildAsync(ApplicationDbContext db, Order order, CancellationToken ct) =>
             order.PcBuildId is int buildId ? await db.PcBuilds.FindAsync([buildId], ct) : null;
 
-        /// <summary>Vipps could not be reached or answered with an error. HttpClient reports its own timeout as a cancellation.</summary>
-        private static bool IsProviderFailure(Exception ex, CancellationToken ct) =>
-            ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested);
-
         /// <summary>
-        /// Vipps timed out or refused. After a timeout the change may still have happened in Vipps, so the order is
-        /// left as it was and the admin checks the portal. A retry uses the same idempotency key and is safe.
+        /// Vipps timed out or refused. After a timeout the change may still have happened in Vipps, so the order's
+        /// status and amounts are left as they were and the admin checks the portal. A capture or cancel retried
+        /// on the same order uses the same idempotency key. A refund retried with the same amount from the same
+        /// refunded total uses the same key, and one sent after the refunded total changed is refused.
         /// </summary>
         private static IResult ProviderUnavailable(ILogger log, Exception ex, string action, Order order)
         {
