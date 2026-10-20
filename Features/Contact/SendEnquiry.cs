@@ -4,7 +4,6 @@ using System.Net.Mail;
 using System.Text;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Builds;
 using altinnendata_api.Infrastructure;
@@ -74,9 +73,6 @@ namespace altinnendata_api.Features.Contact
     /// <summary>Sends a contact / build enquiry to the configured recipient, and a receipt to the sender.</summary>
     public static class SendEnquiry
     {
-        /// <summary>One receipt per address in this window, so the form cannot be used to flood an inbox.</summary>
-        public static readonly TimeSpan ReceiptWindow = TimeSpan.FromMinutes(10);
-
         private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
         {
             try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Oslo"); }
@@ -88,7 +84,7 @@ namespace altinnendata_api.Features.Contact
             ApplicationDbContext db,
             IEmailSender email,
             IConfiguration config,
-            IMemoryCache cache,
+            ContactReceiptGate receipts,
             CancellationToken ct)
         {
             var sender = req.Email.Trim();
@@ -107,12 +103,8 @@ namespace altinnendata_api.Features.Contact
                 },
                 ct);
 
-            var receiptKey = $"contact-receipt:{sender.ToLowerInvariant()}";
-            if (!cache.TryGetValue(receiptKey, out _))
-            {
-                cache.Set(receiptKey, true, ReceiptWindow);
+            if (receipts.TryAcquire(sender))
                 await email.SendAsync(BuildReceipt(sender, req.Locale, settings, DateTime.UtcNow), ct);
-            }
 
             return TypedResults.Ok(new MessageResponse("Thanks — we'll be in touch."));
         }

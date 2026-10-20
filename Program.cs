@@ -61,6 +61,7 @@ namespace altinnendata_api
             builder.Services.AddScoped<OrderConfirmationRetry>();
             builder.Services.AddHostedService<OrderConfirmationRetryService>();
             builder.Services.TryAddSingleton(TimeProvider.System);
+            builder.Services.AddSingleton<altinnendata_api.Features.Contact.ContactReceiptGate>();
             builder.Services.AddHostedService<OrderRetentionService>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 

@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using altinnendata_api.Features.Contact;
@@ -24,7 +23,7 @@ public class ContactSliceTests : TestBase
         return email;
     }
 
-    private static IMemoryCache Cache() => new MemoryCache(new MemoryCacheOptions());
+    private static ContactReceiptGate Cache() => new(TimeProvider.System);
 
     private static IConfiguration Config(string baseUrl = "https://www.altinnendata.no") =>
         new ConfigurationBuilder()
@@ -169,7 +168,103 @@ public class ContactSliceTests : TestBase
 
         Assert.Equal(3, messages.Count(m => m.To == "sonyslyst@gmail.com"));
         Assert.Equal(["kari@kunde.no", "ola@kunde.no"], messages.Where(m => m.To != "sonyslyst@gmail.com").Select(m => m.To));
-        Assert.Equal(TimeSpan.FromMinutes(10), SendEnquiry.ReceiptWindow);
+        Assert.Equal(TimeSpan.FromMinutes(10), ContactReceiptGate.AddressWindow);
+    }
+
+    [Fact]
+    public async Task Send_AtTheGlobalCap_StillSendsTheEnquiryButNoReceipt()
+    {
+        await using var db = CreateDbContext();
+        var messages = new List<EmailMessage>();
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
+            .ReturnsAsync(new EmailResult(true));
+        var gate = Cache();
+        for (var i = 0; i < ContactReceiptGate.GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
+
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), gate, default);
+
+        Assert.Equal("sonyslyst@gmail.com", Assert.Single(messages).To);
+    }
+
+    [Theory]
+    [InlineData("Kari@Kunde.no", "kari@kunde.no")]
+    [InlineData(" kari+news@kunde.no ", "kari@kunde.no")]
+    [InlineData("kari+a+b@kunde.no", "kari@kunde.no")]
+    [InlineData("k.a.r.i@kunde.no", "k.a.r.i@kunde.no")]
+    [InlineData("K.ari+x@Gmail.com", "kari@gmail.com")]
+    [InlineData("ka.ri@googlemail.com", "kari@gmail.com")]
+    [InlineData("+kari@kunde.no", "+kari@kunde.no")]
+    public void Mailbox_FoldsSpellingsOfTheSameMailbox(string address, string mailbox) =>
+        Assert.Equal(mailbox, ContactReceiptGate.Mailbox(address));
+
+    [Fact]
+    public void Gate_RefusesASecondSpellingOfTheSameMailbox_UntilTheWindowHasPassed()
+    {
+        var clock = new ManualClock();
+        var gate = new ContactReceiptGate(clock);
+
+        Assert.True(gate.TryAcquire("kari@gmail.com"));
+        Assert.False(gate.TryAcquire("k.a.r.i+1@googlemail.com"));
+        clock.Advance(ContactReceiptGate.AddressWindow - TimeSpan.FromSeconds(1));
+        Assert.False(gate.TryAcquire("kari+2@gmail.com"));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(gate.TryAcquire("kari+3@gmail.com"));
+    }
+
+    [Fact]
+    public void Gate_AllowsThirtyReceiptsAnHourAcrossAllAddresses()
+    {
+        var clock = new ManualClock();
+        var gate = new ContactReceiptGate(clock);
+
+        for (var i = 0; i < 30; i++)
+        {
+            Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+        Assert.False(gate.TryAcquire("late@kunde.no"));
+
+        // The first receipt was sent 30 minutes ago. An hour after it, one more fits.
+        clock.Advance(TimeSpan.FromMinutes(29));
+        Assert.False(gate.TryAcquire("late@kunde.no"));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.True(gate.TryAcquire("late@kunde.no"));
+        Assert.False(gate.TryAcquire("later@kunde.no"));
+    }
+
+    [Fact]
+    public void Gate_ARefusedReceiptIsNotCounted()
+    {
+        var clock = new ManualClock();
+        var gate = new ContactReceiptGate(clock);
+        Assert.True(gate.TryAcquire("kari@kunde.no"));
+        for (var i = 0; i < 100; i++) Assert.False(gate.TryAcquire("kari@kunde.no"));
+
+        for (var i = 1; i < ContactReceiptGate.GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
+    }
+
+    [Fact]
+    public void RateLimit_ContactIsLimitedPerMinuteAndPerHourPerIp()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "altinnendata-api.csproj"))) dir = dir.Parent;
+        var config = new ConfigurationBuilder().AddJsonFile(Path.Combine(dir!.FullName, "appsettings.json")).Build();
+
+        var rules = config.GetSection("RateLimiting:Rules").GetChildren()
+            .Where(r => r["Endpoint"] == "*:/api/contact")
+            .Select(r => (r["Period"], r["Limit"]))
+            .ToList();
+
+        Assert.Equal([("1m", "5"), ("1h", "20")], rules);
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan by) => _now += by;
     }
 
     [Theory]
