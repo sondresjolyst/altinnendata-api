@@ -137,7 +137,7 @@ public class ContactSliceTests : TestBase
         Assert.DoesNotContain("Kari", receipt.HtmlBody);
         Assert.DoesNotContain("evil", receipt.HtmlBody);
         Assert.DoesNotContain("prize", receipt.HtmlBody);
-        Assert.Contains("Ikke registrert i Merverdiavgiftsregisteret", receipt.HtmlBody);
+        Assert.Contains("post@altinnendata.no</p>", receipt.HtmlBody);
     }
 
     [Fact]
@@ -181,14 +181,15 @@ public class ContactSliceTests : TestBase
     [InlineData("de", true)]
     public void Receipt_FollowsTheLocaleOfThePage(string? locale, bool norwegian)
     {
-        var receipt = SendEnquiry.BuildReceipt("ola@kunde.no", locale, new AppSettings(), new DateTime(2026, 10, 19, 12, 5, 0, DateTimeKind.Utc));
+        var receipt = SendEnquiry.BuildReceipt("ola@kunde.no", locale, new AppSettings { OrgNumber = "938 433 240" }, new DateTime(2026, 10, 19, 12, 5, 0, DateTimeKind.Utc));
 
         Assert.Equal("ola@kunde.no", receipt.To);
         Assert.Equal(norwegian ? "Vi har mottatt meldingen din" : "We have received your message", receipt.Subject);
         Assert.Contains(norwegian
             ? "<p>Vi har mottatt meldingen din 19.10.2026 kl. 14:05 og svarer så snart vi kan.</p>"
             : "<p>We received your message on 19 October 2026 at 14:05 and will reply as soon as we can.</p>", receipt.HtmlBody);
-        Assert.Contains(norwegian ? "Ikke registrert i Merverdiavgiftsregisteret" : "Not registered in the VAT Register", receipt.HtmlBody);
+        Assert.Contains(norwegian ? "Org.nr." : "Org. no.", receipt.HtmlBody);
+        Assert.Contains("Foretaksregisteret", receipt.HtmlBody);
     }
 
     [Theory]

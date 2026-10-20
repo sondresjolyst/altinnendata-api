@@ -95,7 +95,7 @@ namespace altinnendata_api.Features.Shop
             Row("Totalt", $"{Kroner(o.TotalInOre, "no")} kr");
             Row("Bestilt", OsloDate(o.CreatedAt));
             Row("Betaling reservert", o.AuthorizedAt is { } at ? OsloDate(at) : "Ukjent");
-            body.Append("<p>Ikke merverdiavgiftsregistrert, ingen mva.</p>");
+            if (!s.VatRegistered) body.Append("<p>Ikke merverdiavgiftsregistrert, ingen mva.</p>");
 
             return new EmailMessage(s.ContactRecipientEmail, $"Ny ordre {o.Reference}: {o.BuildTitle}", body.ToString())
             {
@@ -168,19 +168,7 @@ namespace altinnendata_api.Features.Shop
             body.Append("</table>");
         }
 
-        private static void AppendFooter(StringBuilder body, AppSettings s, bool no)
-        {
-            var name = string.IsNullOrWhiteSpace(s.CompanyLegalName) ? s.CompanyName : s.CompanyLegalName;
-            body.Append("<hr/><p>");
-            body.Append($"<strong>{Enc(name)}</strong>");
-            if (!string.IsNullOrWhiteSpace(s.OrgNumber))
-                body.Append($"<br/>{(no ? "Org.nr." : "Org. no.")} {Enc(s.OrgNumber)}");
-            body.Append($"<br/>{Enc(s.FormattedAddress)}");
-            body.Append($"<br/>{Enc(s.PublicEmail)}");
-            if (!s.VatRegistered)
-                body.Append($"<br/>{(no ? "Ikke merverdiavgiftsregistrert" : "Not VAT registered")}");
-            body.Append("</p>");
-        }
+        private static void AppendFooter(StringBuilder body, AppSettings s, bool no) => EmailFooter.Append(body, s, no);
 
         private static string AddressHtml(Order o)
         {

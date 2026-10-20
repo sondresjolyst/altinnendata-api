@@ -26,25 +26,25 @@ public class EmailFooterTests
     };
 
     [Fact]
-    public void Norwegian_NamesTheRegisterAfterTheOrgNumber_AndTheVatStatus()
+    public void Norwegian_NamesTheRegisterAfterTheOrgNumber_WithoutAVatLine()
     {
         var html = Footer(Registered(), norwegian: true);
 
-        Assert.Contains("<strong>ALTINNENDATA AS</strong><br/>Org.nr. 938 433 240<br/>Foretaksregisteret<br/>", html);
+        Assert.Contains("<strong>ALTINNENDATA AS</strong><br/>Org.nr. 938 433 240 Foretaksregisteret<br/>", html);
         Assert.Contains("M&#229;rvegen 21a", html);
         Assert.Contains("4347 Lye", html);
-        Assert.Contains("altinnendata@gmail.com", html);
-        Assert.EndsWith("<br/>Ikke registrert i Merverdiavgiftsregisteret</p>", html);
+        Assert.EndsWith("<br/>altinnendata@gmail.com</p>", html);
+        Assert.DoesNotContain("Merverdiavgiftsregisteret", html);
+        Assert.DoesNotContain("MVA", html);
     }
 
     [Fact]
-    public void English_UsesTheEnglishNames()
+    public void English_KeepsTheRegisterName()
     {
         var html = Footer(Registered(), norwegian: false);
 
-        Assert.Contains("Org. no. 938 433 240<br/>Register of Business Enterprises<br/>", html);
-        Assert.Contains("Not registered in the VAT Register", html);
-        Assert.DoesNotContain("Foretaksregisteret", html);
+        Assert.Contains("<br/>Org. no. 938 433 240 Foretaksregisteret<br/>", html);
+        Assert.DoesNotContain("VAT", html);
     }
 
     [Fact]
@@ -57,14 +57,15 @@ public class EmailFooterTests
         Assert.DoesNotContain("Foretaksregisteret", html);
     }
 
-    [Fact]
-    public void VatRegistered_LeavesOutTheVatLine()
+    [Theory]
+    [InlineData(true, "Org.nr. 938 433 240 MVA Foretaksregisteret")]
+    [InlineData(false, "Org. no. 938 433 240 MVA Foretaksregisteret")]
+    public void VatRegistered_AddsMvaToTheOrgNumber(bool norwegian, string line)
     {
         var s = Registered();
         s.VatRegistered = true;
 
-        Assert.DoesNotContain("Merverdiavgiftsregisteret", Footer(s, norwegian: true));
-        Assert.DoesNotContain("VAT Register", Footer(s, norwegian: false));
+        Assert.Contains($"<br/>{line}<br/>", Footer(s, norwegian));
     }
 
     [Fact]

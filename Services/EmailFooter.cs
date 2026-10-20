@@ -6,7 +6,8 @@ namespace altinnendata_api.Services
 {
     /// <summary>
     /// The seller details at the end of every email to a customer: the registered name, the organisation number
-    /// with the register it is entered in, the address, the email and the VAT status.
+    /// with the register it is entered in, the address and the email. The number gets " MVA" when the company is
+    /// VAT registered, the same as the website footer.
     /// </summary>
     public static class EmailFooter
     {
@@ -17,13 +18,11 @@ namespace altinnendata_api.Services
             body.Append($"<strong>{Enc(name)}</strong>");
             if (!string.IsNullOrWhiteSpace(s.OrgNumber))
             {
-                body.Append($"<br/>{(norwegian ? "Org.nr." : "Org. no.")} {Enc(s.OrgNumber)}");
-                body.Append($"<br/>{(norwegian ? "Foretaksregisteret" : "Register of Business Enterprises")}");
+                var number = s.VatRegistered ? $"{s.OrgNumber.Trim()} MVA" : s.OrgNumber.Trim();
+                body.Append($"<br/>{(norwegian ? "Org.nr." : "Org. no.")} {Enc(number)} Foretaksregisteret");
             }
             body.Append($"<br/>{Enc(s.FormattedAddress)}");
             body.Append($"<br/>{Enc(s.PublicEmail)}");
-            if (!s.VatRegistered)
-                body.Append($"<br/>{(norwegian ? "Ikke registrert i Merverdiavgiftsregisteret" : "Not registered in the VAT Register")}");
             body.Append("</p>");
         }
 

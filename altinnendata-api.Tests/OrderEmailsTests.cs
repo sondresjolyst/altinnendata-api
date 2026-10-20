@@ -49,13 +49,14 @@ public class OrderEmailsTests : TestBase
     [InlineData("en", "Order confirmation AID-000001-ABCDEF12")]
     public void BuyerConfirmation_UsesTheBuyersLanguage(string locale, string subject)
     {
-        var msg = OrderEmails.BuyerConfirmation(NewOrder(locale), new AppSettings(), Config());
+        var msg = OrderEmails.BuyerConfirmation(NewOrder(locale), Seller(), Config());
 
         Assert.Equal(subject, msg.Subject);
         Assert.Equal("ola@kunde.no", msg.To);
         if (locale == "en")
         {
-            Assert.Contains("Not VAT registered", msg.HtmlBody);
+            Assert.Contains("Org. no. 938 433 240 Foretaksregisteret", msg.HtmlBody);
+            Assert.DoesNotContain("VAT", msg.HtmlBody);
             Assert.Contains("Right of withdrawal", msg.HtmlBody);
             Assert.Contains("13,189.00", msg.HtmlBody);
             Assert.Contains("https://www.altinnendata.no/en/terms", msg.HtmlBody);
@@ -67,9 +68,9 @@ public class OrderEmailsTests : TestBase
     }
 
     [Fact]
-    public void BuyerConfirmation_ShowsLinesTotalAndNoVat()
+    public void BuyerConfirmation_ShowsLinesTotalAndTheRegister()
     {
-        var msg = OrderEmails.BuyerConfirmation(NewOrder(), new AppSettings(), Config());
+        var msg = OrderEmails.BuyerConfirmation(NewOrder(), Seller(), Config());
 
         Assert.Contains("12 990,00", msg.HtmlBody);
         Assert.Contains("199,00", msg.HtmlBody);
@@ -77,7 +78,8 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("Gaming PC RTX 3060", msg.HtmlBody);
         Assert.Contains("Frakt", msg.HtmlBody);
         Assert.Contains("Storgata 1", msg.HtmlBody);
-        Assert.Contains("Ikke merverdiavgiftsregistrert", msg.HtmlBody);
+        Assert.Contains("Org.nr. 938 433 240 Foretaksregisteret", msg.HtmlBody);
+        Assert.DoesNotContain("merverdiavgift", msg.HtmlBody);
         Assert.Contains("https://www.altinnendata.no/no/terms", msg.HtmlBody);
         Assert.Contains("altinnendata@gmail.com", msg.HtmlBody);
     }
@@ -92,12 +94,22 @@ public class OrderEmailsTests : TestBase
     }
 
     [Fact]
-    public void BuyerConfirmation_HidesTheVatLineOnceRegistered()
+    public void BuyerConfirmation_AddsMvaToTheOrgNumberOnceRegistered()
     {
-        var msg = OrderEmails.BuyerConfirmation(NewOrder(), new AppSettings { VatRegistered = true }, Config());
+        var msg = OrderEmails.BuyerConfirmation(NewOrder(), Seller(vatRegistered: true), Config());
 
-        Assert.DoesNotContain("Ikke merverdiavgiftsregistrert", msg.HtmlBody);
+        Assert.Contains("Org.nr. 938 433 240 MVA Foretaksregisteret", msg.HtmlBody);
     }
+
+    [Fact]
+    public void OwnerNewOrder_LeavesOutTheNoVatLineOnceRegistered()
+    {
+        var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings { VatRegistered = true }, Config());
+
+        Assert.DoesNotContain("ingen mva", msg.HtmlBody);
+    }
+
+    private static AppSettings Seller(bool vatRegistered = false) => new() { OrgNumber = "938 433 240", VatRegistered = vatRegistered };
 
     [Fact]
     public void OwnerNewOrder_LinksTheAdminOrderAndRepliesToTheBuyer()
