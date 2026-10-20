@@ -141,6 +141,62 @@ public class OrderEmailsTests : TestBase
     }
 
     [Fact]
+    public void OwnerNewOrder_OpensTheOrderInAdminWithTheButtonUnderTheHeading()
+    {
+        var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings(), Config());
+
+        Assert.Contains(">Ny ordre</span>", msg.HtmlBody);
+        Assert.Contains(">Ny ordre</h1>", msg.HtmlBody);
+        Assert.Contains("<a href=\"https://www.altinnendata.no/no/admin/shop/orders/7\" style=\"display:inline-block;", msg.HtmlBody);
+        Assert.Contains("background:#00887a;color:#fff;font-weight:700;font-size:14px;text-decoration:none\">&#197;pne ordren i admin</a>", msg.HtmlBody);
+        var button = msg.HtmlBody.IndexOf("&#197;pne ordren i admin", StringComparison.Ordinal);
+        Assert.True(msg.HtmlBody.IndexOf(">Ny ordre</h1>", StringComparison.Ordinal) < button);
+        Assert.True(button < msg.HtmlBody.IndexOf("Ordrenummer:", StringComparison.Ordinal));
+        Assert.Equal(1, msg.HtmlBody.Split("ordren i admin</a>").Length - 1);
+    }
+
+    public static TheoryData<string, string, string> BuyerBadges() => new()
+    {
+        { "no", "Ordrebekreftelse", "Takk for bestillingen" },
+        { "en", "Order confirmation", "Thank you for your order" },
+    };
+
+    [Theory]
+    [MemberData(nameof(BuyerBadges))]
+    public void BuyerConfirmation_HasTheBadgeAndHeadingInTheLayout_WithTheSiteColours(string locale, string badge, string heading)
+    {
+        var html = OrderEmails.BuyerConfirmation(NewOrder(locale), Seller(), Config()).HtmlBody;
+
+        Assert.StartsWith("<!DOCTYPE html>", html);
+        Assert.Contains($">{badge}</span>", html);
+        Assert.Contains($">{heading}</h1>", html);
+        Assert.Contains("background:#0f3d3a;color:#fff", html);
+        Assert.DoesNotContain("<h2>", html);
+        Assert.DoesNotContain("<hr/>", html);
+    }
+
+    [Theory]
+    [InlineData("no", ">Kansellert</span>", ">Tilbakebetalt</span>", ">Reservasjon opphevet</span>")]
+    [InlineData("en", ">Cancelled</span>", ">Refunded</span>", ">Reservation cancelled</span>")]
+    public void CancelRefundAndReservationEmails_HaveTheirBadge(string locale, string cancelled, string refunded, string reservation)
+    {
+        var s = new AppSettings();
+        Assert.Contains(cancelled, OrderEmails.BuyerCancelled(NewOrder(locale), s).HtmlBody);
+        Assert.Contains(refunded, OrderEmails.BuyerRefunded(Refunded(NewOrder(locale)), 1318900, s).HtmlBody);
+        Assert.Contains(reservation, OrderEmails.BuyerReservationEnded(NewOrder(locale), s).HtmlBody);
+    }
+
+    [Fact]
+    public void OwnerReservationEnded_UsesTheButtonForTheAdminLink()
+    {
+        var msg = OrderEmails.OwnerReservationEnded(NewOrder(), "EXPIRED", new AppSettings(), Config());
+
+        Assert.Contains(">Reservasjon opphevet</span>", msg.HtmlBody);
+        Assert.Contains(">Reservasjonen i Vipps for ordre AID-000001-ABCDEF12 er opphevet</h1>", msg.HtmlBody);
+        Assert.Contains("background:#00887a;color:#fff;font-weight:700;font-size:14px;text-decoration:none\">&#197;pne ordren i admin</a>", msg.HtmlBody);
+    }
+
+    [Fact]
     public void OwnerNewOrder_ForPickupLeavesOutTheAddressAndShowsTheNote()
     {
         var msg = OrderEmails.OwnerNewOrder(NewOrder(method: DeliveryMethod.Pickup), new AppSettings(), Config());
@@ -305,10 +361,11 @@ public class OrderEmailsTests : TestBase
 
         Assert.Equal(subject, msg.Subject);
         Assert.Equal("ola@kunde.no", msg.To);
-        Assert.Contains($"<h2>{subject[..^" AID-000001-ABCDEF12".Length]}</h2>", msg.HtmlBody);
+        Assert.Contains($">{subject[..^" AID-000001-ABCDEF12".Length]}</h1>", msg.HtmlBody);
+        Assert.Contains(method == DeliveryMethod.Pickup ? (locale == "no" ? ">Klar for henting</span>" : ">Ready for pickup</span>") : (locale == "no" ? ">Sendt</span>" : ">Sent</span>"), msg.HtmlBody);
         Assert.Contains("Gaming PC RTX 3060", msg.HtmlBody);
         Assert.Contains("<strong>AID-000001-ABCDEF12</strong>", msg.HtmlBody);
-        Assert.Contains("<strong>Altinnendata</strong>", msg.HtmlBody);
+        Assert.Contains(">Altinnendata</div>", msg.HtmlBody);
     }
 
     [Theory]

@@ -24,7 +24,6 @@ namespace altinnendata_api.Features.Shop
         {
             var no = IsNorwegian(o);
             var body = new StringBuilder();
-            body.Append($"<h2>{(no ? "Takk for bestillingen" : "Thank you for your order")}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
                 ? "<p>Beløpet er reservert i Vipps.</p>"
@@ -63,15 +62,14 @@ namespace altinnendata_api.Features.Shop
                 ? $"<p>Les <a href=\"{terms}\">vilkårene</a> på nettsiden.</p>"
                 : $"<p>Read the <a href=\"{terms}\">terms</a> on the website.</p>");
 
-            AppendFooter(body, s, no);
-            return new EmailMessage(o.BuyerEmail, no ? $"Ordrebekreftelse {o.Reference}" : $"Order confirmation {o.Reference}", body.ToString());
+            var html = BrandedEmail.Html(s, no, no ? "Ordrebekreftelse" : "Order confirmation",
+                no ? "Takk for bestillingen" : "Thank you for your order", body.ToString());
+            return new EmailMessage(o.BuyerEmail, no ? $"Ordrebekreftelse {o.Reference}" : $"Order confirmation {o.Reference}", html);
         }
 
         public static EmailMessage OwnerNewOrder(Order o, AppSettings s, IConfiguration config)
         {
             var body = new StringBuilder();
-            body.Append("<h2>Ny ordre</h2>");
-            body.Append($"<p><a href=\"{Enc(SiteLinks.AdminOrder(config, o.Id))}\">Åpne ordren i admin</a></p>");
 
             void Row(string label, string value) => body.Append($"<p><strong>{label}:</strong> {value}</p>");
 
@@ -98,7 +96,8 @@ namespace altinnendata_api.Features.Shop
             Row("Betaling reservert", o.AuthorizedAt is { } at ? OsloDate(at) : "Ukjent");
             if (!s.VatRegistered) body.Append("<p>Ikke registrert i Merverdiavgiftsregisteret.</p>");
 
-            return new EmailMessage(s.ContactRecipientEmail, $"Ny ordre {o.Reference}: {o.BuildTitle}", body.ToString())
+            var html = BrandedEmail.Html(s, true, "Ny ordre", "Ny ordre", "", AdminButton(o, config), body.ToString());
+            return new EmailMessage(s.ContactRecipientEmail, $"Ny ordre {o.Reference}: {o.BuildTitle}", html)
             {
                 ReplyTo = o.BuyerEmail,
             };
@@ -121,13 +120,12 @@ namespace altinnendata_api.Features.Shop
             var when = o.ReservationEndedAt is { } at ? $" {OsloDate(at)}" : "";
             var subject = $"Reservasjonen i Vipps for ordre {o.Reference} er opphevet";
             var body = new StringBuilder();
-            body.Append($"<h2>{Enc(subject)}</h2>");
             body.Append($"<p>{how}{when} ({Enc(vippsEvent)}). Det var ikke du som kansellerte ordren.</p>");
             body.Append($"<p>Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av ordren og vises ikke som tilgjengelig.</p>");
             body.Append("<p>Ta kontakt med kjøperen og avtal videre, eller frigi datamaskinen fra ordren i admin hvis salget ikke blir noe av.</p>");
             body.Append($"<p><strong>Kjøper:</strong> {Enc(o.BuyerName)}, {Enc(o.BuyerEmail)}, {Enc(o.BuyerPhone)}</p>");
-            body.Append($"<p><a href=\"{Enc(SiteLinks.AdminOrder(config, o.Id))}\">Åpne ordren i admin</a></p>");
-            return new EmailMessage(s.ContactRecipientEmail, subject, body.ToString())
+            var html = BrandedEmail.Html(s, true, "Reservasjon opphevet", subject, body.ToString(), AdminButton(o, config));
+            return new EmailMessage(s.ContactRecipientEmail, subject, html)
             {
                 ReplyTo = o.BuyerEmail,
             };
@@ -141,14 +139,13 @@ namespace altinnendata_api.Features.Shop
                 ? $"Reservasjonen i Vipps for ordre {o.Reference} er opphevet"
                 : $"The reservation in Vipps for order {o.Reference} has been cancelled";
             var body = new StringBuilder();
-            body.Append($"<h2>{Enc(subject)}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append($"<p>{(no ? "Vare" : "Item")}: {Enc(o.BuildTitle)}</p>");
             body.Append(no
                 ? "<p>Reservasjonen i Vipps er opphevet. Ingen penger er trukket. Datamaskinen er fortsatt holdt av for deg. Vi tar kontakt med deg.</p>"
                 : "<p>The reservation in Vipps has been cancelled. No money has been taken. The computer is still held for you. We will contact you.</p>");
-            AppendFooter(body, s, no);
-            return new EmailMessage(o.BuyerEmail, subject, body.ToString()) { ReplyTo = s.PublicEmail };
+            var html = BrandedEmail.Html(s, no, no ? "Reservasjon opphevet" : "Reservation cancelled", subject, body.ToString());
+            return new EmailMessage(o.BuyerEmail, subject, html) { ReplyTo = s.PublicEmail };
         }
 
         /// <summary>
@@ -161,16 +158,15 @@ namespace altinnendata_api.Features.Shop
             var subject = no ? $"Ny betalingslenke for ordre {o.Reference}" : $"New payment link for order {o.Reference}";
             var until = o.PaymentLinkExpiresAt is { } at ? OsloDateTime(at, no) : "";
             var body = new StringBuilder();
-            body.Append($"<h2>{Enc(subject)}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
                 ? $"<p>Reservasjonen i Vipps er opphevet. Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av for deg.</p>"
                 : $"<p>The reservation in Vipps has been cancelled. The computer {Enc(o.BuildTitle)} is still held for you.</p>");
             body.Append($"<p>{(no ? "Beløp" : "Amount")}: {Kroner(o.TotalInOre, o.Locale)} kr</p>");
-            body.Append($"<p><a href=\"{Enc(link)}\">{(no ? "Betal med Vipps" : "Pay with Vipps")}</a></p>");
-            body.Append(no ? $"<p>Lenken er gyldig til {until}.</p>" : $"<p>The link works until {until}.</p>");
-            AppendFooter(body, s, no);
-            return new EmailMessage(o.BuyerEmail, subject, body.ToString()) { ReplyTo = s.PublicEmail };
+            var after = no ? $"<p>Lenken er gyldig til {until}.</p>" : $"<p>The link works until {until}.</p>";
+            var html = BrandedEmail.Html(s, no, no ? "Betalingslenke" : "Payment link", subject, body.ToString(),
+                new EmailButton(no ? "Betal med Vipps" : "Pay with Vipps", link), after);
+            return new EmailMessage(o.BuyerEmail, subject, html) { ReplyTo = s.PublicEmail };
         }
 
         /// <summary>Tells the owner that the payment link ran out unpaid while the build is still held for the order.</summary>
@@ -178,14 +174,13 @@ namespace altinnendata_api.Features.Shop
         {
             var subject = $"Betalingslenken for ordre {o.Reference} er utløpt";
             var body = new StringBuilder();
-            body.Append($"<h2>{Enc(subject)}</h2>");
             var sent = o.PaymentLinkSentAt is { } at ? $" sendt {OsloDate(at)}" : "";
             body.Append($"<p>Betalingslenken{sent} ble ikke brukt før den utløp.</p>");
             body.Append($"<p>Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av ordren og vises ikke som tilgjengelig.</p>");
             body.Append("<p>Ta kontakt med kjøperen og send en ny betalingslenke, eller frigi datamaskinen fra ordren i admin hvis salget ikke blir noe av.</p>");
             body.Append($"<p><strong>Kjøper:</strong> {Enc(o.BuyerName)}, {Enc(o.BuyerEmail)}, {Enc(o.BuyerPhone)}</p>");
-            body.Append($"<p><a href=\"{Enc(SiteLinks.AdminOrder(config, o.Id))}\">Åpne ordren i admin</a></p>");
-            return new EmailMessage(s.ContactRecipientEmail, subject, body.ToString())
+            var html = BrandedEmail.Html(s, true, "Lenke utløpt", subject, body.ToString(), AdminButton(o, config));
+            return new EmailMessage(s.ContactRecipientEmail, subject, html)
             {
                 ReplyTo = o.BuyerEmail,
             };
@@ -200,26 +195,25 @@ namespace altinnendata_api.Features.Shop
                 ? (no ? "Ordren din er klar for henting" : "Your order is ready for pickup")
                 : (no ? "Ordren din er sendt" : "Your order has been sent");
             var body = new StringBuilder();
-            body.Append($"<h2>{heading}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append($"<p>{(no ? "Vare" : "Item")}: {Enc(o.BuildTitle)}</p>");
             if (!string.IsNullOrWhiteSpace(o.ShippingNote))
                 body.Append($"<p><strong>{(no ? "Melding fra oss" : "Message from us")}</strong><br/>{EncMultiline(o.ShippingNote)}</p>");
-            AppendFooter(body, s, no);
-            return new EmailMessage(o.BuyerEmail, $"{heading} {o.Reference}", body.ToString());
+            var badge = pickup ? (no ? "Klar for henting" : "Ready for pickup") : (no ? "Sendt" : "Sent");
+            return new EmailMessage(o.BuyerEmail, $"{heading} {o.Reference}", BrandedEmail.Html(s, no, badge, heading, body.ToString()));
         }
 
         public static EmailMessage BuyerCancelled(Order o, AppSettings s)
         {
             var no = IsNorwegian(o);
             var body = new StringBuilder();
-            body.Append($"<h2>{(no ? "Ordren er kansellert" : "Your order is cancelled")}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
                 ? "<p>Reservasjonen i Vipps er opphevet. Ingen penger er trukket.</p>"
                 : "<p>The reservation in Vipps has been cancelled. No money has been taken.</p>");
-            AppendFooter(body, s, no);
-            return new EmailMessage(o.BuyerEmail, no ? $"Ordre {o.Reference} er kansellert" : $"Order {o.Reference} is cancelled", body.ToString());
+            var html = BrandedEmail.Html(s, no, no ? "Kansellert" : "Cancelled",
+                no ? "Ordren er kansellert" : "Your order is cancelled", body.ToString());
+            return new EmailMessage(o.BuyerEmail, no ? $"Ordre {o.Reference} er kansellert" : $"Order {o.Reference} is cancelled", html);
         }
 
         /// <summary>
@@ -236,15 +230,13 @@ namespace altinnendata_api.Features.Shop
                 : $"We have refunded {amount} kr for order {o.Reference}";
             var body = new StringBuilder();
             var heading = all ? (no ? "Pengene er betalt tilbake" : "Your money has been refunded") : partSubject;
-            body.Append($"<h2>{Enc(heading)}</h2>");
             body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
             body.Append(no
                 ? $"<p>Vi har betalt tilbake {amount} kr til betalingsmåten du brukte i Vipps. Det kan ta noen dager før beløpet vises hos deg.</p>"
                 : $"<p>We have refunded {amount} kr to the payment method you used in Vipps. It can take a few days before the amount appears in your account.</p>");
-            AppendFooter(body, s, no);
             var subject = !all ? partSubject
                 : no ? $"Pengene for ordre {o.Reference} er betalt tilbake" : $"Order {o.Reference} is refunded";
-            return new EmailMessage(o.BuyerEmail, subject, body.ToString());
+            return new EmailMessage(o.BuyerEmail, subject, BrandedEmail.Html(s, no, no ? "Tilbakebetalt" : "Refunded", heading, body.ToString()));
         }
 
         private static void AppendLines(StringBuilder body, Order o, bool no)
@@ -256,7 +248,8 @@ namespace altinnendata_api.Features.Shop
             body.Append("</table>");
         }
 
-        private static void AppendFooter(StringBuilder body, AppSettings s, bool no) => EmailFooter.Append(body, s, no);
+        private static EmailButton AdminButton(Order o, IConfiguration config) =>
+            new("Åpne ordren i admin", SiteLinks.AdminOrder(config, o.Id));
 
         private static string AddressHtml(Order o)
         {

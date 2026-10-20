@@ -76,8 +76,8 @@ namespace altinnendata_api
             builder.Services.AddAppKitAuthEmails<User>(o =>
             {
                 o.Language = EmailLanguage.Norwegian;
-                o.HeaderColor = "#0f3d3a";
-                o.AccentColor = "#00887a";
+                o.HeaderColor = BrandedEmail.HeaderColor;
+                o.AccentColor = BrandedEmail.AccentColor;
                 o.SetPasswordUrl = SiteLinks.SetPasswordPage(builder.Configuration);
             });
             builder.Services.AddAppKitAccounts<User, ApplicationDbContext>(o => o.AdminRole = RoleNames.Admin);

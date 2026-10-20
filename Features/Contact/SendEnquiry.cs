@@ -105,7 +105,7 @@ namespace altinnendata_api.Features.Contact
 
             var receipt = receipts.TryAcquire(sender);
             await email.SendAsync(
-                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config, receipt))
+                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config, receipt, settings))
                 {
                     ReplyTo = sender,
                 },
@@ -121,11 +121,11 @@ namespace altinnendata_api.Features.Contact
         /// The owner's copy. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a
         /// withdrawal sent through the form then has to be confirmed by hand.
         /// </summary>
-        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config, bool receiptSent)
+        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config, bool receiptSent, AppSettings settings)
         {
             string Enc(string? v) => WebUtility.HtmlEncode(v ?? string.Empty);
 
-            var body = new StringBuilder("<h2>New enquiry</h2>");
+            var body = new StringBuilder();
 
             void Row(string label, string? value)
             {
@@ -144,7 +144,7 @@ namespace altinnendata_api.Features.Contact
             body.Append($"<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>");
             if (!receiptSent)
                 body.Append($"<p><strong>{NoReceiptNote}</strong></p>");
-            return body.ToString();
+            return BrandedEmail.Html(settings, false, "Enquiry", "New enquiry", body.ToString());
         }
 
         /// <summary>
@@ -156,13 +156,12 @@ namespace altinnendata_api.Features.Contact
             var no = Locales.Normalize(locale) == "no";
             var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(receivedUtc, DateTimeKind.Utc), Oslo.Value);
             var subject = no ? "Vi har mottatt meldingen din" : "We have received your message";
-            var body = new StringBuilder($"<h2>{subject}</h2>");
+            var body = new StringBuilder();
             body.Append(no
                 ? $"<p>Vi har mottatt meldingen din {local.ToString("dd.MM.yyyy 'kl.' HH:mm", CultureInfo.InvariantCulture)} og svarer så snart vi kan.</p>"
                 : $"<p>We received your message on {local.ToString("d MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture)} and will reply as soon as we can.</p>");
-            EmailFooter.Append(body, settings, no);
-
-            return new EmailMessage(to, subject, body.ToString()) { ReplyTo = settings.PublicEmail };
+            var html = BrandedEmail.Html(settings, no, no ? "Kvittering" : "Receipt", subject, body.ToString());
+            return new EmailMessage(to, subject, html) { ReplyTo = settings.PublicEmail };
         }
 
         private static string? BuildLink(string? slug, PcBuild? build, IConfiguration config)

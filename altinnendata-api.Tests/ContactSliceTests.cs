@@ -132,12 +132,13 @@ public class ContactSliceTests : TestBase
         Assert.Equal("kari@kunde.no", receipt!.To);
         Assert.Equal("post@altinnendata.no", receipt.ReplyTo);
         Assert.Equal("Vi har mottatt meldingen din", receipt.Subject);
-        Assert.Contains("<h2>Vi har mottatt meldingen din</h2>", receipt.HtmlBody);
+        Assert.Contains(">Vi har mottatt meldingen din</h1>", receipt.HtmlBody);
+        Assert.Contains(">Kvittering</span>", receipt.HtmlBody);
         Assert.Contains(" og svarer så snart vi kan.", receipt.HtmlBody);
         Assert.DoesNotContain("Kari", receipt.HtmlBody);
         Assert.DoesNotContain("evil", receipt.HtmlBody);
         Assert.DoesNotContain("prize", receipt.HtmlBody);
-        Assert.Contains("post@altinnendata.no</p>", receipt.HtmlBody);
+        Assert.Contains("<br>post@altinnendata.no</div>", receipt.HtmlBody);
     }
 
     [Fact]

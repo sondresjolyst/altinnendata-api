@@ -600,7 +600,10 @@ public class PaymentLinkTests : TestBase
         Assert.Equal(subject, mail.Subject);
         Assert.Contains(until, mail.HtmlBody);
         Assert.Contains(held, mail.HtmlBody);
-        Assert.Contains("href=\"https://shop.test/no/shop/pay/abc_-1\"", mail.HtmlBody);
+        Assert.Contains("<a href=\"https://shop.test/no/shop/pay/abc_-1\" style=\"display:inline-block;", mail.HtmlBody);
+        Assert.Contains(locale == "no" ? "text-decoration:none\">Betal med Vipps</a>" : "text-decoration:none\">Pay with Vipps</a>", mail.HtmlBody);
+        Assert.Contains(locale == "no" ? ">Betalingslenke</span>" : ">Payment link</span>", mail.HtmlBody);
+        Assert.True(mail.HtmlBody.IndexOf("</a>", StringComparison.Ordinal) < mail.HtmlBody.IndexOf(until, StringComparison.Ordinal));
         Assert.Contains("Gaming-PC &lt;b&gt;", mail.HtmlBody);
         Assert.DoesNotContain("—", mail.HtmlBody);
     }
@@ -618,7 +621,8 @@ public class PaymentLinkTests : TestBase
 
         Assert.Equal("owner@shop.test", mail.To);
         Assert.Equal("Betalingslenken for ordre " + Reference + " er utløpt", mail.Subject);
-        Assert.Contains("https://shop.test/no/admin/shop/orders/7", mail.HtmlBody);
+        Assert.Contains("<a href=\"https://shop.test/no/admin/shop/orders/7\" style=\"display:inline-block;", mail.HtmlBody);
+        Assert.Contains(">Lenke utl&#248;pt</span>", mail.HtmlBody);
         Assert.Equal("ola@example.com", mail.ReplyTo);
     }
 }
