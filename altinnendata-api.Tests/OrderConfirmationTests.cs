@@ -62,9 +62,10 @@ public class OrderConfirmationTests(PostgresDatabase postgres) : TestBase
     {
         if (!await db.AppSettings.AnyAsync(Ct))
             db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
+        var reference = $"AID-{Random.Shared.Next(1, 999999):D6}-ABCDEF12";
         var order = new Order
         {
-            Reference = $"AID-{Random.Shared.Next(1, 999999):D6}-ABCDEF12",
+            Reference = reference, VippsReference = reference,
             PublicToken = Guid.NewGuid().ToString("N"),
             Status = status,
             Locale = locale,

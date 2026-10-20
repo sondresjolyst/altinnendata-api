@@ -10,7 +10,8 @@ namespace altinnendata_api.Features.Shop
     /// Failed and Cancelled are final, except that a Paid order can be refunded. A build is only released or
     /// marked sold while the order still holds it, so an admin's own change to it always stays.
     /// When Vipps ends the reservation of a Reserved order on its own, the agreement with the buyer still stands,
-    /// so the build stays held, and the owner and the buyer are told.
+    /// so the build stays held, and the owner and the buyer are told. An order can have more than one Vipps payment
+    /// (see <see cref="PaymentLink"/>). Events are matched by Vipps reference, and one for an earlier payment is ignored.
     /// The changes are saved by the library endpoint together with the processed marker.
     /// </summary>
     public class ShopWebhookHandler(
@@ -24,7 +25,13 @@ namespace altinnendata_api.Features.Shop
             var e = delivery.Event;
             var eventKey = delivery.EventKey;
 
-            var order = await db.Orders.FirstOrDefaultAsync(o => o.Reference == e.Reference, cancellationToken);
+            var order = await db.Orders.FirstOrDefaultAsync(o => o.VippsReference == e.Reference, cancellationToken);
+            if (order == null && await SupersededOrderIdAsync(e.Reference, cancellationToken) is int supersededOf)
+            {
+                log.LogInformation("Shop webhook {EventKey}: {Name} for {Reference} is for an earlier payment of order {OrderId} and is ignored",
+                    eventKey, e.Name, e.Reference, supersededOf);
+                return VippsWebhookOutcome.Applied();
+            }
             if (order == null)
             {
                 log.LogWarning("Shop webhook {EventKey} rejected: unknown reference {Reference}", eventKey, e.Reference);
@@ -47,6 +54,16 @@ namespace altinnendata_api.Features.Shop
             var change = new PaymentChange(e.Name, e.Amount?.Value, e.Timestamp?.UtcDateTime ?? DateTime.UtcNow, eventKey, RefundSource.Webhook, e.CaptureGuaranteedUntil);
             return await ApplyAsync(order, change, null, cancellationToken);
         }
+
+        /// <summary>
+        /// The order an earlier, replaced Vipps payment with <paramref name="vippsReference"/> belonged to, or null when
+        /// no payment has it.
+        /// </summary>
+        private Task<int?> SupersededOrderIdAsync(string vippsReference, CancellationToken ct) =>
+            db.OrderPayments.AsNoTracking()
+                .Where(p => p.VippsReference == vippsReference)
+                .Select(p => (int?)p.OrderId)
+                .FirstOrDefaultAsync(ct);
 
         /// <summary>
         /// Applies one payment change to a tracked order and its build without saving. The webhook and
@@ -90,6 +107,7 @@ namespace altinnendata_api.Features.Shop
                         {
                             order.Status = OrderStatus.Reserved;
                             order.AuthorizedAt = at;
+                            if (PaymentLink.IsLinkPayment(order)) PaymentLink.Authorized(order, at);
                             order.CaptureGuaranteedUntil = change.CaptureGuaranteedUntil
                                 ?? (payment != null ? payment.CaptureGuaranteedUntil : await ReadCaptureGuaranteeAsync(order, eventKey, cancellationToken));
                         }
@@ -128,7 +146,11 @@ namespace altinnendata_api.Features.Shop
                 return VippsWebhookOutcome.Retry;
             }
 
-            if (db.Entry(order).State == EntityState.Modified) order.UpdatedAt = DateTime.UtcNow;
+            if (db.Entry(order).State == EntityState.Modified)
+            {
+                order.UpdatedAt = DateTime.UtcNow;
+                await RecordStateAsync(order, change.Name, cancellationToken);
+            }
 
             var orderId = order.Id;
             // Every refund this event recorded gets its email, whether or not it refunded the whole order.
@@ -162,6 +184,13 @@ namespace altinnendata_api.Features.Shop
             };
         }
 
+        /// <summary>Records <paramref name="name"/> as the last state of the order's current Vipps payment.</summary>
+        private async Task RecordStateAsync(Order order, string name, CancellationToken ct)
+        {
+            var payment = await db.OrderPayments.FirstOrDefaultAsync(p => p.OrderId == order.Id && p.VippsReference == order.VippsReference, ct);
+            if (payment != null) payment.State = name;
+        }
+
         /// <summary>
         /// Reads the capture guarantee from Vipps when neither the event nor a payment already read carried it.
         /// A failed lookup leaves it empty, because the order is reserved either way and the date is only shown to the owner.
@@ -170,7 +199,7 @@ namespace altinnendata_api.Features.Shop
         {
             try
             {
-                return (await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct)).CaptureGuaranteedUntil;
+                return (await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, ct)).CaptureGuaranteedUntil;
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
@@ -186,7 +215,7 @@ namespace altinnendata_api.Features.Shop
         /// </summary>
         private async Task<bool> CaptureAsync(Order order, PcBuild? build, int eventAmount, DateTime at, string eventKey, VippsPayment? known, CancellationToken ct)
         {
-            var captured = (known ?? await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct)).CapturedAmountInOre;
+            var captured = (known ?? await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, ct)).CapturedAmountInOre;
             if (captured < eventAmount)
             {
                 log.LogWarning("Shop webhook {EventKey}: Vipps does not show the capture of {Amount} øre on order {OrderId} yet, it shows {Captured} øre, left for a retry",
@@ -217,7 +246,7 @@ namespace altinnendata_api.Features.Shop
         /// </summary>
         private async Task<int?> RefundAsync(Order order, int eventAmount, DateTime at, string eventKey, RefundSource source, VippsPayment? known, CancellationToken ct)
         {
-            var payment = known ?? await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct);
+            var payment = known ?? await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, ct);
             if (payment.RefundedAmountInOre < eventAmount)
             {
                 log.LogWarning("Shop webhook {EventKey}: Vipps does not show the refund of {Amount} øre on order {OrderId} yet, it shows {Refunded} øre, left for a retry",
@@ -232,7 +261,8 @@ namespace altinnendata_api.Features.Shop
         }
 
         /// <summary>
-        /// The payment failed. A Pending order fails and lets go of the build. A Reserved order fails too, but keeps
+        /// The payment failed. A Pending order fails and lets go of the build, unless the payment came from a payment
+        /// link, which keeps the build held so the buyer can pay again. A Reserved order fails too, but keeps
         /// the build held and returns true, since the buyer already has an agreement.
         /// </summary>
         private bool Fail(Order order, PcBuild? build, string name, DateTime at, string eventKey)
@@ -252,12 +282,14 @@ namespace altinnendata_api.Features.Shop
                 order.ReservationEndedAt = at;
                 return true;
             }
-            if (build != null) BuildHold.Release(build, order.Id);
+            // A payment from the payment link that ended unpaid leaves the build held, so the buyer can try again.
+            if (build != null && !PaymentLink.IsLinkPayment(order)) BuildHold.Release(build, order.Id);
             return false;
         }
 
         /// <summary>
-        /// The payment was cancelled. A Pending order fails and lets go of the build. A Reserved order the admin asked
+        /// The payment was cancelled. A Pending order fails and lets go of the build, unless the payment came from a
+        /// payment link. A Reserved order the admin asked
         /// to cancel is cancelled and lets go of the build. One Vipps cancelled on its own is cancelled, keeps the
         /// build held and returns true.
         /// </summary>
@@ -275,7 +307,7 @@ namespace altinnendata_api.Features.Shop
             if (order.Status == OrderStatus.Pending)
             {
                 order.Status = OrderStatus.Failed;
-                if (build != null) BuildHold.Release(build, order.Id);
+                if (build != null && !PaymentLink.IsLinkPayment(order)) BuildHold.Release(build, order.Id);
                 return false;
             }
 

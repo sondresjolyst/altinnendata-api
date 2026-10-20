@@ -14,7 +14,7 @@ public class OrderStatusTests : TestBase
 
     private static Order NewOrder() => new()
     {
-        Reference = "AID-000001-ABCDEF12",
+        Reference = "AID-000001-ABCDEF12", VippsReference = "AID-000001-ABCDEF12",
         PublicToken = Token,
         Status = OrderStatus.Paid,
         Locale = "no",

@@ -10,6 +10,15 @@ namespace altinnendata_api.Models.Shop
     {
         public int Id { get; set; }
         public required string Reference { get; set; }
+
+        /// <summary>
+        /// The reference of the order's current Vipps payment. The first payment uses <see cref="Reference"/>. A payment
+        /// started from a payment link uses <c>{Reference}-{n}</c>. Every payment of the order is in <see cref="Payments"/>.
+        /// </summary>
+        public required string VippsReference { get; set; }
+
+        /// <summary>One row per Vipps payment of the order, the current one included. Deleted with the order.</summary>
+        public ICollection<OrderPayment> Payments { get; set; } = [];
         public required string PublicToken { get; set; }
         public OrderStatus Status { get; set; } = OrderStatus.Pending;
         public required string Locale { get; set; }
@@ -94,6 +103,18 @@ namespace altinnendata_api.Models.Shop
         /// fails, since Vipps may still have cancelled.
         /// </summary>
         public DateTime? AdminCancelRequestedAt { get; set; }
+
+        /// <summary>
+        /// The SHA-256 hash, lowercase hex, of the secret in the payment link the admin sent after the reservation ended.
+        /// Null when no link is open: none was sent, it was used, the owner was told it ran out, or the build was released.
+        /// The link itself is never stored.
+        /// </summary>
+        public string? PaymentLinkTokenHash { get; set; }
+        public DateTime? PaymentLinkSentAt { get; set; }
+        public DateTime? PaymentLinkExpiresAt { get; set; }
+
+        /// <summary>When a payment started from the link was authorized. The link cannot be used after that.</summary>
+        public DateTime? PaymentLinkUsedAt { get; set; }
         public DateTime? CapturedAt { get; set; }
         public DateTime? CancelledAt { get; set; }
         public DateTime? RefundedAt { get; set; }

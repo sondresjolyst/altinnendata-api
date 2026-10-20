@@ -73,7 +73,7 @@ public class AdminSlicesTests : TestBase
 
     private static Order Order(string reference, OrderStatus status, int capturedInOre, bool isTest) => new()
     {
-        Reference = reference,
+        Reference = reference, VippsReference = reference,
         PublicToken = Guid.NewGuid().ToString("N"),
         Status = status,
         Locale = "no",

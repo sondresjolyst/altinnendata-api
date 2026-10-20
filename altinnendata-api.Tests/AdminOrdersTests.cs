@@ -44,7 +44,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
 
         var order = new Order
         {
-            Reference = reference,
+            Reference = reference, VippsReference = reference,
             PublicToken = Guid.NewGuid().ToString("N"),
             Status = status,
             Locale = "no",

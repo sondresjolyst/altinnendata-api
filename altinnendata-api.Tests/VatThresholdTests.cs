@@ -27,7 +27,7 @@ public class VatThresholdTests : TestBase
         var n = Interlocked.Increment(ref _next);
         return new Order
         {
-            Reference = $"ae-{n:D6}-vat",
+            Reference = $"ae-{n:D6}-vat", VippsReference = $"ae-{n:D6}-vat",
             PublicToken = Guid.NewGuid().ToString("N"),
             Status = status,
             Locale = "no",
@@ -342,7 +342,7 @@ public class VatThresholdPostgresTests(PostgresDatabase postgres)
         var now = new DateTime(2026, 10, 19, 12, 0, 0, DateTimeKind.Utc);
         db.Orders.Add(new Order
         {
-            Reference = "ae-000001-vatpg", PublicToken = Guid.NewGuid().ToString("N"), Status = OrderStatus.Paid, Locale = "no",
+            Reference = "ae-000001-vatpg", VippsReference = "ae-000001-vatpg", PublicToken = Guid.NewGuid().ToString("N"), Status = OrderStatus.Paid, Locale = "no",
             BuyerName = "Ola", BuyerEmail = "ola@example.com", BuyerPhone = "4791234567", DeliveryLabel = "Henting",
             BuildTitle = "PC", BuildSlug = "pc", TotalInOre = 4_900_000, CapturedInOre = 4_900_000, RefundedInOre = 0,
             CapturedAt = now.AddDays(-2),

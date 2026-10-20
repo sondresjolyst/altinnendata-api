@@ -14,7 +14,7 @@ public class OrderRefundsTests
     private static Order Paid(int captured = 10_000, int refunded = 0) => new()
     {
         Id = 5,
-        Reference = "AID-000005-ABCDEF12",
+        Reference = "AID-000005-ABCDEF12", VippsReference = "AID-000005-ABCDEF12",
         PublicToken = "t",
         Status = OrderStatus.Paid,
         Locale = "no",

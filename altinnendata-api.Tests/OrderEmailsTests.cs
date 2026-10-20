@@ -21,7 +21,7 @@ public class OrderEmailsTests : TestBase
     private static Order NewOrder(string locale = "no", DeliveryMethod method = DeliveryMethod.Shipping, string buyerName = "Ola Nordmann") => new()
     {
         Id = 7,
-        Reference = Reference,
+        Reference = Reference, VippsReference = Reference,
         PublicToken = "tok",
         Status = OrderStatus.Reserved,
         Locale = locale,

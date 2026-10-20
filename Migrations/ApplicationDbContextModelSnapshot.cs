@@ -1099,6 +1099,19 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
 
+                    b.Property<DateTime?>("PaymentLinkExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PaymentLinkSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentLinkTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("PaymentLinkUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int?>("PcBuildId")
                         .HasColumnType("integer");
 
@@ -1186,12 +1199,20 @@ namespace altinnendata_api.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<string>("VippsReference")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<bool>("WithinDistanceConfirmed")
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("PaymentLinkTokenHash")
+                        .IsUnique();
 
                     b.HasIndex("PcBuildId");
 
@@ -1201,7 +1222,44 @@ namespace altinnendata_api.Migrations
                     b.HasIndex("Reference")
                         .IsUnique();
 
+                    b.HasIndex("VippsReference")
+                        .IsUnique();
+
                     b.ToTable("Orders");
+                });
+
+            modelBuilder.Entity("altinnendata_api.Models.Shop.OrderPayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("VippsReference")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("VippsReference")
+                        .IsUnique();
+
+                    b.ToTable("OrderPayments");
                 });
 
             modelBuilder.Entity("altinnendata_api.Models.Shop.OrderRefund", b =>
@@ -1578,6 +1636,15 @@ namespace altinnendata_api.Migrations
                     b.Navigation("PcBuild");
                 });
 
+            modelBuilder.Entity("altinnendata_api.Models.Shop.OrderPayment", b =>
+                {
+                    b.HasOne("altinnendata_api.Models.Shop.Order", null)
+                        .WithMany("Payments")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("altinnendata_api.Models.Shop.OrderRefund", b =>
                 {
                     b.HasOne("altinnendata_api.Models.Shop.Order", null)
@@ -1618,6 +1685,8 @@ namespace altinnendata_api.Migrations
 
             modelBuilder.Entity("altinnendata_api.Models.Shop.Order", b =>
                 {
+                    b.Navigation("Payments");
+
                     b.Navigation("Refunds");
                 });
 #pragma warning restore 612, 618

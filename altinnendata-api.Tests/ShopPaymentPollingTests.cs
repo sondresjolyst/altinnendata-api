@@ -35,7 +35,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
 
         var order = new Order
         {
-            Reference = Ref(n),
+            Reference = Ref(n), VippsReference = Ref(n),
             PublicToken = Guid.NewGuid().ToString("N"),
             Status = status,
             Locale = "no",
@@ -77,7 +77,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         if (interceptor != null) options.AddInterceptors(interceptor);
         await using var db = new ApplicationDbContext(options.Options);
         var handler = new ShopWebhookHandler(db, _vipps.Object, _notifier.Object, new ListLogger<ShopWebhookHandler>());
-        return await new ShopPaymentPolling(db, _vipps.Object, handler, _log).RunAsync(afterId, Now, Ct);
+        return await new ShopPaymentPolling(db, _vipps.Object, handler, _notifier.Object, _log).RunAsync(afterId, Now, Ct);
     }
 
     private async Task<(PcBuild Build, Order Order)> ReloadAsync(ApplicationDbContext existing, int buildId, int orderId)
@@ -435,7 +435,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     {
         var order = new Order
         {
-            Reference = "AID-000001-ABCDEF12", PublicToken = "t", Locale = "no", BuyerName = "a", BuyerEmail = "b", BuyerPhone = "c",
+            Reference = "AID-000001-ABCDEF12", VippsReference = "AID-000001-ABCDEF12", PublicToken = "t", Locale = "no", BuyerName = "a", BuyerEmail = "b", BuyerPhone = "c",
             DeliveryLabel = "d", BuildTitle = "e", BuildSlug = "f", TotalInOre = Total
         };
         var payment = new VippsPayment

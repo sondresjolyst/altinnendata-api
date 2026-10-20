@@ -77,7 +77,11 @@ namespace altinnendata_api.Features.Shop
         string DeliveryPlace,
         DateTime? ReservationEndedAt,
         bool HoldsBuild,
-        string? ReleaseBuildBlockedReason)
+        string? ReleaseBuildBlockedReason,
+        DateTime? PaymentLinkSentAt,
+        DateTime? PaymentLinkExpiresAt,
+        string? PaymentLinkBlockedReason,
+        IReadOnlyList<VippsReferenceDto> VippsReferences)
     {
         /// <summary>
         /// The order as the admin pages show it, with its refunds, oldest first, and where it is delivered. Every
@@ -93,7 +97,12 @@ namespace altinnendata_api.Features.Shop
             var seller = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
             var holdsBuild = o.PcBuildId is int buildId
                 && await db.PcBuilds.AnyAsync(b => b.Id == buildId && b.HeldByOrderId == o.Id && b.Availability == BuildAvailability.Reserved, ct);
-            return From(o, refunds, seller, holdsBuild);
+            var payments = await db.OrderPayments.AsNoTracking()
+                .Where(p => p.OrderId == o.Id)
+                .OrderBy(p => p.CreatedAt).ThenBy(p => p.Id)
+                .Select(p => new VippsReferenceDto(p.VippsReference, p.State, p.CreatedAt))
+                .ToListAsync(ct);
+            return From(o, refunds, seller, holdsBuild, payments);
         }
 
         /// <summary>The buyer's address, or the seller's for pickup, as one line.</summary>
@@ -111,7 +120,7 @@ namespace altinnendata_api.Features.Shop
             : !holdsBuild ? "buildNotHeld"
             : null;
 
-        private static AdminOrderDto From(Order o, IReadOnlyList<OrderRefundDto> refunds, AppSettings seller, bool holdsBuild) =>
+        private static AdminOrderDto From(Order o, IReadOnlyList<OrderRefundDto> refunds, AppSettings seller, bool holdsBuild, IReadOnlyList<VippsReferenceDto> payments) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.Locale, o.BuyerName, o.BuyerEmail, o.BuyerPhone,
                 o.StreetAddress, o.PostalCode, o.City, o.DeliveryMethod.ToString(), o.DeliveryLabel, o.DeliveryPriceInOre,
                 o.WithinDistanceConfirmed, o.PickupNote, o.PcBuildId, o.BuildTitle, o.BuildSlug, o.BuildPriceInOre,
@@ -119,8 +128,12 @@ namespace altinnendata_api.Features.Shop
                 o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt,
                 o.TermsVersion, o.TermsAcceptedIp, o.ConfirmationSentAt, o.ShippedAt, o.ShippingNote,
                 refunds, o.ShippedAt, DeliveryPlaceOf(o, seller),
-                o.ReservationEndedAt, holdsBuild, ReleaseBuildBlockedReasonOf(o, holdsBuild));
+                o.ReservationEndedAt, holdsBuild, ReleaseBuildBlockedReasonOf(o, holdsBuild),
+                o.PaymentLinkSentAt, o.PaymentLinkExpiresAt, PaymentLink.BlockedReasonOf(o, holdsBuild), payments);
     }
+
+    /// <summary>One Vipps payment of the order: its reference, the last Vipps state seen for it and when it was started.</summary>
+    public record VippsReferenceDto(string Reference, string State, DateTime CreatedAt);
 
     /// <summary>One refund: the amount in øre, when, and whether the admin or a Vipps webhook recorded it.</summary>
     public record OrderRefundDto(int AmountInOre, DateTime RefundedAt, string Source);

@@ -8,7 +8,8 @@ namespace altinnendata_api.Features.Shop
     /// <summary>
     /// The fallback Vipps asks for when a webhook is lost: reads the payment of every open order from Vipps and applies
     /// what it shows through <see cref="ShopWebhookHandler.ApplyAsync"/>, with the same transitions, holds and emails.
-    /// Open means Reserved, or Pending for longer than <see cref="PendingAfter"/>, so a buyer still in Vipps is left alone.
+    /// Open means Reserved, or Pending for longer than <see cref="PendingAfter"/> since the current Vipps payment started,
+    /// so a buyer still in Vipps is left alone. It also tells the owner once when a payment link ran out unpaid.
     /// A webhook for the same change at the same time is safe: the order's xmin lets only one save win, and only the
     /// side that saves sends the email.
     /// </summary>
@@ -16,6 +17,7 @@ namespace altinnendata_api.Features.Shop
         ApplicationDbContext db,
         IVippsClient vipps,
         ShopWebhookHandler handler,
+        IOrderNotifier notifier,
         ILogger<ShopPaymentPolling> log)
     {
         public static readonly TimeSpan PendingAfter = TimeSpan.FromMinutes(15);
@@ -33,7 +35,9 @@ namespace altinnendata_api.Features.Shop
             var pendingBefore = now - PendingAfter;
             var ids = await db.Orders.AsNoTracking()
                 .Where(o => o.Id > afterId
-                    && (o.Status == OrderStatus.Reserved || (o.Status == OrderStatus.Pending && o.CreatedAt < pendingBefore)))
+                    && (o.Status == OrderStatus.Reserved
+                        || (o.Status == OrderStatus.Pending && o.CreatedAt < pendingBefore
+                            && !db.OrderPayments.Any(p => p.VippsReference == o.VippsReference && p.CreatedAt >= pendingBefore))))
                 .OrderBy(o => o.Id)
                 .Select(o => o.Id)
                 .Take(BatchSize)
@@ -46,6 +50,54 @@ namespace altinnendata_api.Features.Shop
             return ids.Count < BatchSize ? 0 : ids[^1];
         }
 
+        /// <summary>
+        /// Closes every payment link that ran out at <paramref name="now"/> without a payment and tells the owner, once
+        /// per link, while the order still holds its build. An order still Pending is left until its payment ends.
+        /// Returns how many links were closed.
+        /// </summary>
+        public async Task<int> CloseExpiredLinksAsync(DateTime now, CancellationToken ct)
+        {
+            var ids = await db.Orders.AsNoTracking()
+                .Where(o => o.PaymentLinkTokenHash != null && o.PaymentLinkUsedAt == null && o.PaymentLinkExpiresAt <= now
+                    && (o.Status == OrderStatus.Failed || o.Status == OrderStatus.Cancelled))
+                .OrderBy(o => o.Id)
+                .Select(o => o.Id)
+                .Take(BatchSize)
+                .ToListAsync(ct);
+
+            var closed = 0;
+            foreach (var id in ids)
+            {
+                db.ChangeTracker.Clear();
+                var order = await db.Orders.FirstAsync(o => o.Id == id, ct);
+                order.PaymentLinkTokenHash = null;
+                order.UpdatedAt = DateTime.UtcNow;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // The buyer started a payment or the admin sent a new link meanwhile. The next run looks again.
+                    continue;
+                }
+                closed++;
+                if (!await PaymentLink.HoldsBuildAsync(db, order, ct)) continue;
+
+                log.LogWarning("Payment polling: the payment link of order {OrderId} ran out unpaid, the build stays held for the owner to sort out", id);
+                try
+                {
+                    await notifier.PaymentLinkExpiredAsync(id, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    log.LogError(ex, "Payment polling: the email about the expired payment link of order {OrderId} failed", id);
+                }
+            }
+            db.ChangeTracker.Clear();
+            return closed;
+        }
+
         /// <summary>Reads one order's payment and applies it. Returns false when Vipps could not be reached.</summary>
         private async Task<bool> CheckAsync(int orderId, CancellationToken ct)
         {
@@ -56,7 +108,7 @@ namespace altinnendata_api.Features.Shop
             VippsPayment payment;
             try
             {
-                payment = await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct);
+                payment = await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, ct);
             }
             catch (HttpRequestException ex) when (ShopVipps.IsRejection(ex))
             {
@@ -125,7 +177,7 @@ namespace altinnendata_api.Features.Shop
         public static IReadOnlyList<PaymentChange> ChangesOf(Order order, VippsPayment payment, DateTime now)
         {
             PaymentChange Change(string name, int? amount) =>
-                new(name, amount, now, $"poll:{order.Reference}:{name}:{amount}", RefundSource.Polling);
+                new(name, amount, now, $"poll:{order.VippsReference}:{name}:{amount}", RefundSource.Polling);
 
             switch (payment.State)
             {
@@ -173,7 +225,9 @@ namespace altinnendata_api.Features.Shop
             {
                 using var scope = scopes.CreateScope();
                 var polling = scope.ServiceProvider.GetRequiredService<ShopPaymentPolling>();
-                _afterId = await polling.RunAsync(_afterId, time.GetUtcNow().UtcDateTime, ct);
+                var now = time.GetUtcNow().UtcDateTime;
+                _afterId = await polling.RunAsync(_afterId, now, ct);
+                await polling.CloseExpiredLinksAsync(now, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

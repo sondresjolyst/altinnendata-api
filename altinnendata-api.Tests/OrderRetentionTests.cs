@@ -21,7 +21,7 @@ public class OrderRetentionTests : TestBase
         var n = Interlocked.Increment(ref _next);
         return new Order
         {
-            Reference = $"ae-{n:D6}-ret",
+            Reference = $"ae-{n:D6}-ret", VippsReference = $"ae-{n:D6}-ret",
             PublicToken = Guid.NewGuid().ToString("N"),
             Status = status,
             Locale = "no",

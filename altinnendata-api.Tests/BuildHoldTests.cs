@@ -17,7 +17,7 @@ public class BuildHoldTests(PostgresDatabase postgres) : TestBase
 
     private static Order NewOrder(string reference) => new()
     {
-        Reference = reference,
+        Reference = reference, VippsReference = reference,
         PublicToken = $"token-{reference}",
         Status = OrderStatus.Pending,
         Locale = "no",

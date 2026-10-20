@@ -149,6 +149,46 @@ namespace altinnendata_api.Features.Shop
             return new EmailMessage(o.BuyerEmail, subject, body.ToString()) { ReplyTo = s.PublicEmail };
         }
 
+        /// <summary>
+        /// Gives the buyer a new link to pay after the reservation in Vipps ended. Says the computer is still held for
+        /// them and until when the link works, and nothing about when the money is taken.
+        /// </summary>
+        public static EmailMessage BuyerPaymentLink(Order o, string link, AppSettings s)
+        {
+            var no = IsNorwegian(o);
+            var subject = no ? $"Ny betalingslenke for ordre {o.Reference}" : $"New payment link for order {o.Reference}";
+            var until = o.PaymentLinkExpiresAt is { } at ? OsloDateTime(at, no) : "";
+            var body = new StringBuilder();
+            body.Append($"<h2>{Enc(subject)}</h2>");
+            body.Append($"<p>{(no ? "Ordrenummer" : "Order number")}: <strong>{Enc(o.Reference)}</strong></p>");
+            body.Append(no
+                ? $"<p>Reservasjonen av betalingen i Vipps er avsluttet. Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av til deg.</p>"
+                : $"<p>The reservation of the payment in Vipps has ended. The computer {Enc(o.BuildTitle)} is still held for you.</p>");
+            body.Append($"<p>{(no ? "Beløp" : "Amount")}: {Kroner(o.TotalInOre, o.Locale)} kr</p>");
+            body.Append($"<p><a href=\"{Enc(link)}\">{(no ? "Betal med Vipps" : "Pay with Vipps")}</a></p>");
+            body.Append(no ? $"<p>Lenken er gyldig til {until}.</p>" : $"<p>The link works until {until}.</p>");
+            AppendFooter(body, s, no);
+            return new EmailMessage(o.BuyerEmail, subject, body.ToString()) { ReplyTo = s.PublicEmail };
+        }
+
+        /// <summary>Tells the owner that the payment link ran out unpaid while the build is still held for the order.</summary>
+        public static EmailMessage OwnerPaymentLinkExpired(Order o, AppSettings s, IConfiguration config)
+        {
+            var subject = $"Betalingslenken for ordre {o.Reference} er utløpt";
+            var body = new StringBuilder();
+            body.Append($"<h2>{Enc(subject)}</h2>");
+            var sent = o.PaymentLinkSentAt is { } at ? $" sendt {OsloDate(at)}" : "";
+            body.Append($"<p>Betalingslenken{sent} ble ikke brukt før den utløp.</p>");
+            body.Append($"<p>Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av ordren og vises ikke som tilgjengelig.</p>");
+            body.Append("<p>Ta kontakt med kjøperen og send en ny betalingslenke, eller frigi datamaskinen fra ordren i admin hvis salget ikke blir noe av.</p>");
+            body.Append($"<p><strong>Kjøper:</strong> {Enc(o.BuyerName)}, {Enc(o.BuyerEmail)}, {Enc(o.BuyerPhone)}</p>");
+            body.Append($"<p><a href=\"{Enc(SiteLinks.AdminOrder(config, o.Id))}\">Åpne ordren i admin</a></p>");
+            return new EmailMessage(s.ContactRecipientEmail, subject, body.ToString())
+            {
+                ReplyTo = o.BuyerEmail,
+            };
+        }
+
         /// <summary>The order is on its way, or ready for pickup. Says nothing about when the money is taken.</summary>
         public static EmailMessage BuyerShipped(Order o, AppSettings s)
         {
@@ -227,6 +267,11 @@ namespace altinnendata_api.Features.Shop
         private static string Enc(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
         private static string EncMultiline(string value) => Enc(value).Replace("\n", "<br/>");
+
+        /// <summary>The date and time in Oslo, <c>23.10.2026 kl. 17:42</c> or <c>23.10.2026 at 17:42</c>.</summary>
+        internal static string OsloDateTime(DateTime utc, bool no) =>
+            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value)
+                .ToString(no ? "dd.MM.yyyy 'kl.' HH:mm" : "dd.MM.yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
 
         internal static string OsloDate(DateTime utc) =>
             TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value)

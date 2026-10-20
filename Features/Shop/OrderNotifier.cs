@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
+using altinnendata_api.Services;
 using SjolystInnovation.AppKit.Email;
 
 namespace altinnendata_api.Features.Shop
@@ -14,6 +15,12 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>Vipps ended the reservation of a Reserved order on its own. <paramref name="vippsEvent"/> is the event or state that ended it.</summary>
         Task ReservationEndedAsync(int orderId, string vippsEvent, CancellationToken ct);
+
+        /// <summary>The admin sent the buyer a new payment link. <paramref name="token"/> is the secret in the link.</summary>
+        Task PaymentLinkSentAsync(int orderId, string token, CancellationToken ct);
+
+        /// <summary>The payment link ran out without a payment. Only the owner hears.</summary>
+        Task PaymentLinkExpiredAsync(int orderId, CancellationToken ct);
     }
 
     /// <summary>Emails the buyer and the owner about an order. A failed send is logged and never thrown.</summary>
@@ -60,6 +67,22 @@ namespace altinnendata_api.Features.Shop
 
             await SendAsync(OrderEmails.OwnerReservationEnded(order, vippsEvent, settings, config), order, ct);
             await SendAsync(OrderEmails.BuyerReservationEnded(order, settings), order, ct);
+        }
+
+        public async Task PaymentLinkSentAsync(int orderId, string token, CancellationToken ct)
+        {
+            var (order, settings) = await LoadAsync(orderId, ct);
+            if (order == null) return;
+
+            await SendAsync(OrderEmails.BuyerPaymentLink(order, SiteLinks.ShopPay(config, order.Locale, token), settings), order, ct);
+        }
+
+        public async Task PaymentLinkExpiredAsync(int orderId, CancellationToken ct)
+        {
+            var (order, settings) = await LoadAsync(orderId, ct);
+            if (order == null) return;
+
+            await SendAsync(OrderEmails.OwnerPaymentLinkExpired(order, settings, config), order, ct);
         }
 
         private async Task<(Models.Shop.Order? Order, AppSettings Settings)> LoadAsync(int orderId, CancellationToken ct)

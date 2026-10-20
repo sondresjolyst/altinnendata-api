@@ -68,6 +68,8 @@ namespace altinnendata_api.Features.Shop
             db.Orders.Add(order);
             await db.SaveChangesAsync(ct);
             order.Reference = NewReference(order.Id);
+            order.VippsReference = order.Reference;
+            order.Payments.Add(new OrderPayment { VippsReference = order.Reference });
 
             bool held;
             try
@@ -89,7 +91,7 @@ namespace altinnendata_api.Features.Shop
             // without a Vipps payment, whose webhook is the only thing that releases it.
             try
             {
-                var payment = await vipps.CreatePaymentAsync(PaymentRequest(order, build.Id, config), order.Reference, ct);
+                var payment = await vipps.CreatePaymentAsync(PaymentRequest(order, config), order.Reference, ct);
                 order.IsTest = payment.IsTest;
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
@@ -126,9 +128,11 @@ namespace altinnendata_api.Features.Shop
             var buildPrice = build.PriceNok!.Value * 100;
             var deliveryPrice = delivery.PriceNok * 100;
 
+            var placeholder = $"pending-{Guid.NewGuid():N}";
             return new Order
             {
-                Reference = $"pending-{Guid.NewGuid():N}",
+                Reference = placeholder,
+                VippsReference = placeholder,
                 PublicToken = NewToken(),
                 Status = OrderStatus.Pending,
                 Locale = locale,
@@ -152,18 +156,22 @@ namespace altinnendata_api.Features.Shop
             };
         }
 
-        private static VippsCreatePaymentRequest PaymentRequest(Order order, int buildId, IConfiguration config)
+        /// <summary>
+        /// The Vipps payment for the order's current <see cref="Order.VippsReference"/>, with the same amount and receipt
+        /// lines for every payment of the order. Vipps sends the buyer back to the order's status page.
+        /// </summary>
+        public static VippsCreatePaymentRequest PaymentRequest(Order order, IConfiguration config)
         {
             List<VippsReceiptLine> lines =
             [
-                new() { Id = $"build-{buildId}", Name = order.BuildTitle, UnitPriceInOre = order.BuildPriceInOre, Quantity = 1 }
+                new() { Id = $"build-{order.PcBuildId}", Name = order.BuildTitle, UnitPriceInOre = order.BuildPriceInOre, Quantity = 1 }
             ];
             if (order.DeliveryPriceInOre > 0)
                 lines.Add(new() { Id = $"delivery-{order.DeliveryMethod}", Name = order.DeliveryLabel, UnitPriceInOre = order.DeliveryPriceInOre, Quantity = 1 });
 
             return new VippsCreatePaymentRequest
             {
-                Reference = order.Reference,
+                Reference = order.VippsReference,
                 AmountInOre = order.TotalInOre,
                 PhoneNumber = order.BuyerPhone,
                 ReturnUrl = SiteLinks.ShopReturn(config, order.Locale, order.PublicToken),

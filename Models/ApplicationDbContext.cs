@@ -38,6 +38,7 @@ namespace altinnendata_api.Models
         public DbSet<Order> Orders { get; set; }
         public DbSet<OutsideSalesMonth> OutsideSalesMonths { get; set; }
         public DbSet<OrderRefund> OrderRefunds { get; set; }
+        public DbSet<OrderPayment> OrderPayments { get; set; }
         public DbSet<VippsProcessedWebhookEvent> ProcessedWebhookEvents { get; set; }
         public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
 
@@ -82,6 +83,10 @@ namespace altinnendata_api.Models
             {
                 order.Property(o => o.Reference).HasMaxLength(64);
                 order.HasIndex(o => o.Reference).IsUnique();
+                order.Property(o => o.VippsReference).HasMaxLength(64);
+                order.HasIndex(o => o.VippsReference).IsUnique();
+                order.Property(o => o.PaymentLinkTokenHash).HasMaxLength(64);
+                order.HasIndex(o => o.PaymentLinkTokenHash).IsUnique();
                 order.Property(o => o.PublicToken).HasMaxLength(64);
                 order.HasIndex(o => o.PublicToken).IsUnique();
                 order.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
@@ -113,10 +118,23 @@ namespace altinnendata_api.Models
                     .HasForeignKey(o => o.PcBuildId)
                     .OnDelete(DeleteBehavior.SetNull);
 
+                order.HasMany(o => o.Payments)
+                    .WithOne()
+                    .HasForeignKey(p => p.OrderId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
                 order.HasMany(o => o.Refunds)
                     .WithOne()
                     .HasForeignKey(r => r.OrderId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<OrderPayment>(payment =>
+            {
+                payment.Property(p => p.VippsReference).HasMaxLength(64);
+                payment.HasIndex(p => p.VippsReference).IsUnique();
+                payment.Property(p => p.State).HasMaxLength(20);
+                payment.HasIndex(p => p.OrderId);
             });
 
             modelBuilder.Entity<OrderRefund>(refund =>

@@ -21,7 +21,7 @@ public class OrderDocumentsTests
     private static Order NewOrder(string locale = "no", string? markdown = "## 1. Kjøp\n\nDu kjøper **én** maskin.") => new()
     {
         Id = 42,
-        Reference = "AID-000042-1A2B3C4D",
+        Reference = "AID-000042-1A2B3C4D", VippsReference = "AID-000042-1A2B3C4D",
         PublicToken = "tok",
         Status = OrderStatus.Reserved,
         Locale = locale,

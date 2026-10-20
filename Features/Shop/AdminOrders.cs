@@ -42,7 +42,7 @@ namespace altinnendata_api.Features.Shop
             VippsPayment payment;
             try
             {
-                payment = await vipps.CapturePaymentAsync(order.Reference, order.TotalInOre, $"capture-{order.Reference}", order.IsTest, ct);
+                payment = await vipps.CapturePaymentAsync(order.VippsReference, order.TotalInOre, $"capture-{order.VippsReference}", order.IsTest, ct);
             }
             catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {
@@ -99,7 +99,7 @@ namespace altinnendata_api.Features.Shop
 
             try
             {
-                await vipps.CancelPaymentAsync(order.Reference, $"cancel-{order.Reference}", order.IsTest, ct);
+                await vipps.CancelPaymentAsync(order.VippsReference, $"cancel-{order.VippsReference}", order.IsTest, ct);
             }
             catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
             {
@@ -156,6 +156,19 @@ namespace altinnendata_api.Features.Shop
             if (order.Status is not (OrderStatus.Failed or OrderStatus.Cancelled))
                 return WrongStatus(order, "Only a failed or cancelled order can release its build.");
 
+            // The order row first, as the pay page does, so a payment started from the link at the same time either
+            // finishes first and this answers wrongStatus, or finds its link closed.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            var open = await db.Orders
+                .Where(o => o.Id == id && (o.Status == OrderStatus.Failed || o.Status == OrderStatus.Cancelled))
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.PaymentLinkTokenHash, (string?)null), ct);
+            if (open == 0)
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, ct);
+                return WrongStatus(order, "Only a failed or cancelled order can release its build.");
+            }
+
             var now = DateTime.UtcNow;
             var rows = order.PcBuildId is not int buildId ? 0 : await db.PcBuilds
                 .Where(b => b.Id == buildId && b.HeldByOrderId == order.Id && b.Availability == BuildAvailability.Reserved)
@@ -163,7 +176,13 @@ namespace altinnendata_api.Features.Shop
                     .SetProperty(b => b.Availability, BuildAvailability.Available)
                     .SetProperty(b => b.HeldByOrderId, (int?)null)
                     .SetProperty(b => b.UpdatedAt, now), ct);
-            if (rows == 0) return BuildNotHeld();
+            if (rows == 0)
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                return BuildNotHeld();
+            }
+            await tx.CommitAsync(ct);
+            order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, CancellationToken.None);
 
             log.LogInformation("Order {OrderId} released build {BuildId} by an admin", order.Id, order.PcBuildId);
             return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, order, CancellationToken.None));
@@ -187,7 +206,7 @@ namespace altinnendata_api.Features.Shop
             VippsPayment payment;
             try
             {
-                payment = await vipps.RefundPaymentAsync(order.Reference, amount, key, order.IsTest, ct);
+                payment = await vipps.RefundPaymentAsync(order.VippsReference, amount, key, order.IsTest, ct);
             }
             catch (HttpRequestException ex) when (ShopVipps.IsRejection(ex))
             {
@@ -196,7 +215,7 @@ namespace altinnendata_api.Features.Shop
                 VippsPayment current;
                 try
                 {
-                    current = await vipps.GetPaymentAsync(order.Reference, order.IsTest, CancellationToken.None);
+                    current = await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, CancellationToken.None);
                 }
                 catch (Exception lookup) when (ShopVipps.IsProviderFailure(lookup, CancellationToken.None))
                 {
@@ -269,7 +288,7 @@ namespace altinnendata_api.Features.Shop
                         [RefundRequest.AmountField] = [$"The amount must be between 1 and {left} øre."]
                     }), 0, "");
 
-                var key = $"refund-{order.Reference}-{expected}";
+                var key = $"refund-{order.VippsReference}-{expected}";
                 if (order.PendingRefundKey == key && order.PendingRefundInOre != amount)
                     return (order, ShopProblems.Code(StatusCodes.Status409Conflict, "refundPending",
                         "Wait until Vipps has confirmed the last refund."), 0, "");

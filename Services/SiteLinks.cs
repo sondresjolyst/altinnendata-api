@@ -19,6 +19,10 @@ namespace altinnendata_api.Services
         public static string ShopReturn(IConfiguration config, string locale, string token) =>
             $"{BaseUrl(config)}/{locale}/shop/return?token={Uri.EscapeDataString(token)}";
 
+        /// <summary>The page where the buyer pays an order again after its reservation ended.</summary>
+        public static string ShopPay(IConfiguration config, string locale, string token) =>
+            $"{BaseUrl(config)}/{locale}/shop/pay/{Uri.EscapeDataString(token)}";
+
         public static string AdminOrder(IConfiguration config, int id) =>
             $"{BaseUrl(config)}/{DefaultLocale}/admin/shop/orders/{id}";
 

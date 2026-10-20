@@ -57,7 +57,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
 
         var order = new Order
         {
-            Reference = Reference,
+            Reference = Reference, VippsReference = Reference,
             PublicToken = "token-1",
             Status = status,
             Locale = "no",
