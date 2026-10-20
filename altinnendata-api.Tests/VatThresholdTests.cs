@@ -60,7 +60,7 @@ public class VatThresholdTests : TestBase
         db.OutsideSalesMonths.AddRange(
             new OutsideSalesMonth { Month = Month(2026, 10), AmountInOre = 20_000 },
             new OutsideSalesMonth { Month = Month(2025, 11), AmountInOre = 30_000 },
-            new OutsideSalesMonth { Month = Month(2025, 10), AmountInOre = 999_000 }); // before the window
+            new OutsideSalesMonth { Month = Month(2025, 9), AmountInOre = 999_000 });  // before the window
         await db.SaveChangesAsync(Ct);
 
         var status = await VatThreshold.StatusAsync(db, Now, Ct);
@@ -103,18 +103,40 @@ public class VatThresholdTests : TestBase
     }
 
     [Fact]
-    public void Months_AreTheCurrentMonthAndThe11Before_OldestFirst()
+    public void Months_AreTheMonthsTheWindowEndingTodayOverlaps_OldestFirst()
     {
+        // The window ending 19 October 2026 starts 20 October 2025, so it overlaps 13 months.
         var status = VatThreshold.Compute(
             [Sale("a", Now.AddMonths(-1), 10_000), Sale("b", Now.AddMonths(-1).AddDays(2), 5_000)],
             new Dictionary<DateOnly, long> { [Month(2026, 9)] = 7_000 },
             Now);
 
-        Assert.Equal(12, status.Months.Count);
-        Assert.Equal("2025-11", status.Months[0].Month);
+        Assert.Equal(13, status.Months.Count);
+        Assert.Equal("2025-10", status.Months[0].Month);
         Assert.Equal("2026-10", status.Months[^1].Month);
         Assert.Equal(new VatMonthDto("2026-09", 15_000, 7_000), status.Months[^2]);
         Assert.Equal(22_000, status.TurnoverInOre);
+    }
+
+    [Fact]
+    public void Months_OnTheLastDayOfAMonth_AreTwelve()
+    {
+        var status = VatThreshold.Compute([], NoOutside(), new DateTime(2026, 10, 31, 12, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(12, status.Months.Count);
+        Assert.Equal("2025-11", status.Months[0].Month);
+    }
+
+    [Fact]
+    public void Months_CountOnlyTheShopSalesInsideTheWindow_AndAllOfTheOutsideSales()
+    {
+        var status = VatThreshold.Compute(
+            [Sale("out", new DateTime(2025, 10, 19, 12, 0, 0, DateTimeKind.Utc), 100), Sale("in", new DateTime(2025, 10, 20, 12, 0, 0, DateTimeKind.Utc), 1)],
+            new Dictionary<DateOnly, long> { [Month(2025, 10)] = 5_000 },
+            Now);
+
+        Assert.Equal(new VatMonthDto("2025-10", 1, 5_000), status.Months[0]);
+        Assert.Equal(5_001, status.TurnoverInOre);
     }
 
     [Fact]
@@ -130,13 +152,66 @@ public class VatThresholdTests : TestBase
     }
 
     [Fact]
-    public void Window_DropsTheMonthTwelveMonthsBack()
+    public void Window_StartsTheDayAfterTheSameDateAYearBack()
     {
+        // Today is 19 October 2026, so the window starts 20 October 2025.
         var status = VatThreshold.Compute(
-            [Sale("old", new DateTime(2025, 10, 31, 12, 0, 0, DateTimeKind.Utc), 100), Sale("in", new DateTime(2025, 11, 1, 12, 0, 0, DateTimeKind.Utc), 1)],
+            [Sale("old", new DateTime(2025, 10, 19, 12, 0, 0, DateTimeKind.Utc), 100), Sale("in", new DateTime(2025, 10, 20, 12, 0, 0, DateTimeKind.Utc), 1)],
             NoOutside(), Now);
 
         Assert.Equal(1, status.TurnoverInOre);
+    }
+
+    [Fact]
+    public void Window_FollowsNorwegianTime()
+    {
+        // 22:30 UTC on 19 October 2025 is 00:30 on 20 October in Oslo, so the sale is inside the window.
+        var status = VatThreshold.Compute([Sale("a", new DateTime(2025, 10, 19, 22, 30, 0, DateTimeKind.Utc), 100)], NoOutside(), Now);
+
+        Assert.Equal(100, status.TurnoverInOre);
+        Assert.Equal(new DateOnly(2025, 10, 20), VatThreshold.DayOf(new DateTime(2025, 10, 19, 22, 30, 0, DateTimeKind.Utc)));
+    }
+
+    [Fact]
+    public void AWindowStartingMidMonth_PassesTheThreshold_EvenWhenNoCalendarMonthWindowDoes()
+    {
+        // 15 March 2025 to 10 March 2026 is inside the window ending 10 March 2026, but no run of 12 calendar months
+        // holds both sales.
+        var status = VatThreshold.Compute(
+            [Sale("first", new DateTime(2025, 3, 15, 12, 0, 0, DateTimeKind.Utc), 3_000_000), Sale("second", new DateTime(2026, 3, 10, 12, 0, 0, DateTimeKind.Utc), 2_500_000)],
+            NoOutside(), Now);
+
+        Assert.Equal("second", status.CrossingOrderReference);
+        Assert.Equal("2026-03-10", status.CrossedOn);
+        Assert.Equal("2026-03", status.CrossedMonth);
+        Assert.Equal(new DateTime(2026, 3, 10, 12, 0, 0, DateTimeKind.Utc), status.CrossedAt);
+    }
+
+    [Theory]
+    [InlineData(16, "second")]
+    [InlineData(15, null)]
+    public void ASaleOnTheSameDateAYearEarlier_IsOutsideTheWindow_TheDayAfterIsInside(int firstDay, string? crossing)
+    {
+        var status = VatThreshold.Compute(
+            [Sale("first", new DateTime(2025, 3, firstDay, 12, 0, 0, DateTimeKind.Utc), 3_000_000), Sale("second", new DateTime(2026, 3, 15, 12, 0, 0, DateTimeKind.Utc), 2_500_000)],
+            NoOutside(), Now);
+
+        Assert.Equal(crossing, status.CrossingOrderReference);
+        Assert.Equal(crossing == null ? null : "2026-03-15", status.CrossedOn);
+    }
+
+    [Theory]
+    [InlineData(30, "sale")]
+    [InlineData(31, null)]
+    public void OutsideSales_CountInEveryWindowTheirMonthOverlaps(int saleDay, string? crossing)
+    {
+        // The window ending 30 March 2026 starts 31 March 2025 and overlaps March 2025. The one ending 31 March starts 1 April.
+        var status = VatThreshold.Compute(
+            [Sale("sale", new DateTime(2026, 3, saleDay, 10, 0, 0, DateTimeKind.Utc), 200_000)],
+            new Dictionary<DateOnly, long> { [Month(2025, 3)] = 4_900_000 },
+            Now);
+
+        Assert.Equal(crossing, status.CrossingOrderReference);
     }
 
     [Fact]
@@ -242,6 +317,7 @@ public class VatThresholdTests : TestBase
             Now);
 
         Assert.Equal("2026-07", status.CrossedMonth);
+        Assert.Equal("2026-07-01", status.CrossedOn);
         Assert.Null(status.CrossingOrderReference);
         Assert.Null(status.CrossedAt);
     }

@@ -7,9 +7,10 @@ namespace altinnendata_api.Features.Shop
     public record VatMonthDto(string Month, long ShopInOre, long OutsideInOre);
 
     /// <summary>
-    /// Turnover over the last 12 months against the VAT registration threshold. <c>CrossedMonth</c> is the first month
-    /// where the 12 months up to it passed the threshold. <c>CrossingOrderReference</c> names the shop sale that passed
-    /// it, and is empty when sales outside the shop did.
+    /// Turnover over the 12 months up to today against the VAT registration threshold, with the months that period
+    /// overlaps. <c>CrossedOn</c> is the first day, as yyyy-MM-dd, where the 12 months up to it passed the threshold, and
+    /// <c>CrossedMonth</c> is its month as yyyy-MM. <c>CrossingOrderReference</c> names the shop sale that passed it, and
+    /// is empty when sales outside the shop did.
     /// </summary>
     public record VatThresholdDto(
         long TurnoverInOre,
@@ -19,7 +20,8 @@ namespace altinnendata_api.Features.Shop
         string? CrossedMonth,
         string? CrossingOrderReference,
         DateTime? CrossedAt,
-        IReadOnlyList<VatMonthDto> Months);
+        IReadOnlyList<VatMonthDto> Months,
+        string? CrossedOn);
 
     public class UpdateOutsideSalesDto
     {

@@ -11,8 +11,10 @@ namespace altinnendata_api.Features.Shop
     /// Tracks turnover against the 50 000 kr VAT registration threshold (merverdiavgiftsloven § 2-1). Registration is
     /// required once turnover over 12 months passes the threshold, and VAT is owed from the sale that passes it.
     /// Turnover is what the shop captured less what it refunded, test orders left out, plus the sales outside the shop
-    /// the admin enters per month. Months are calendar months in Norwegian time, and the window is the current month
-    /// and the 11 before it. Ported from garge-api's VatThresholdService.
+    /// the admin enters per month. Any 12 month period counts, so the threshold is checked over the window that ends on
+    /// each day, in Norwegian time. A shop sale counts on the day it was captured. The day of a sale outside the shop
+    /// is not known, so a month of them counts in every window the month overlaps, which warns early rather than late.
+    /// Ported from garge-api's VatThresholdService.
     /// </summary>
     public static class VatThreshold
     {
@@ -33,11 +35,21 @@ namespace altinnendata_api.Features.Shop
         public sealed record Sale(string Reference, DateTime At, int AmountInOre);
 
         /// <summary>The first day of the Norwegian calendar month <paramref name="utc"/> falls in.</summary>
-        public static DateOnly MonthOf(DateTime utc)
-        {
-            var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value);
-            return new DateOnly(local.Year, local.Month, 1);
-        }
+        public static DateOnly MonthOf(DateTime utc) => FirstOfMonth(DayOf(utc));
+
+        /// <summary>The Norwegian date <paramref name="utc"/> falls on.</summary>
+        public static DateOnly DayOf(DateTime utc) =>
+            DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value));
+
+        /// <summary>The first day of the 12 month window that ends on <paramref name="end"/>, both days included.</summary>
+        public static DateOnly WindowStart(DateOnly end) => end.AddMonths(-WindowMonths).AddDays(1);
+
+        private static DateOnly FirstOfMonth(DateOnly day) => new(day.Year, day.Month, 1);
+
+        private static bool InWindow(DateOnly day, DateOnly start, DateOnly end) => day >= start && day <= end;
+
+        /// <summary>True when any day of <paramref name="month"/> is in the window from <paramref name="start"/> to <paramref name="end"/>.</summary>
+        private static bool Overlaps(DateOnly month, DateOnly start, DateOnly end) => month <= end && month.AddMonths(1) > start;
 
         public static async Task<VatThresholdDto> StatusAsync(ApplicationDbContext db, DateTime now, CancellationToken ct)
         {
@@ -54,68 +66,74 @@ namespace altinnendata_api.Features.Shop
             return Compute(sales, outside, now);
         }
 
-        /// <summary>The figure from the shop's sales and the sales outside it, as it stands at <paramref name="now"/>.</summary>
+        /// <summary>
+        /// The figure from the shop's sales and the sales outside it, as it stands at <paramref name="now"/>. The turnover
+        /// is the window that ends today, and the months are the ones that window overlaps, oldest first.
+        /// </summary>
         public static VatThresholdDto Compute(IReadOnlyList<Sale> sales, IReadOnlyDictionary<DateOnly, long> outside, DateTime now)
         {
-            var current = MonthOf(now);
+            var today = DayOf(now);
+            var start = WindowStart(today);
             var shopByMonth = sales
+                .Where(s => InWindow(DayOf(s.At), start, today))
                 .GroupBy(s => MonthOf(s.At))
                 .ToDictionary(g => g.Key, g => g.Sum(s => (long)s.AmountInOre));
 
-            long Shop(DateOnly month) => shopByMonth.GetValueOrDefault(month);
-            long Outside(DateOnly month) => outside.GetValueOrDefault(month);
-
-            var months = Enumerable.Range(0, WindowMonths)
-                .Select(i => current.AddMonths(i - (WindowMonths - 1)))
-                .Select(m => new VatMonthDto(Format(m), Shop(m), Outside(m)))
-                .ToList();
+            var months = new List<VatMonthDto>();
+            for (var month = FirstOfMonth(start); month <= today; month = month.AddMonths(1))
+                months.Add(new VatMonthDto(FormatMonth(month), shopByMonth.GetValueOrDefault(month), outside.GetValueOrDefault(month)));
             var turnover = months.Sum(m => m.ShopInOre + m.OutsideInOre);
 
-            var crossing = FindCrossing(sales, shopByMonth, outside, current);
+            var crossing = FindCrossing(sales, outside, today);
 
             return new VatThresholdDto(
                 turnover,
                 ThresholdInOre,
                 WarnFromInOre,
                 turnover >= WarnFromInOre,
-                crossing is { } c ? Format(c.Month) : null,
+                crossing is { } c ? FormatMonth(c.Day) : null,
                 crossing?.Sale?.Reference,
                 crossing?.Sale?.At,
-                months);
+                months,
+                crossing is { } d ? d.Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null);
         }
 
         /// <summary>
-        /// The first month where the 12 months up to and including it pass the threshold, and the sale in it that
-        /// passed it. Within a month the sales outside the shop are counted first, since their day is not known.
+        /// The first day, up to <paramref name="today"/>, where the 12 month window ending on it passes the threshold, and
+        /// the sale that day that passed it. A window only grows on a day a shop sale is captured or a month of outside
+        /// sales starts, so those are the days checked. On a day the outside sales are counted first, since their day is
+        /// not known, and the sale is empty when they passed the threshold.
         /// </summary>
-        private static (DateOnly Month, Sale? Sale)? FindCrossing(
+        private static (DateOnly Day, Sale? Sale)? FindCrossing(
             IReadOnlyList<Sale> sales,
-            Dictionary<DateOnly, long> shopByMonth,
             IReadOnlyDictionary<DateOnly, long> outside,
-            DateOnly current)
+            DateOnly today)
         {
-            var known = shopByMonth.Keys.Concat(outside.Keys).ToList();
-            if (known.Count == 0) return null;
+            var dated = sales.Select(s => (Day: DayOf(s.At), Sale: s)).ToList();
+            var days = dated.Select(s => s.Day)
+                .Concat(outside.Keys)
+                .Where(d => d <= today)
+                .Distinct()
+                .Order();
 
-            long Total(DateOnly month) => shopByMonth.GetValueOrDefault(month) + outside.GetValueOrDefault(month);
-
-            for (var month = known.Min(); month <= current; month = month.AddMonths(1))
+            foreach (var day in days)
             {
-                var running = Enumerable.Range(1, WindowMonths - 1).Sum(i => Total(month.AddMonths(-i)))
-                    + outside.GetValueOrDefault(month);
-                if (running > ThresholdInOre) return (month, null);
+                var start = WindowStart(day);
+                var running = outside.Where(m => Overlaps(m.Key, start, day)).Sum(m => m.Value)
+                    + dated.Where(s => s.Day >= start && s.Day < day).Sum(s => (long)s.Sale.AmountInOre);
+                if (running > ThresholdInOre) return (day, null);
 
-                foreach (var sale in sales.Where(s => MonthOf(s.At) == month).OrderBy(s => s.At))
+                foreach (var sale in dated.Where(s => s.Day == day).Select(s => s.Sale).OrderBy(s => s.At))
                 {
                     running += sale.AmountInOre;
-                    if (running > ThresholdInOre) return (month, sale);
+                    if (running > ThresholdInOre) return (day, sale);
                 }
             }
 
             return null;
         }
 
-        private static string Format(DateOnly month) => month.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        private static string FormatMonth(DateOnly day) => day.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
         public static async Task<IResult> Get(ApplicationDbContext db, CancellationToken ct) =>
             TypedResults.Ok(await StatusAsync(db, DateTime.UtcNow, ct));
