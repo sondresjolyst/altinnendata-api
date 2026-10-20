@@ -133,7 +133,8 @@ public class ContactSliceTests : TestBase
         Assert.Equal("post@altinnendata.no", receipt.ReplyTo);
         Assert.Equal("Vi har mottatt meldingen din", receipt.Subject);
         Assert.Contains(">Vi har mottatt meldingen din</h1>", receipt.HtmlBody);
-        Assert.Contains(">Kvittering</span>", receipt.HtmlBody);
+        Assert.Contains(">Melding mottatt</span>", receipt.HtmlBody);
+        Assert.Contains(">Du f&#229;r denne e-posten fordi du sendte oss en melding.</td></tr>", receipt.HtmlBody);
         Assert.Contains(" og svarer så snart vi kan.", receipt.HtmlBody);
         Assert.DoesNotContain("Kari", receipt.HtmlBody);
         Assert.DoesNotContain("evil", receipt.HtmlBody);

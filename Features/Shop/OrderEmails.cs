@@ -53,17 +53,17 @@ namespace altinnendata_api.Features.Shop
             var withTerms = !string.IsNullOrWhiteSpace(o.TermsMarkdown);
             body.Append(no
                 ? "<p><strong>Angrerett</strong><br/>Du har 14 dagers angrerett fra den dagen du mottar varen. "
-                  + $"Bruk det vedlagte angrerettskjemaet, eller gi oss beskjed på e-post til <a href=\"mailto:{email}\">{email}</a>. "
+                  + $"Bruk det vedlagte angrerettskjemaet, eller gi oss beskjed på e-post til <a href=\"mailto:{email}\" style=\"{BrandedEmail.LinkStyle}\">{email}</a>. "
                   + (withTerms ? "Vilkårene du godtok og angrerettskjemaet ligger vedlagt.</p>" : "Angrerettskjemaet ligger vedlagt.</p>")
                 : "<p><strong>Right of withdrawal</strong><br/>You have 14 days to withdraw from the day you receive the item. "
-                  + $"Use the attached withdrawal form, or tell us by email at <a href=\"mailto:{email}\">{email}</a>. "
+                  + $"Use the attached withdrawal form, or tell us by email at <a href=\"mailto:{email}\" style=\"{BrandedEmail.LinkStyle}\">{email}</a>. "
                   + (withTerms ? "The terms you accepted and the withdrawal form are attached.</p>" : "The withdrawal form is attached.</p>"));
             body.Append(no
-                ? $"<p>Les <a href=\"{terms}\">vilkårene</a> på nettsiden.</p>"
-                : $"<p>Read the <a href=\"{terms}\">terms</a> on the website.</p>");
+                ? $"<p>Les <a href=\"{terms}\" style=\"{BrandedEmail.LinkStyle}\">vilkårene</a> på nettsiden.</p>"
+                : $"<p>Read the <a href=\"{terms}\" style=\"{BrandedEmail.LinkStyle}\">terms</a> on the website.</p>");
 
             var html = BrandedEmail.Html(s, no, no ? "Ordrebekreftelse" : "Order confirmation",
-                no ? "Takk for bestillingen" : "Thank you for your order", body.ToString());
+                no ? "Takk for bestillingen" : "Thank you for your order", body.ToString(), footer: BrandedEmail.OrderFooter(s, no));
             return new EmailMessage(o.BuyerEmail, no ? $"Ordrebekreftelse {o.Reference}" : $"Order confirmation {o.Reference}", html);
         }
 
@@ -144,7 +144,7 @@ namespace altinnendata_api.Features.Shop
             body.Append(no
                 ? "<p>Reservasjonen i Vipps er opphevet. Ingen penger er trukket. Datamaskinen er fortsatt holdt av for deg. Vi tar kontakt med deg.</p>"
                 : "<p>The reservation in Vipps has been cancelled. No money has been taken. The computer is still held for you. We will contact you.</p>");
-            var html = BrandedEmail.Html(s, no, no ? "Reservasjon opphevet" : "Reservation cancelled", subject, body.ToString());
+            var html = BrandedEmail.Html(s, no, no ? "Reservasjon opphevet" : "Reservation cancelled", subject, body.ToString(), footer: BrandedEmail.OrderFooter(s, no));
             return new EmailMessage(o.BuyerEmail, subject, html) { ReplyTo = s.PublicEmail };
         }
 
@@ -165,7 +165,7 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<p>{(no ? "Beløp" : "Amount")}: {Kroner(o.TotalInOre, o.Locale)} kr</p>");
             var after = no ? $"<p>Lenken er gyldig til {until}.</p>" : $"<p>The link works until {until}.</p>";
             var html = BrandedEmail.Html(s, no, no ? "Betalingslenke" : "Payment link", subject, body.ToString(),
-                new EmailButton(no ? "Betal med Vipps" : "Pay with Vipps", link), after);
+                new EmailButton(no ? "Betal med Vipps" : "Pay with Vipps", link), after, BrandedEmail.OrderFooter(s, no));
             return new EmailMessage(o.BuyerEmail, subject, html) { ReplyTo = s.PublicEmail };
         }
 
@@ -200,7 +200,7 @@ namespace altinnendata_api.Features.Shop
             if (!string.IsNullOrWhiteSpace(o.ShippingNote))
                 body.Append($"<p><strong>{(no ? "Melding fra oss" : "Message from us")}</strong><br/>{EncMultiline(o.ShippingNote)}</p>");
             var badge = pickup ? (no ? "Klar for henting" : "Ready for pickup") : (no ? "Sendt" : "Sent");
-            return new EmailMessage(o.BuyerEmail, $"{heading} {o.Reference}", BrandedEmail.Html(s, no, badge, heading, body.ToString()));
+            return new EmailMessage(o.BuyerEmail, $"{heading} {o.Reference}", BrandedEmail.Html(s, no, badge, heading, body.ToString(), footer: BrandedEmail.OrderFooter(s, no)));
         }
 
         public static EmailMessage BuyerCancelled(Order o, AppSettings s)
@@ -212,7 +212,7 @@ namespace altinnendata_api.Features.Shop
                 ? "<p>Reservasjonen i Vipps er opphevet. Ingen penger er trukket.</p>"
                 : "<p>The reservation in Vipps has been cancelled. No money has been taken.</p>");
             var html = BrandedEmail.Html(s, no, no ? "Kansellert" : "Cancelled",
-                no ? "Ordren er kansellert" : "Your order is cancelled", body.ToString());
+                no ? "Ordren er kansellert" : "Your order is cancelled", body.ToString(), footer: BrandedEmail.OrderFooter(s, no));
             return new EmailMessage(o.BuyerEmail, no ? $"Ordre {o.Reference} er kansellert" : $"Order {o.Reference} is cancelled", html);
         }
 
@@ -236,7 +236,7 @@ namespace altinnendata_api.Features.Shop
                 : $"<p>We have refunded {amount} kr to the payment method you used in Vipps. It can take a few days before the amount appears in your account.</p>");
             var subject = !all ? partSubject
                 : no ? $"Pengene for ordre {o.Reference} er betalt tilbake" : $"Order {o.Reference} is refunded";
-            return new EmailMessage(o.BuyerEmail, subject, BrandedEmail.Html(s, no, no ? "Tilbakebetalt" : "Refunded", heading, body.ToString()));
+            return new EmailMessage(o.BuyerEmail, subject, BrandedEmail.Html(s, no, no ? "Tilbakebetalt" : "Refunded", heading, body.ToString(), footer: BrandedEmail.OrderFooter(s, no)));
         }
 
         private static void AppendLines(StringBuilder body, Order o, bool no)

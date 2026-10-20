@@ -31,7 +31,6 @@ public class AuthEmailBrandTests : TestBase
         Assert.Equal("923202374", brand.OrgNumber);
         Assert.True(brand.VatRegistered);
         Assert.Equal("post@example.com", brand.Email);
-        Assert.Equal("Foretaksregisteret", brand.RegisterName);
         Assert.Equal(new AppSettings { StreetAddress = "Gate 1", PostalCode = "0150", AddressLocality = "Oslo" }.FormattedAddress, brand.Address);
     }
 

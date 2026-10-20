@@ -173,6 +173,37 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("background:#0f3d3a;color:#fff", html);
         Assert.DoesNotContain("<h2>", html);
         Assert.DoesNotContain("<hr/>", html);
+        Assert.DoesNotContain("<a href=\"mailto:altinnendata@gmail.com\">", html);
+    }
+
+    [Theory]
+    [InlineData("no", "Du f&#229;r denne e-posten fordi du har bestilt fra ALTINNENDATA AS.")]
+    [InlineData("en", "You receive this email because you ordered from ALTINNENDATA AS.")]
+    public void BuyerEmails_EndWithTheFooterLine_NamingTheRegisteredName(string locale, string footer)
+    {
+        var s = new AppSettings { CompanyLegalName = "ALTINNENDATA AS" };
+        var refunded = Refunded(NewOrder(locale));
+        var bodies = new[]
+        {
+            OrderEmails.BuyerConfirmation(NewOrder(locale), s, Config()).HtmlBody,
+            OrderEmails.BuyerShipped(NewOrder(locale), s).HtmlBody,
+            OrderEmails.BuyerCancelled(NewOrder(locale), s).HtmlBody,
+            OrderEmails.BuyerRefunded(refunded, 1318900, s).HtmlBody,
+            OrderEmails.BuyerReservationEnded(NewOrder(locale), s).HtmlBody,
+            OrderEmails.BuyerPaymentLink(NewOrder(locale), "https://www.altinnendata.no/no/shop/pay/x", s).HtmlBody,
+        };
+
+        Assert.All(bodies, body => Assert.Contains($">{footer}</td></tr>", body));
+    }
+
+    [Fact]
+    public void BuyerFooter_FallsBackToTheCompanyName_AndOwnerEmailsHaveNoFooter()
+    {
+        var s = new AppSettings { CompanyName = "Altinnendata", CompanyLegalName = "" };
+
+        Assert.Contains("fordi du har bestilt fra Altinnendata.</td></tr>", OrderEmails.BuyerCancelled(NewOrder(), s).HtmlBody);
+        Assert.DoesNotContain("border-top:1px solid #e5e7eb", OrderEmails.OwnerNewOrder(NewOrder(), s, Config()).HtmlBody);
+        Assert.DoesNotContain("border-top:1px solid #e5e7eb", OrderEmails.OwnerReservationEnded(NewOrder(), "EXPIRED", s, Config()).HtmlBody);
     }
 
     [Theory]
@@ -333,9 +364,9 @@ public class OrderEmailsTests : TestBase
         Assert.Contains($"<strong>{heading}</strong>", msg.HtmlBody);
         Assert.Contains(days, msg.HtmlBody);
         Assert.Contains(how, msg.HtmlBody);
-        Assert.Contains("<a href=\"mailto:post@altinnendata.no\">post@altinnendata.no</a>", msg.HtmlBody);
+        Assert.Contains("<a href=\"mailto:post@altinnendata.no\" style=\"color:#00887a\">post@altinnendata.no</a>", msg.HtmlBody);
         Assert.Contains(attached, msg.HtmlBody);
-        Assert.Contains($"<a href=\"https://www.altinnendata.no/{locale}/terms\">", msg.HtmlBody);
+        Assert.Contains($"<a href=\"https://www.altinnendata.no/{locale}/terms\" style=\"color:#00887a\">", msg.HtmlBody);
     }
 
     [Theory]

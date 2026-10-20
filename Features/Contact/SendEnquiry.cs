@@ -160,7 +160,8 @@ namespace altinnendata_api.Features.Contact
             body.Append(no
                 ? $"<p>Vi har mottatt meldingen din {local.ToString("dd.MM.yyyy 'kl.' HH:mm", CultureInfo.InvariantCulture)} og svarer så snart vi kan.</p>"
                 : $"<p>We received your message on {local.ToString("d MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture)} and will reply as soon as we can.</p>");
-            var html = BrandedEmail.Html(settings, no, no ? "Kvittering" : "Receipt", subject, body.ToString());
+            var html = BrandedEmail.Html(settings, no, no ? "Melding mottatt" : "Message received", subject, body.ToString(),
+                footer: BrandedEmail.MessageFooter(no));
             return new EmailMessage(to, subject, html) { ReplyTo = settings.PublicEmail };
         }
 
@@ -171,7 +172,7 @@ namespace altinnendata_api.Features.Contact
 
             var title = BuildMapping.PickTranslation(build, Locales.Default)?.Title ?? build.Slug;
             var url = SiteLinks.Build(config, build.Slug);
-            return $"<a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(title)}</a> ({WebUtility.HtmlEncode(build.Slug)})";
+            return $"<a href=\"{WebUtility.HtmlEncode(url)}\" style=\"{BrandedEmail.LinkStyle}\">{WebUtility.HtmlEncode(title)}</a> ({WebUtility.HtmlEncode(build.Slug)})";
         }
 
         public class Endpoint : IEndpoint
