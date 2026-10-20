@@ -49,7 +49,11 @@ namespace altinnendata_api.Features.Contact
 
         public const string EmailField = "email";
 
-        private static readonly char[] Forbidden = [',', ';', '<', '>', '\r', '\n'];
+        /// <summary>
+        /// List separators and header characters, plus the quoted local parts, backslash escapes and domain
+        /// literals that let one mailbox be spelled many ways.
+        /// </summary>
+        private static readonly char[] Forbidden = [',', ';', '<', '>', '\r', '\n', '"', '\\', '[', ']'];
 
         /// <summary>
         /// True when <paramref name="value"/> is one plain address and nothing else, so it cannot add recipients
@@ -58,7 +62,7 @@ namespace altinnendata_api.Features.Contact
         public static bool IsSingleAddress(string? value)
         {
             var trimmed = value?.Trim();
-            if (string.IsNullOrEmpty(trimmed) || value!.IndexOfAny(Forbidden) >= 0) return false;
+            if (string.IsNullOrEmpty(trimmed) || value!.IndexOfAny(Forbidden) >= 0 || trimmed.EndsWith('.')) return false;
             try
             {
                 return new MailAddress(trimmed).Address == trimmed;
