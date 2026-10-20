@@ -77,6 +77,9 @@ namespace altinnendata_api.Features.Contact
     /// <summary>Sends a contact / build enquiry to the configured recipient, and a receipt to the sender.</summary>
     public static class SendEnquiry
     {
+        internal const string NoReceiptNote =
+            "Ingen kvittering sendt til avsenderen. Bekreft mottak selv hvis meldingen gjelder angrerett.";
+
         private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
         {
             try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Oslo"); }
@@ -100,20 +103,25 @@ namespace altinnendata_api.Features.Contact
                     .Include(b => b.Translations)
                     .FirstOrDefaultAsync(b => b.Slug == req.BuildSlug, ct);
 
+            var receipt = receipts.TryAcquire(sender);
             await email.SendAsync(
-                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config))
+                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config, receipt))
                 {
                     ReplyTo = sender,
                 },
                 ct);
 
-            if (receipts.TryAcquire(sender))
+            if (receipt)
                 await email.SendAsync(BuildReceipt(sender, req.Locale, settings, DateTime.UtcNow), ct);
 
-            return TypedResults.Ok(new MessageResponse("Thanks — we'll be in touch."));
+            return TypedResults.Ok(new MessageResponse("Thanks. We will be in touch."));
         }
 
-        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config)
+        /// <summary>
+        /// The owner's copy. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a
+        /// withdrawal sent through the form then has to be confirmed by hand.
+        /// </summary>
+        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config, bool receiptSent)
         {
             string Enc(string? v) => WebUtility.HtmlEncode(v ?? string.Empty);
 
@@ -134,6 +142,8 @@ namespace altinnendata_api.Features.Contact
 
             body.Append("<p><strong>Message:</strong></p>");
             body.Append($"<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>");
+            if (!receiptSent)
+                body.Append($"<p><strong>{NoReceiptNote}</strong></p>");
             return body.ToString();
         }
 

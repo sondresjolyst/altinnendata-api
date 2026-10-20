@@ -41,7 +41,8 @@ public class ContactSliceTests : TestBase
         using var cts = new CancellationTokenSource();
 
         var req = new ContactRequest("Ola", "ola@kunde.no", null, "gaming", "25000+", "gaming-pc", "Hi");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), cts.Token));
+        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), cts.Token));
+        Assert.Equal("Thanks. We will be in touch.", ok.Value!.Message);
 
         email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), cts.Token), Times.Exactly(2));
         Assert.Equal("shop@altinnendata.no", sent!.To);
@@ -169,6 +170,9 @@ public class ContactSliceTests : TestBase
         Assert.Equal(3, messages.Count(m => m.To == "sonyslyst@gmail.com"));
         Assert.Equal(["kari@kunde.no", "ola@kunde.no"], messages.Where(m => m.To != "sonyslyst@gmail.com").Select(m => m.To));
         Assert.Equal(TimeSpan.FromMinutes(10), ContactReceiptGate.AddressWindow);
+        var owners = messages.Where(m => m.To == "sonyslyst@gmail.com").ToList();
+        Assert.Equal([false, true, false], owners.Select(m => m.HtmlBody.Contains(SendEnquiry.NoReceiptNote)));
+        Assert.Equal("Ingen kvittering sendt til avsenderen. Bekreft mottak selv hvis meldingen gjelder angrerett.", SendEnquiry.NoReceiptNote);
     }
 
     [Fact]
@@ -185,7 +189,9 @@ public class ContactSliceTests : TestBase
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), gate, default);
 
-        Assert.Equal("sonyslyst@gmail.com", Assert.Single(messages).To);
+        var owner = Assert.Single(messages);
+        Assert.Equal("sonyslyst@gmail.com", owner.To);
+        Assert.Contains(SendEnquiry.NoReceiptNote, owner.HtmlBody);
     }
 
     [Theory]
