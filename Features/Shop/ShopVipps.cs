@@ -58,7 +58,7 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>
         /// Registers the Vipps client with the credentials in the <c>Vipps</c> section and the shop's test mode,
-        /// and the ePayment webhook. The Data Protection keys that protect the webhook secrets are kept in the database.
+        /// the ePayment webhook and the payment polling that stands in for lost webhooks. The Data Protection keys that protect the webhook secrets are kept in the database.
         /// </summary>
         public static IServiceCollection AddShopVipps(this IServiceCollection services, IConfiguration config)
         {
@@ -78,7 +78,10 @@ namespace altinnendata_api.Features.Shop
                 o.AddSlot(Slot, VippsWebhookKind.Payment, WebhookPath);
                 o.AdvisoryLockKey = AdvisoryLockKey;
             });
-            services.AddScoped<IVippsPaymentWebhookHandler, ShopWebhookHandler>();
+            services.AddScoped<ShopWebhookHandler>();
+            services.AddScoped<IVippsPaymentWebhookHandler>(sp => sp.GetRequiredService<ShopWebhookHandler>());
+            services.AddScoped<ShopPaymentPolling>();
+            services.AddHostedService<ShopPaymentPollingService>();
             return services;
         }
 

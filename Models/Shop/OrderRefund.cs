@@ -1,7 +1,10 @@
 namespace altinnendata_api.Models.Shop
 {
-    /// <summary>Who recorded a refund: the admin's refund action, a REFUNDED webhook, or the migration that made rows for refunds recorded before.</summary>
-    public enum RefundSource { Admin, Webhook, Migrated }
+    /// <summary>
+    /// Who recorded a refund: the admin's refund action, a REFUNDED webhook, the payment polling that found a refund
+    /// whose webhook was lost, or the migration that made rows for refunds recorded before.
+    /// </summary>
+    public enum RefundSource { Admin, Webhook, Migrated, Polling }
 
     /// <summary>
     /// One refund on an order, so the accounts can have a credit note per refund. The order keeps the sum in
