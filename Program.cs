@@ -4,9 +4,11 @@ using MapsterMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.OpenApi;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Admin;
+using altinnendata_api.Features.Shop;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
@@ -22,6 +24,8 @@ using SjolystInnovation.AppKit.Hosting;
 using SjolystInnovation.AppKit.Email;
 using SjolystInnovation.AppKit.Storage.Images;
 using SjolystInnovation.AppKit.AdminStats;
+using SjolystInnovation.AppKit.Vipps;
+using SjolystInnovation.AppKit.Pdf;
 
 namespace altinnendata_api
 {
@@ -49,6 +53,16 @@ namespace altinnendata_api
             builder.Services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+            builder.Services.AddMemoryCache();
+            builder.Services.AddShopVipps(builder.Configuration);
+            builder.Services.AddScoped<IOrderNotifier, OrderNotifier>();
+            builder.Services.AddAppKitPdf();
+            builder.Services.AddScoped<OrderConfirmation>();
+            builder.Services.AddScoped<OrderConfirmationRetry>();
+            builder.Services.AddHostedService<OrderConfirmationRetryService>();
+            builder.Services.TryAddSingleton(TimeProvider.System);
+            builder.Services.AddSingleton<altinnendata_api.Features.Contact.ContactReceiptGate>();
+            builder.Services.AddHostedService<OrderRetentionService>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()
@@ -62,8 +76,8 @@ namespace altinnendata_api
             builder.Services.AddAppKitAuthEmails<User>(o =>
             {
                 o.Language = EmailLanguage.Norwegian;
-                o.HeaderColor = "#0f3d3a";
-                o.AccentColor = "#00887a";
+                o.HeaderColor = BrandedEmail.HeaderColor;
+                o.AccentColor = BrandedEmail.AccentColor;
                 o.SetPasswordUrl = SiteLinks.SetPasswordPage(builder.Configuration);
             });
             builder.Services.AddAppKitAccounts<User, ApplicationDbContext>(o => o.AdminRole = RoleNames.Admin);
@@ -149,6 +163,8 @@ namespace altinnendata_api
 
                 await SeedData.EnsureComponentCategoriesAsync(context);
                 await app.Services.SeedAppKitLegalPagesAsync<ApplicationDbContext>(LegalSeedText.All);
+                // After the legal pages, so the seeded terms predate the shop settings baseline.
+                await ShopSeed.EnsureAsync(context, CancellationToken.None);
                 await app.Services.SeedAppKitFirstAdminAsync<User>(app.Configuration, u => new User { FirstName = u.FirstName, LastName = u.LastName });
             }
 
@@ -193,6 +209,7 @@ namespace altinnendata_api
             });
             app.MapAppKitContentImages<ApplicationDbContext>("/api/content-images", o => o.Policy = Policies.Admin);
             app.MapAppKitEmailStats(configure: o => o.Policy = Policies.Admin);
+            app.MapAppKitVippsWebhook<ApplicationDbContext>(ShopVipps.Slot);
             app.MapAppKitHealthChecks();
             app.Run();
         }

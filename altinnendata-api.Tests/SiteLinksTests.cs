@@ -34,4 +34,28 @@ public class SiteLinksTests
 
         Assert.Equal("https://www.altinnendata.no/no/reset-password", link);
     }
+
+    [Fact]
+    public void ShopReturn_CarriesTheLocaleAndTheToken()
+    {
+        var link = SiteLinks.ShopReturn(Config("https://www.altinnendata.no/"), "en", "0123abcd");
+
+        Assert.Equal("https://www.altinnendata.no/en/shop/return?token=0123abcd", link);
+    }
+
+    [Fact]
+    public void AdminOrder_PointsAtTheNorwegianAdminPage()
+    {
+        var link = SiteLinks.AdminOrder(Config("https://dev.altinnendata.no"), 42);
+
+        Assert.Equal("https://dev.altinnendata.no/no/admin/shop/orders/42", link);
+    }
+
+    [Fact]
+    public void Terms_UsesTheLocale()
+    {
+        var link = SiteLinks.Terms(Config(null), "en");
+
+        Assert.Equal("https://www.altinnendata.no/en/terms", link);
+    }
 }

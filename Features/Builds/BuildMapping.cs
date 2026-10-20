@@ -41,6 +41,20 @@ namespace altinnendata_api.Features.Builds
                 translation?.Name ?? component.Condition.Key);
         }
 
+        /// <summary>The distinct conditions of the build's parts, in the conditions' own order.</summary>
+        public static IReadOnlyList<ComponentConditionRef> Conditions(PcBuild build, string locale) =>
+            build.Components
+                .Where(c => c.Condition != null)
+                .GroupBy(c => c.Condition!.Id)
+                .Select(g => g.First())
+                .OrderBy(c => c.Condition!.SortOrder).ThenBy(c => c.Condition!.Id)
+                .Select(c => ConditionRef(c, locale)!)
+                .ToList();
+
+        /// <summary>True when the build has parts and every one of them has a condition, so it can be sold.</summary>
+        public static bool AllPartsHaveCondition(PcBuild build) =>
+            build.Components.Count > 0 && build.Components.All(c => c.ComponentConditionId != null);
+
         public static BuildComponentDto ToComponentDto(PcBuildComponent component, string locale)
         {
             var category = component.ComponentPart?.Category ?? component.ComponentCategory;
@@ -87,7 +101,9 @@ namespace altinnendata_api.Features.Builds
                 translation?.Title ?? build.Slug,
                 translation?.Summary,
                 build.CreatedAt,
-                build.UpdatedAt);
+                build.UpdatedAt,
+                Conditions(build, locale),
+                AllPartsHaveCondition(build));
         }
 
         public static BuildDetailDto ToDetail(PcBuild build, string locale)
@@ -114,7 +130,9 @@ namespace altinnendata_api.Features.Builds
                 build.Components.OrderBy(c => c.SortOrder).Select(c => ToComponentDto(c, locale)).ToList(),
                 build.Translations.Select(t => t.Locale).OrderBy(l => l).ToList(),
                 build.CreatedAt,
-                build.UpdatedAt);
+                build.UpdatedAt,
+                Conditions(build, locale),
+                AllPartsHaveCondition(build));
         }
 
         public static BuildAdminDto ToAdmin(PcBuild build) => new(
@@ -138,6 +156,8 @@ namespace altinnendata_api.Features.Builds
             build.Components.OrderBy(c => c.SortOrder).Select(c => ToComponentDto(c, Locales.Default)).ToList(),
             GalleryIds(build),
             build.CreatedAt,
-            build.UpdatedAt);
+            build.UpdatedAt,
+            Conditions(build, Locales.Default),
+            AllPartsHaveCondition(build));
     }
 }

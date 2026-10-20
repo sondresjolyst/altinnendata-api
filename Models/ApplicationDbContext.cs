@@ -1,15 +1,18 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SjolystInnovation.AppKit.SiteSettings;
 using altinnendata_api.Models.Admin;
+using altinnendata_api.Models.Shop;
 using SjolystInnovation.AppKit.Auth;
 using SjolystInnovation.AppKit.Storage.Images;
+using SjolystInnovation.AppKit.Vipps;
 
 namespace altinnendata_api.Models
 {
     public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-        : IdentityDbContext<User, IdentityRole, string>(options), IAuthDbContext
+        : IdentityDbContext<User, IdentityRole, string>(options), IAuthDbContext, IVippsWebhookDbContext, IDataProtectionKeyContext
     {
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<AppSettings> AppSettings { get; set; }
@@ -30,6 +33,14 @@ namespace altinnendata_api.Models
         public DbSet<ContentImage> ContentImages { get; set; }
         public DbSet<ContentImageVariant> ContentImageVariants { get; set; }
         public DbSet<DailyStatSnapshot> DailyStatSnapshots { get; set; }
+        public DbSet<ShopSettings> ShopSettings { get; set; }
+        public DbSet<DeliveryOption> DeliveryOptions { get; set; }
+        public DbSet<Order> Orders { get; set; }
+        public DbSet<OutsideSalesMonth> OutsideSalesMonths { get; set; }
+        public DbSet<OrderRefund> OrderRefunds { get; set; }
+        public DbSet<OrderPayment> OrderPayments { get; set; }
+        public DbSet<VippsProcessedWebhookEvent> ProcessedWebhookEvents { get; set; }
+        public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -42,6 +53,109 @@ namespace altinnendata_api.Models
                 .IsUnique();
 
             modelBuilder.AddAppKitLegalPages();
+            modelBuilder.AddAppKitVippsProcessedWebhookEvents();
+            modelBuilder.AddAppKitVippsWebhookRegistrations();
+
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.Id)
+                .ValueGeneratedNever();
+
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.BuyButton)
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            modelBuilder.Entity<DeliveryOption>()
+                .Property(o => o.Method)
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            modelBuilder.Entity<DeliveryOption>()
+                .HasIndex(o => o.Method)
+                .IsUnique();
+
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.LabelNo).HasMaxLength(80);
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.LabelEn).HasMaxLength(80);
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.DescriptionNo).HasMaxLength(300);
+            modelBuilder.Entity<DeliveryOption>().Property(o => o.DescriptionEn).HasMaxLength(300);
+
+            modelBuilder.Entity<Order>(order =>
+            {
+                order.Property(o => o.Reference).HasMaxLength(64);
+                order.HasIndex(o => o.Reference).IsUnique();
+                order.Property(o => o.VippsReference).HasMaxLength(64);
+                order.HasIndex(o => o.VippsReference).IsUnique();
+                order.Property(o => o.PaymentLinkTokenHash).HasMaxLength(64);
+                order.HasIndex(o => o.PaymentLinkTokenHash).IsUnique();
+                order.Property(o => o.PublicToken).HasMaxLength(64);
+                order.HasIndex(o => o.PublicToken).IsUnique();
+                order.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
+                order.Property(o => o.Locale).HasMaxLength(5);
+                order.Property(o => o.BuyerName).HasMaxLength(120);
+                order.Property(o => o.BuyerEmail).HasMaxLength(200);
+                order.Property(o => o.BuyerPhone).HasMaxLength(30);
+                order.Property(o => o.StreetAddress).HasMaxLength(200);
+                order.Property(o => o.PostalCode).HasMaxLength(10);
+                order.Property(o => o.City).HasMaxLength(100);
+                order.Property(o => o.DeliveryMethod).HasConversion<string>().HasMaxLength(20);
+                order.Property(o => o.DeliveryLabel).HasMaxLength(80);
+                order.Property(o => o.PickupNote).HasMaxLength(500);
+                order.Property(o => o.BuildTitle).HasMaxLength(200);
+                order.Property(o => o.BuildSlug).HasMaxLength(160);
+                order.Property(o => o.InvoiceNumber).HasMaxLength(50);
+                order.Property(o => o.PendingRefundKey).HasMaxLength(100);
+                order.Property(o => o.TermsVersion).HasMaxLength(40);
+                order.Property(o => o.TermsAcceptedIp).HasMaxLength(45);
+                order.Property(o => o.TermsTitle).HasMaxLength(200);
+                order.Property(o => o.TermsLocale).HasMaxLength(5);
+                order.Property(o => o.ShippingNote).HasMaxLength(500);
+                order.HasIndex(o => o.CreatedAt);
+                order.Property(o => o.Version).IsRowVersion();
+
+                // Deleting a build keeps its orders, which carry their own copy of the build details.
+                order.HasOne(o => o.PcBuild)
+                    .WithMany()
+                    .HasForeignKey(o => o.PcBuildId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                order.HasMany(o => o.Payments)
+                    .WithOne()
+                    .HasForeignKey(p => p.OrderId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                order.HasMany(o => o.Refunds)
+                    .WithOne()
+                    .HasForeignKey(r => r.OrderId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<OrderPayment>(payment =>
+            {
+                payment.Property(p => p.VippsReference).HasMaxLength(64);
+                payment.HasIndex(p => p.VippsReference).IsUnique();
+                payment.Property(p => p.State).HasMaxLength(20);
+                payment.HasIndex(p => p.OrderId);
+            });
+
+            modelBuilder.Entity<OrderRefund>(refund =>
+            {
+                refund.Property(r => r.IdempotencyKey).HasMaxLength(100);
+                refund.Property(r => r.Source).HasConversion<string>().HasMaxLength(20);
+                refund.HasIndex(r => r.OrderId);
+            });
+
+            modelBuilder.Entity<OutsideSalesMonth>()
+                .HasKey(m => m.Month);
+
+            modelBuilder.Entity<PcBuild>()
+                .Property(b => b.Version)
+                .IsRowVersion();
+
+            modelBuilder.Entity<PcBuild>()
+                .HasOne<Order>()
+                .WithMany()
+                .HasForeignKey(b => b.HeldByOrderId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // The home page sections keep their existing table, which holds one page per locale.
             modelBuilder.AddAppKitPageSections(o =>

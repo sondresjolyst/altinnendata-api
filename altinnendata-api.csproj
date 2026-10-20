@@ -20,9 +20,11 @@
 
   <ItemGroup>
     <PackageReference Include="Mapster" Version="10.0.13" />
+    <PackageReference Include="Markdig" Version="1.4.0" />
     <PackageReference Include="Mapster.DependencyInjection" Version="10.0.13" />
     <PackageReference Include="FluentValidation" Version="12.2.0" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
@@ -39,12 +41,14 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.3.0" />
     <PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="10.3.0" />
-    <PackageReference Include="SjolystInnovation.AppKit.Auth" Version="1.0.1" />
-    <PackageReference Include="SjolystInnovation.AppKit.SiteSettings" Version="1.0.1" />
-    <PackageReference Include="SjolystInnovation.AppKit.Email" Version="1.1.0" />
+    <PackageReference Include="SjolystInnovation.AppKit.Auth" Version="1.1.0" />
+    <PackageReference Include="SjolystInnovation.AppKit.SiteSettings" Version="1.1.0" />
+    <PackageReference Include="SjolystInnovation.AppKit.Email" Version="1.2.0" />
     <PackageReference Include="SjolystInnovation.AppKit.Hosting" Version="1.0.3" />
     <PackageReference Include="SjolystInnovation.AppKit.Storage.Images" Version="1.0.0" />
     <PackageReference Include="SjolystInnovation.AppKit.AdminStats" Version="1.0.0" />
+    <PackageReference Include="SjolystInnovation.AppKit.Vipps" Version="1.2.0" />
+    <PackageReference Include="SjolystInnovation.AppKit.Pdf" Version="1.0.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
   </ItemGroup>
 

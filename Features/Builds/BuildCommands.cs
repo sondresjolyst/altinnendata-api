@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using altinnendata_api.Constants;
+using altinnendata_api.Features.Shop;
 using altinnendata_api.Helpers;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
@@ -54,6 +55,8 @@ namespace altinnendata_api.Features.Builds
                 .Include(b => b.Images)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
             if (build == null) return TypedResults.NotFound();
+            // A form opened before a checkout held the build would otherwise clear the hold and allow a second sale.
+            if (dto.ExpectedUpdatedAt is { } expected && !SameMillisecond(expected, build.UpdatedAt)) return BuildChanged();
 
             if (await UnknownClassAsync(dto.BuildClassId, db, ct))
                 return TypedResults.Problem("That build class does not exist.", statusCode: StatusCodes.Status400BadRequest);
@@ -68,6 +71,8 @@ namespace altinnendata_api.Features.Builds
             build.Category = dto.Category;
             var availability = ParseAvailability(dto.Availability);
             build.SoldOn = SoldDate(availability, dto.SoldOn, build.SoldOn, build.Availability == BuildAvailability.Sold);
+            // The admin's hand edit wins over the order flow, so the order no longer holds the build.
+            if (availability != build.Availability) build.HeldByOrderId = null;
             build.Availability = availability;
             build.BuildClassId = dto.BuildClassId;
             build.PriceNok = dto.PriceNok;
@@ -94,7 +99,7 @@ namespace altinnendata_api.Features.Builds
             build.Images.Clear();
             ApplyImages(build, dto);
 
-            await db.SaveChangesAsync(ct);
+            if (!await TrySaveAsync(db, ct)) return BuildChanged();
             await images.DeleteOrphansAsync(dropped, ct);
 
             var updated = await LoadAsync(build.Id, db, ct);
@@ -109,10 +114,33 @@ namespace altinnendata_api.Features.Builds
             var imageIds = build.Images.Select(i => i.ContentImageId).ToList();
 
             db.PcBuilds.Remove(build);
-            await db.SaveChangesAsync(ct);
+            if (!await TrySaveAsync(db, ct)) return BuildChanged();
             await images.DeleteOrphansAsync(imageIds, ct);
             return TypedResults.NoContent();
         }
+
+        /// <summary>False when the build changed since it was read, for example by a checkout holding it.</summary>
+        private static async Task<bool> TrySaveAsync(ApplicationDbContext db, CancellationToken ct)
+        {
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return false;
+            }
+        }
+
+        private static IResult BuildChanged() =>
+            ShopProblems.Code(StatusCodes.Status409Conflict, "buildChanged", "The build was changed by someone else. Reload the page and try again.");
+
+        /// <summary>Compared to the millisecond, because a browser keeps a date no finer than that.</summary>
+        private static bool SameMillisecond(DateTime a, DateTime b) => Milliseconds(a) == Milliseconds(b);
+
+        private static long Milliseconds(DateTime value) =>
+            (value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value).Ticks / TimeSpan.TicksPerMillisecond;
 
         private static async Task<PcBuild?> LoadAsync(int id, ApplicationDbContext db, CancellationToken ct) =>
             await db.PcBuilds

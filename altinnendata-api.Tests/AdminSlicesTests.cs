@@ -6,6 +6,7 @@ using Moq;
 using altinnendata_api.Features.Admin;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Admin;
+using altinnendata_api.Models.Shop;
 using SjolystInnovation.AppKit.AdminStats;
 using SjolystInnovation.AppKit.Storage;
 using SjolystInnovation.AppKit.Storage.Images;
@@ -53,6 +54,39 @@ public class AdminSlicesTests : TestBase
         Assert.Equal(10_000, ok.Value.DiskTotalBytes);
         Assert.Equal(4_000, ok.Value.DiskFreeBytes);
     }
+
+    [Fact]
+    public async Task GetStats_CountsCapturedRevenueFromLivePaidOrdersOnly()
+    {
+        await using var db = CreateDbContext();
+        db.Orders.AddRange(
+            Order("AID-000001-00000001", OrderStatus.Paid, 1_299_000, isTest: false),
+            Order("AID-000002-00000002", OrderStatus.Paid, 50_000, isTest: true),
+            Order("AID-000003-00000003", OrderStatus.Refunded, 70_000, isTest: false),
+            Order("AID-000004-00000004", OrderStatus.Reserved, 90_000, isTest: false));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var ok = Assert.IsType<Ok<AdminStatsDto>>(await AdminDashboard.GetStats(db, new FakeStorageUsage(), TestContext.Current.CancellationToken));
+
+        Assert.Equal(1_299_000, ok.Value!.CapturedRevenueInOre);
+    }
+
+    private static Order Order(string reference, OrderStatus status, int capturedInOre, bool isTest) => new()
+    {
+        Reference = reference, VippsReference = reference,
+        PublicToken = Guid.NewGuid().ToString("N"),
+        Status = status,
+        Locale = "no",
+        BuyerName = "Ola Nordmann",
+        BuyerEmail = "ola@example.com",
+        BuyerPhone = "4791234567",
+        DeliveryLabel = "Henting",
+        BuildTitle = "Gaming-PC",
+        BuildSlug = "gaming-pc",
+        TotalInOre = capturedInOre,
+        CapturedInOre = capturedInOre,
+        IsTest = isTest
+    };
 
     private sealed class FakeStorageUsage : IAppKitStorageUsage
     {

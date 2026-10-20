@@ -39,7 +39,14 @@ namespace altinnendata_api.Features.Builds
         public List<string> ImageIds { get; set; } = [];
     }
 
-    public class UpdateBuildDto : CreateBuildDto { }
+    public class UpdateBuildDto : CreateBuildDto
+    {
+        /// <summary>
+        /// The <c>UpdatedAt</c> the edit form loaded. When given and the build has changed since, for example
+        /// because a checkout now holds it, the update is refused. Left null by older clients, which skips the check.
+        /// </summary>
+        public DateTime? ExpectedUpdatedAt { get; set; }
+    }
 
     public record BuildComponentDto(
         int Id,
@@ -70,7 +77,9 @@ namespace altinnendata_api.Features.Builds
         string Title,
         string? Summary,
         DateTime CreatedAt,
-        DateTime UpdatedAt);
+        DateTime UpdatedAt,
+        IReadOnlyList<ComponentConditionRef> Conditions,
+        bool AllPartsHaveCondition);
 
     public record BuildDetailDto(
         int Id,
@@ -93,7 +102,9 @@ namespace altinnendata_api.Features.Builds
         IReadOnlyList<BuildComponentDto> Components,
         IReadOnlyList<string> AvailableLocales,
         DateTime CreatedAt,
-        DateTime UpdatedAt);
+        DateTime UpdatedAt,
+        IReadOnlyList<ComponentConditionRef> Conditions,
+        bool AllPartsHaveCondition);
 
     /// <summary>Admin view: every translation, for the editor's language tabs.</summary>
     public record BuildAdminDto(
@@ -113,7 +124,9 @@ namespace altinnendata_api.Features.Builds
         IReadOnlyList<BuildComponentDto> Components,
         IReadOnlyList<string> ImageIds,
         DateTime CreatedAt,
-        DateTime UpdatedAt);
+        DateTime UpdatedAt,
+        IReadOnlyList<ComponentConditionRef> Conditions,
+        bool AllPartsHaveCondition);
 
     public record BuildTranslationDto(string Locale, string Title, string? Summary, string? Description);
 
@@ -178,8 +191,26 @@ namespace altinnendata_api.Features.Builds
                     .WithMessage("A component needs either a catalog part or a name.");
             });
 
+            // A build on sale must say what state every part is in (markedsføringsloven §§ 7 and 8).
+            RuleFor(x => x.Components)
+                .NotEmpty()
+                .When(IsForSale)
+                .WithMessage(ConditionRequiredMessage);
+            RuleForEach(x => x.Components).ChildRules(c =>
+            {
+                c.RuleFor(x => x.ComponentConditionId).NotNull().WithMessage(ConditionRequiredMessage);
+            }).When(IsForSale);
+
             RuleForEach(x => x.ImageIds).MaximumLength(32);
         }
+
+        public const string ConditionRequiredMessage = "Choose a condition for every part before the build is put on sale.";
+
+        /// <summary>Published, available and priced: what checkout needs to sell the build.</summary>
+        private static bool IsForSale(T dto) =>
+            dto.Published
+            && dto.PriceNok.HasValue
+            && string.Equals(dto.Availability, nameof(Models.BuildAvailability.Available), StringComparison.OrdinalIgnoreCase);
 
         private static bool BeAFinnLink(string? url) =>
             Uri.TryCreate(url, UriKind.Absolute, out var parsed)
