@@ -198,6 +198,41 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task Get_ShowsTheDeliveryDateAndPlace_ForShipping()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var shippedAt = new DateTime(2026, 10, 19, 10, 0, 0, DateTimeKind.Utc);
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid, editOrder: o =>
+        {
+            o.DeliveryMethod = DeliveryMethod.Shipping;
+            o.StreetAddress = "Storgata 1";
+            o.PostalCode = "0155";
+            o.City = "Oslo";
+            o.ShippedAt = shippedAt;
+        });
+
+        var dto = AssertOk(await AdminOrders.Get(orderId, db, Ct));
+
+        Assert.Equal(shippedAt, dto.DeliveryDate);
+        Assert.Equal("Storgata 1, 0155 Oslo", dto.DeliveryPlace);
+        Assert.Empty(dto.Refunds);
+    }
+
+    [Fact]
+    public async Task Get_ForPickup_ShowsTheSellersAddressAsTheDeliveryPlace()
+    {
+        await using var db = await postgres.NewContextAsync();
+        db.AppSettings.Add(new Models.Admin.AppSettings { Id = 1, StreetAddress = "Mårvegen 21a", PostalCode = "4347", AddressLocality = "Lye" });
+        await db.SaveChangesAsync(Ct);
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+
+        var dto = AssertOk(await AdminOrders.Get(orderId, db, Ct));
+
+        Assert.Null(dto.DeliveryDate);
+        Assert.Equal("Mårvegen 21a, 4347 Lye", dto.DeliveryPlace);
+    }
+
+    [Fact]
     public async Task Get_ReturnsTheWholeOrder_Or404()
     {
         await using var db = await postgres.NewContextAsync();
@@ -462,6 +497,14 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Refunded, order.Status);
         Assert.Equal(BuildAvailability.Sold, build.Availability);
+
+        Assert.Equal([300_000, 400_000, Total - 700_000], rest.Refunds.Select(r => r.AmountInOre));
+        Assert.All(rest.Refunds, r => Assert.Equal("Admin", r.Source));
+        await using var fresh = postgres.NewContextOn(db);
+        var rows = await fresh.OrderRefunds.AsNoTracking().Where(r => r.OrderId == orderId).OrderBy(r => r.Id).ToListAsync(Ct);
+        Assert.Equal([$"refund-{Reference}-0", $"refund-{Reference}-300000", $"refund-{Reference}-700000"], rows.Select(r => r.IdempotencyKey));
+        Assert.Equal(rows.Select(r => r.RefundedAt), rest.Refunds.Select(r => r.RefundedAt));
+        Assert.Equal(order.RefundedAt, rows[^1].RefundedAt);
     }
 
     [Fact]
@@ -934,6 +977,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         var (_, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(300_000, order.RefundedInOre);
         _notifier.VerifyNoOtherCalls();
+        Assert.Empty(dto.Refunds);
     }
 
     [Fact]

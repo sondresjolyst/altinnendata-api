@@ -50,6 +50,9 @@ namespace altinnendata_api.Models.Shop
         public string? PendingRefundKey { get; set; }
         public int? PendingRefundInOre { get; set; }
 
+        /// <summary>One row per refund. Deleted with the order.</summary>
+        public ICollection<OrderRefund> Refunds { get; set; } = [];
+
         public bool IsTest { get; set; }
         public DateTimeOffset? CaptureGuaranteedUntil { get; set; }
         public string? InvoiceNumber { get; set; }

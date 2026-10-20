@@ -718,6 +718,13 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(EventTime.UtcDateTime, order.RefundedAt);
         _notifier.Verify(n => n.OrderRefundedAsync(orderId, Total - 300_000, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
+
+        await using var fresh = postgres.NewContextOn(db);
+        var rows = await fresh.OrderRefunds.AsNoTracking().Where(r => r.OrderId == orderId).OrderBy(r => r.Id).ToListAsync(Ct);
+        Assert.Equal([300_000, Total - 300_000], rows.Select(r => r.AmountInOre));
+        Assert.All(rows, r => Assert.Equal(RefundSource.Webhook, r.Source));
+        Assert.All(rows, r => Assert.Equal(EventTime.UtcDateTime, r.RefundedAt));
+        Assert.All(rows, r => Assert.NotNull(r.IdempotencyKey));
     }
 
     [Fact]

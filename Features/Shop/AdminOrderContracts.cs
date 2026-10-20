@@ -1,5 +1,9 @@
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using altinnendata_api.Models;
+using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
+using SjolystInnovation.AppKit.SiteSettings;
 
 namespace altinnendata_api.Features.Shop
 {
@@ -67,16 +71,44 @@ namespace altinnendata_api.Features.Shop
         string? TermsAcceptedIp,
         DateTime? ConfirmationSentAt,
         DateTime? ShippedAt,
-        string? ShippingNote)
+        string? ShippingNote,
+        IReadOnlyList<OrderRefundDto> Refunds,
+        DateTime? DeliveryDate,
+        string DeliveryPlace)
     {
-        public static AdminOrderDto From(Order o) =>
+        /// <summary>
+        /// The order as the admin pages show it, with its refunds, oldest first, and where it is delivered. Every
+        /// admin order endpoint answers with this.
+        /// </summary>
+        public static async Task<AdminOrderDto> LoadAsync(ApplicationDbContext db, Order o, CancellationToken ct)
+        {
+            var refunds = await db.OrderRefunds.AsNoTracking()
+                .Where(r => r.OrderId == o.Id)
+                .OrderBy(r => r.RefundedAt).ThenBy(r => r.Id)
+                .Select(r => new OrderRefundDto(r.AmountInOre, r.RefundedAt, r.Source.ToString()))
+                .ToListAsync(ct);
+            var seller = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
+            return From(o, refunds, seller);
+        }
+
+        /// <summary>The buyer's address, or the seller's for pickup, as one line.</summary>
+        public static string DeliveryPlaceOf(Order o, AppSettings seller) =>
+            o.DeliveryMethod == Models.Shop.DeliveryMethod.Pickup
+                ? seller.FormattedAddress
+                : PostalAddress.Format(o.StreetAddress, o.PostalCode, o.City);
+
+        private static AdminOrderDto From(Order o, IReadOnlyList<OrderRefundDto> refunds, AppSettings seller) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.Locale, o.BuyerName, o.BuyerEmail, o.BuyerPhone,
                 o.StreetAddress, o.PostalCode, o.City, o.DeliveryMethod.ToString(), o.DeliveryLabel, o.DeliveryPriceInOre,
                 o.WithinDistanceConfirmed, o.PickupNote, o.PcBuildId, o.BuildTitle, o.BuildSlug, o.BuildPriceInOre,
                 o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber,
                 o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt,
-                o.TermsVersion, o.TermsAcceptedIp, o.ConfirmationSentAt, o.ShippedAt, o.ShippingNote);
+                o.TermsVersion, o.TermsAcceptedIp, o.ConfirmationSentAt, o.ShippedAt, o.ShippingNote,
+                refunds, o.ShippedAt, DeliveryPlaceOf(o, seller));
     }
+
+    /// <summary>One refund: the amount in øre, when, and whether the admin or a Vipps webhook recorded it.</summary>
+    public record OrderRefundDto(int AmountInOre, DateTime RefundedAt, string Source);
 
     /// <summary>
     /// How much of a paid order to refund, in øre. Left out, it refunds everything not yet refunded.

@@ -1157,6 +1157,39 @@ namespace altinnendata_api.Migrations
                     b.ToTable("Orders");
                 });
 
+            modelBuilder.Entity("altinnendata_api.Models.Shop.OrderRefund", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AmountInOre")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("OrderRefunds");
+                });
+
             modelBuilder.Entity("altinnendata_api.Models.Shop.OutsideSalesMonth", b =>
                 {
                     b.Property<DateOnly>("Month")
@@ -1498,6 +1531,15 @@ namespace altinnendata_api.Migrations
                     b.Navigation("PcBuild");
                 });
 
+            modelBuilder.Entity("altinnendata_api.Models.Shop.OrderRefund", b =>
+                {
+                    b.HasOne("altinnendata_api.Models.Shop.Order", null)
+                        .WithMany("Refunds")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SjolystInnovation.AppKit.Storage.Images.ContentImage", b =>
                 {
                     b.Navigation("Variants");
@@ -1525,6 +1567,11 @@ namespace altinnendata_api.Migrations
                     b.Navigation("Images");
 
                     b.Navigation("Translations");
+                });
+
+            modelBuilder.Entity("altinnendata_api.Models.Shop.Order", b =>
+                {
+                    b.Navigation("Refunds");
                 });
 #pragma warning restore 612, 618
         }

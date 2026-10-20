@@ -165,4 +165,22 @@ public class OrderRetentionPostgresTests(PostgresDatabase postgres)
 
         Assert.Equal(new[] { held.Id, sale.Id }.Order(), (await db.Orders.Select(o => o.Id).ToListAsync(ct)).Order());
     }
+
+    [Fact]
+    public async Task Purge_DeletesTheRefundsOfADeletedTestOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var now = new DateTime(2026, 10, 19, 3, 0, 0, DateTimeKind.Utc);
+        await using var db = await postgres.NewContextAsync();
+        var test = OrderRetentionTests.NewOrder(OrderStatus.Refunded, now.AddDays(-120), isTest: true);
+        test.Refunds.Add(new OrderRefund { AmountInOre = 100, RefundedAt = now.AddDays(-110), Source = RefundSource.Admin });
+        var sale = OrderRetentionTests.NewOrder(OrderStatus.Refunded, now.AddDays(-120));
+        sale.Refunds.Add(new OrderRefund { AmountInOre = 200, RefundedAt = now.AddDays(-110), Source = RefundSource.Webhook });
+        db.Orders.AddRange(test, sale);
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(1, await OrderRetention.PurgeAsync(db, now, ct));
+
+        Assert.Equal([200], await db.OrderRefunds.Select(r => r.AmountInOre).ToListAsync(ct));
+    }
 }

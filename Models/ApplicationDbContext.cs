@@ -37,6 +37,7 @@ namespace altinnendata_api.Models
         public DbSet<DeliveryOption> DeliveryOptions { get; set; }
         public DbSet<Order> Orders { get; set; }
         public DbSet<OutsideSalesMonth> OutsideSalesMonths { get; set; }
+        public DbSet<OrderRefund> OrderRefunds { get; set; }
         public DbSet<VippsProcessedWebhookEvent> ProcessedWebhookEvents { get; set; }
         public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
 
@@ -111,6 +112,18 @@ namespace altinnendata_api.Models
                     .WithMany()
                     .HasForeignKey(o => o.PcBuildId)
                     .OnDelete(DeleteBehavior.SetNull);
+
+                order.HasMany(o => o.Refunds)
+                    .WithOne()
+                    .HasForeignKey(r => r.OrderId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<OrderRefund>(refund =>
+            {
+                refund.Property(r => r.IdempotencyKey).HasMaxLength(100);
+                refund.Property(r => r.Source).HasConversion<string>().HasMaxLength(20);
+                refund.HasIndex(r => r.OrderId);
             });
 
             modelBuilder.Entity<OutsideSalesMonth>()

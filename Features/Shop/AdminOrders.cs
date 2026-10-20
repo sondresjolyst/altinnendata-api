@@ -30,7 +30,7 @@ namespace altinnendata_api.Features.Shop
         public static async Task<IResult> Get(int id, ApplicationDbContext db, CancellationToken ct)
         {
             var order = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id, ct);
-            return order == null ? TypedResults.NotFound() : TypedResults.Ok(AdminOrderDto.From(order));
+            return order == null ? TypedResults.NotFound() : TypedResults.Ok(await AdminOrderDto.LoadAsync(db, order, ct));
         }
 
         public static async Task<IResult> Capture(int id, ApplicationDbContext db, IVippsClient vipps, ILogger<AdminOrderDto> log, CancellationToken ct)
@@ -80,7 +80,7 @@ namespace altinnendata_api.Features.Shop
             }
 
             log.LogInformation("Order {OrderId} captured by an admin", fresh.Id);
-            return TypedResults.Ok(AdminOrderDto.From(fresh));
+            return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, fresh, CancellationToken.None));
         }
 
         public static async Task<IResult> Cancel(int id, ApplicationDbContext db, IVippsClient vipps, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
@@ -112,7 +112,7 @@ namespace altinnendata_api.Features.Shop
             if (saved == Saved.Applied) await notifier.OrderCancelledAsync(fresh.Id, CancellationToken.None);
 
             log.LogInformation("Order {OrderId} cancelled by an admin", fresh.Id);
-            return TypedResults.Ok(AdminOrderDto.From(fresh));
+            return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, fresh, CancellationToken.None));
         }
 
         public static async Task<IResult> Refund(int id, RefundRequest? req, ApplicationDbContext db, IVippsClient vipps, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
@@ -169,7 +169,7 @@ namespace altinnendata_api.Features.Shop
             var refundedNow = 0;
             var (saved, fresh) = await SaveAsync(db, order, OrderStatus.Paid, OrderStatus.Refunded, (o, _) =>
             {
-                refundedNow = OrderRefunds.Record(o, payment.RefundedAmountInOre, DateTime.UtcNow);
+                refundedNow = OrderRefunds.Record(o, payment.RefundedAmountInOre, DateTime.UtcNow, RefundSource.Admin, key);
             }, CancellationToken.None);
 
             if (saved == Saved.Moved)
@@ -184,7 +184,7 @@ namespace altinnendata_api.Features.Shop
 
             log.LogInformation("Admin refund of {Amount} øre on order {OrderId}, {Refunded} of {Captured} øre refunded, the order is {Status}",
                 amount, fresh.Id, fresh.RefundedInOre, fresh.CapturedInOre, fresh.Status);
-            return TypedResults.Ok(AdminOrderDto.From(fresh));
+            return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, fresh, CancellationToken.None));
         }
 
         /// <summary>
@@ -313,7 +313,7 @@ namespace altinnendata_api.Features.Shop
             await notifier.OrderShippedAsync(order.Id, CancellationToken.None);
             log.LogInformation("Order {OrderId} marked as {Mark} by an admin", order.Id,
                 order.DeliveryMethod == DeliveryMethod.Pickup ? "ready for pickup" : "sent");
-            return TypedResults.Ok(AdminOrderDto.From(order));
+            return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, order, CancellationToken.None));
         }
 
         private static IResult AlreadyShipped(Order order) =>
@@ -334,7 +334,7 @@ namespace altinnendata_api.Features.Shop
             if (rows == 0) return TypedResults.NotFound();
 
             var order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, ct);
-            return TypedResults.Ok(AdminOrderDto.From(order));
+            return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, order, CancellationToken.None));
         }
 
         private enum Saved

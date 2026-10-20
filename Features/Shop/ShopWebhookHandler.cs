@@ -180,7 +180,7 @@ namespace altinnendata_api.Features.Shop
                     eventKey, eventAmount, order.Id, payment.RefundedAmountInOre);
                 return null;
             }
-            var added = OrderRefunds.Record(order, payment.RefundedAmountInOre, at);
+            var added = OrderRefunds.Record(order, payment.RefundedAmountInOre, at, RefundSource.Webhook, eventKey);
             if (added == 0)
                 log.LogInformation("Shop webhook {EventKey}: order {OrderId} already has the {Refunded} øre Vipps has refunded",
                     eventKey, order.Id, order.RefundedInOre);
