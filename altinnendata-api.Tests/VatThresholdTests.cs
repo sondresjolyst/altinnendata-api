@@ -14,7 +14,10 @@ public class VatThresholdTests : TestBase
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static VatThreshold.Sale Sale(string reference, DateTime at, int amountInOre) => new(reference, at, amountInOre);
+    private static VatThreshold.Sale Sale(string reference, DateTime at, int amountInOre, params VatThreshold.Refund[] refunds) =>
+        new(reference, at, amountInOre, refunds);
+
+    private static DateTime Utc(int year, int month, int day, int hour = 12) => new(year, month, day, hour, 0, 0, DateTimeKind.Utc);
 
     private static Dictionary<DateOnly, long> NoOutside() => [];
 
@@ -25,7 +28,7 @@ public class VatThresholdTests : TestBase
     private static Order NewOrder(DateTime capturedAt, int capturedInOre, int refundedInOre = 0, bool isTest = false, OrderStatus status = OrderStatus.Paid)
     {
         var n = Interlocked.Increment(ref _next);
-        return new Order
+        var order = new Order
         {
             Reference = $"ae-{n:D6}-vat", VippsReference = $"ae-{n:D6}-vat",
             PublicToken = Guid.NewGuid().ToString("N"),
@@ -44,6 +47,9 @@ public class VatThresholdTests : TestBase
             CapturedAt = capturedAt,
             CreatedAt = capturedAt.AddDays(-1),
         };
+        if (refundedInOre > 0)
+            order.Refunds.Add(new OrderRefund { AmountInOre = refundedInOre, RefundedAt = capturedAt.AddHours(1), Source = RefundSource.Admin });
+        return order;
     }
 
     [Fact]
@@ -212,6 +218,109 @@ public class VatThresholdTests : TestBase
             Now);
 
         Assert.Equal(crossing, status.CrossingOrderReference);
+    }
+
+    [Fact]
+    public void ARefund_OfASaleCapturedBeforeTheWindow_DoesNotLowerIt()
+    {
+        var status = VatThreshold.Compute(
+            [
+                Sale("before", Utc(2025, 10, 10), 500_000, new VatThreshold.Refund(Utc(2026, 3, 1), 500_000)),
+                Sale("in", Utc(2026, 2, 1), 2_000_000),
+            ],
+            NoOutside(), Now);
+
+        Assert.Equal(2_000_000, status.TurnoverInOre);
+        Assert.Equal(2_000_000, status.Months.Sum(m => m.ShopInOre));
+    }
+
+    [Fact]
+    public void ARefund_InsideTheWindow_LowersIt()
+    {
+        var status = VatThreshold.Compute(
+            [Sale("a", Utc(2026, 9, 10), 1_000_000, new VatThreshold.Refund(Utc(2026, 10, 1), 400_000))], NoOutside(), Now);
+
+        Assert.Equal(600_000, status.TurnoverInOre);
+        Assert.Equal(600_000, status.Months.Single(m => m.Month == "2026-09").ShopInOre);
+    }
+
+    [Fact]
+    public void ARefund_AfterTheSaleThatPassedTheThreshold_DoesNotUndoTheCrossing()
+    {
+        // The window ending 10 March 2026 held 55 000 kr. The refund in May comes after that window has ended.
+        var status = VatThreshold.Compute(
+            [
+                Sale("a", Utc(2026, 1, 10), 3_000_000, new VatThreshold.Refund(Utc(2026, 5, 2), 1_000_000)),
+                Sale("b", Utc(2026, 3, 10), 2_500_000),
+            ],
+            NoOutside(), Now);
+
+        Assert.Equal("b", status.CrossingOrderReference);
+        Assert.Equal("2026-03-10", status.CrossedOn);
+        Assert.Equal(4_500_000, status.TurnoverInOre);
+    }
+
+    [Fact]
+    public void ARefund_BeforeALaterSale_KeepsTheWindowBelowTheThreshold()
+    {
+        var status = VatThreshold.Compute(
+            [
+                Sale("a", Utc(2026, 1, 10), 3_000_000, new VatThreshold.Refund(Utc(2026, 2, 2), 1_000_000)),
+                Sale("b", Utc(2026, 3, 10), 2_500_000),
+            ],
+            NoOutside(), Now);
+
+        Assert.Null(status.CrossedOn);
+        Assert.Null(status.CrossingOrderReference);
+    }
+
+    [Theory]
+    [InlineData(10, null)]
+    [InlineData(15, "b")]
+    public void ARefund_OnTheDayOfALaterSale_CountsOnlyWhenItCameFirst(int refundHour, string? crossing)
+    {
+        var status = VatThreshold.Compute(
+            [
+                Sale("a", Utc(2026, 1, 10), 3_000_000, new VatThreshold.Refund(Utc(2026, 3, 5, refundHour), 1_000_000)),
+                Sale("b", Utc(2026, 3, 5, 13), 2_500_000),
+            ],
+            NoOutside(), Now);
+
+        Assert.Equal(crossing, status.CrossingOrderReference);
+    }
+
+    [Fact]
+    public void ARefund_TheDayBeforeOutsideSalesStart_CountsBeforeThem()
+    {
+        // 30 000 kr less 10 000 kr refunded in May, then 29 000 kr outside the shop in June: 49 000 kr.
+        var status = VatThreshold.Compute(
+            [Sale("a", Utc(2026, 4, 10), 3_000_000, new VatThreshold.Refund(Utc(2026, 5, 31), 1_000_000))],
+            new Dictionary<DateOnly, long> { [Month(2026, 6)] = 2_900_000 },
+            Now);
+
+        Assert.Null(status.CrossedOn);
+    }
+
+    [Fact]
+    public void ARefund_AfterOutsideSalesPassedTheThreshold_DoesNotUndoTheCrossing()
+    {
+        // 30 000 kr in April and 21 000 kr outside the shop in June pass the threshold on 1 June. The refund is later.
+        var status = VatThreshold.Compute(
+            [Sale("a", Utc(2026, 4, 10), 3_000_000, new VatThreshold.Refund(Utc(2026, 6, 15), 1_000_000))],
+            new Dictionary<DateOnly, long> { [Month(2026, 6)] = 2_100_000 },
+            Now);
+
+        Assert.Equal("2026-06-01", status.CrossedOn);
+        Assert.Null(status.CrossingOrderReference);
+    }
+
+    [Fact]
+    public void ARefund_AfterNow_IsNotCountedYet()
+    {
+        var status = VatThreshold.Compute(
+            [Sale("a", Utc(2026, 9, 10), 1_000_000, new VatThreshold.Refund(Utc(2026, 10, 20), 400_000))], NoOutside(), Now);
+
+        Assert.Equal(1_000_000, status.TurnoverInOre);
     }
 
     [Fact]

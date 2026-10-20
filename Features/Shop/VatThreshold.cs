@@ -12,7 +12,8 @@ namespace altinnendata_api.Features.Shop
     /// required once turnover over 12 months passes the threshold, and VAT is owed from the sale that passes it.
     /// Turnover is what the shop captured less what it refunded, test orders left out, plus the sales outside the shop
     /// the admin enters per month. Any 12 month period counts, so the threshold is checked over the window that ends on
-    /// each day, in Norwegian time. A shop sale counts on the day it was captured. The day of a sale outside the shop
+    /// each day, in Norwegian time. A shop sale counts on the day it was captured, and a refund takes it down only in the
+    /// windows that hold both the capture and the refund, from the moment of the refund. The day of a sale outside the shop
     /// is not known, so a month of them counts in every window the month overlaps, which warns early rather than late.
     /// Ported from garge-api's VatThresholdService.
     /// </summary>
@@ -31,8 +32,19 @@ namespace altinnendata_api.Features.Shop
             catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
         });
 
-        /// <summary>One shop sale: what was kept of it once refunds are taken off, and when it was captured.</summary>
-        public sealed record Sale(string Reference, DateTime At, int AmountInOre);
+        /// <summary>One shop sale: what was captured and when, and the refunds of it.</summary>
+        public sealed record Sale(string Reference, DateTime At, int AmountInOre, IReadOnlyList<Refund>? Refunds = null);
+
+        /// <summary>One refund of a shop sale and when it was made.</summary>
+        public sealed record Refund(DateTime At, int AmountInOre);
+
+        /// <summary>
+        /// What is left of <paramref name="sale"/> once the refunds <paramref name="made"/> says have happened are taken
+        /// off, never below zero. A refund always comes after its capture, so a window that holds the refund holds the
+        /// capture too.
+        /// </summary>
+        private static long Kept(Sale sale, Func<Refund, bool> made) =>
+            Math.Max(0, sale.AmountInOre - (sale.Refunds ?? []).Where(made).Sum(r => (long)r.AmountInOre));
 
         /// <summary>The first day of the Norwegian calendar month <paramref name="utc"/> falls in.</summary>
         public static DateOnly MonthOf(DateTime utc) => FirstOfMonth(DayOf(utc));
@@ -55,10 +67,16 @@ namespace altinnendata_api.Features.Shop
         {
             var orders = await db.Orders.AsNoTracking()
                 .Where(o => !o.IsTest && o.CapturedInOre > 0)
-                .Select(o => new { o.Reference, o.CapturedAt, o.CreatedAt, o.CapturedInOre, o.RefundedInOre })
+                .Select(o => new { o.Id, o.Reference, o.CapturedAt, o.CreatedAt, o.CapturedInOre })
                 .ToListAsync(ct);
+            var ids = orders.Select(o => o.Id).ToList();
+            var refunds = (await db.OrderRefunds.AsNoTracking()
+                    .Where(r => ids.Contains(r.OrderId))
+                    .Select(r => new { r.OrderId, r.RefundedAt, r.AmountInOre })
+                    .ToListAsync(ct))
+                .ToLookup(r => r.OrderId, r => new Refund(r.RefundedAt, r.AmountInOre));
             var sales = orders
-                .Select(o => new Sale(o.Reference, o.CapturedAt ?? o.CreatedAt, Math.Max(0, o.CapturedInOre - o.RefundedInOre)))
+                .Select(o => new Sale(o.Reference, o.CapturedAt ?? o.CreatedAt, o.CapturedInOre, refunds[o.Id].ToList()))
                 .ToList();
             var outside = await db.OutsideSalesMonths.AsNoTracking()
                 .ToDictionaryAsync(m => m.Month, m => (long)m.AmountInOre, ct);
@@ -77,7 +95,7 @@ namespace altinnendata_api.Features.Shop
             var shopByMonth = sales
                 .Where(s => InWindow(DayOf(s.At), start, today))
                 .GroupBy(s => MonthOf(s.At))
-                .ToDictionary(g => g.Key, g => g.Sum(s => (long)s.AmountInOre));
+                .ToDictionary(g => g.Key, g => g.Sum(s => Kept(s, r => DayOf(r.At) <= today)));
 
             var months = new List<VatMonthDto>();
             for (var month = FirstOfMonth(start); month <= today; month = month.AddMonths(1))
@@ -102,7 +120,7 @@ namespace altinnendata_api.Features.Shop
         /// The first day, up to <paramref name="today"/>, where the 12 month window ending on it passes the threshold, and
         /// the sale that day that passed it. A window only grows on a day a shop sale is captured or a month of outside
         /// sales starts, so those are the days checked. On a day the outside sales are counted first, since their day is
-        /// not known, and the sale is empty when they passed the threshold.
+        /// not known, and the sale is empty when they passed the threshold. Refunds count from the moment they were made.
         /// </summary>
         private static (DateOnly Day, Sale? Sale)? FindCrossing(
             IReadOnlyList<Sale> sales,
@@ -119,13 +137,15 @@ namespace altinnendata_api.Features.Shop
             foreach (var day in days)
             {
                 var start = WindowStart(day);
-                var running = outside.Where(m => Overlaps(m.Key, start, day)).Sum(m => m.Value)
-                    + dated.Where(s => s.Day >= start && s.Day < day).Sum(s => (long)s.Sale.AmountInOre);
-                if (running > ThresholdInOre) return (day, null);
+                var outsideInWindow = outside.Where(m => Overlaps(m.Key, start, day)).Sum(m => m.Value);
+                var beforeDay = outsideInWindow
+                    + dated.Where(s => s.Day >= start && s.Day < day).Sum(s => Kept(s.Sale, r => DayOf(r.At) < day));
+                if (beforeDay > ThresholdInOre) return (day, null);
 
                 foreach (var sale in dated.Where(s => s.Day == day).Select(s => s.Sale).OrderBy(s => s.At))
                 {
-                    running += sale.AmountInOre;
+                    var running = outsideInWindow
+                        + dated.Where(s => s.Day >= start && s.Sale.At <= sale.At).Sum(s => Kept(s.Sale, r => r.At <= sale.At));
                     if (running > ThresholdInOre) return (day, sale);
                 }
             }
