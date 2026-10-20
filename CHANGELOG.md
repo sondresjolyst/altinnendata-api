@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.10.0...v1.10.1) (2026-10-20)
+
+
+### Dependencies
+
+* **nuget:** bump `SjolystInnovation.AppKit.Hosting` from 1.0.1 to 1.0.3 ([#117](https://github.com/sondresjolyst/altinnendata-api/issues/117)) ([6df7c6b](https://github.com/sondresjolyst/altinnendata-api/commit/6df7c6bbea282a6d1210170c66d08516972744d5))
+
 ## [1.10.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.9.0...v1.10.0) (2026-10-18)
 
 
