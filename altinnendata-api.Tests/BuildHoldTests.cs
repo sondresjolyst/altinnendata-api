@@ -38,7 +38,8 @@ public class BuildHoldTests(PostgresDatabase postgres) : TestBase
         Slug = "gaming-pc",
         Published = true,
         PriceNok = 18990,
-        Availability = BuildAvailability.Available
+        Availability = BuildAvailability.Available,
+        Components = [PartWithCondition()]
     };
 
     private static async Task<(PcBuild Build, Order Order)> SeedAsync(ApplicationDbContext db)
@@ -333,5 +334,25 @@ public class BuildHoldTests(PostgresDatabase postgres) : TestBase
         Assert.False(BuildHold.Release(sold, 8));
         Assert.Equal(BuildAvailability.Sold, sold.Availability);
         Assert.Equal(8, sold.HeldByOrderId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TryHold_RefusesABuildWithAPartWithoutACondition(bool noParts)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var build = NewBuild();
+        build.Components = noParts ? [] : [PartWithCondition(), new PcBuildComponent { Name = "RTX 3060" }];
+        var order = NewOrder("order-a");
+        db.PcBuilds.Add(build);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        Assert.False(await BuildHold.TryHoldAsync(db, build.Id, order.Id, 1, Ct));
+
+        var after = await ReloadAsync(db, build.Id);
+        Assert.Equal(BuildAvailability.Available, after.Availability);
+        Assert.Null(after.HeldByOrderId);
     }
 }

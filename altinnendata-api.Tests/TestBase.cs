@@ -30,6 +30,13 @@ public abstract class TestBase
         return services.BuildServiceProvider().GetRequiredService<IContentImageService>();
     }
 
+    /// <summary>A part with a condition of its own, so a build that has it can be sold.</summary>
+    protected static PcBuildComponent PartWithCondition(string name = "Ryzen 5 5600") => new()
+    {
+        Name = name,
+        Condition = new ComponentCondition { Key = $"brukt-{Guid.NewGuid():N}" }
+    };
+
     protected static ControllerContext MakeControllerContext(string userId = "user-1", bool isAdmin = false)
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId) };

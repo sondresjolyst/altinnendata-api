@@ -38,7 +38,7 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         DateTime? createdAt = null,
         Action<Order>? editOrder = null)
     {
-        var build = new PcBuild { Slug = slug, Published = true, PriceNok = 12990, Availability = BuildAvailability.Available };
+        var build = new PcBuild { Slug = slug, Published = true, PriceNok = 12990, Availability = BuildAvailability.Available, Components = [PartWithCondition()] };
         db.PcBuilds.Add(build);
         await db.SaveChangesAsync(Ct);
 

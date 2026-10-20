@@ -11,7 +11,8 @@ namespace altinnendata_api.Features.Shop
     {
         /// <summary>
         /// Reserves the build for <paramref name="orderId"/> in a single UPDATE, so two orders racing
-        /// for the same build cannot both win. Returns false when the build cannot be bought.
+        /// for the same build cannot both win. Returns false when the build cannot be bought, which includes a build
+        /// with a part that has no condition.
         /// </summary>
         public static Task<bool> TryHoldAsync(ApplicationDbContext db, int buildId, int orderId, int quantity, CancellationToken ct)
         {
@@ -28,7 +29,9 @@ namespace altinnendata_api.Features.Shop
                     && b.Availability == BuildAvailability.Available
                     && b.Published
                     && b.PriceNok != null
-                    && b.HeldByOrderId == null)
+                    && b.HeldByOrderId == null
+                    && b.Components.Any()
+                    && b.Components.All(c => c.ComponentConditionId != null))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(b => b.Availability, BuildAvailability.Reserved)
                     .SetProperty(b => b.HeldByOrderId, orderId)

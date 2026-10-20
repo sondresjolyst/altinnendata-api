@@ -48,7 +48,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
     /// <summary>A build held by a test order in <paramref name="status"/>.</summary>
     private static async Task<(int BuildId, int OrderId)> SeedAsync(ApplicationDbContext db, OrderStatus status = OrderStatus.Pending)
     {
-        var build = new PcBuild { Slug = "gaming-pc", Published = true, PriceNok = 18990, Availability = BuildAvailability.Available };
+        var build = new PcBuild { Slug = "gaming-pc", Published = true, PriceNok = 18990, Availability = BuildAvailability.Available, Components = [PartWithCondition()] };
         db.PcBuilds.Add(build);
         await db.SaveChangesAsync(Ct);
 

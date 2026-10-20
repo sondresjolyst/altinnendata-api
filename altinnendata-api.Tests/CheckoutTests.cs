@@ -101,6 +101,7 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
             Published = true,
             PriceNok = 12990,
             Availability = BuildAvailability.Available,
+            Components = [PartWithCondition()],
             Translations =
             [
                 new PcBuildTranslation { Locale = "no", Title = "Gaming-PC" },
@@ -266,6 +267,7 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
     [InlineData("unpublished")]
     [InlineData("unpriced")]
     [InlineData("missing")]
+    [InlineData("partWithoutCondition")]
     public async Task Checkout_AnswersBuildUnavailable_WhenTheBuildCannotBeBought(string state)
     {
         await using var db = await postgres.NewContextAsync();
@@ -277,6 +279,7 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
                 case "sold": b.Availability = BuildAvailability.Sold; break;
                 case "unpublished": b.Published = false; break;
                 case "unpriced": b.PriceNok = null; break;
+                case "partWithoutCondition": b.Components = [new PcBuildComponent { Name = "RTX 3060" }]; break;
             }
         });
         var vipps = Vipps();

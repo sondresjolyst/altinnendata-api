@@ -400,4 +400,89 @@ public class BuildSlicesTests : TestBase
 
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ProblemHttpResult>(result).StatusCode);
     }
+
+    [Fact]
+    public void Validator_ABuildOnSale_NeedsAConditionOnEveryPart()
+    {
+        var dto = Dto();
+        dto.Components.Add(new BuildComponentInput { Name = "RTX 4070", ComponentConditionId = 3, SortOrder = 1 });
+
+        var result = new CreateBuildValidator().Validate(dto);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("Components[0].ComponentConditionId", error.PropertyName);
+        Assert.Equal(CreateBuildValidator.ConditionRequiredMessage, error.ErrorMessage);
+    }
+
+    [Fact]
+    public void Validator_ABuildOnSale_NeedsParts()
+    {
+        var dto = Dto();
+        dto.Components = [];
+
+        var error = Assert.Single(new CreateBuildValidator().Validate(dto).Errors);
+        Assert.Equal("Components", error.PropertyName);
+        Assert.Equal(CreateBuildValidator.ConditionRequiredMessage, error.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(false, 18990, "Available")]
+    [InlineData(true, null, "Available")]
+    [InlineData(true, 18990, "Sold")]
+    [InlineData(true, 18990, "Reserved")]
+    public void Validator_ABuildNotOnSale_NeedsNoCondition(bool published, int? price, string availability)
+    {
+        var dto = Dto(availability: availability);
+        dto.Published = published;
+        dto.PriceNok = price;
+
+        Assert.True(new UpdateBuildValidator().Validate(new UpdateBuildDto
+        {
+            Availability = dto.Availability, Published = dto.Published, PriceNok = dto.PriceNok,
+            Translations = dto.Translations, Components = dto.Components
+        }).IsValid);
+        dto.Components = [];
+        Assert.True(new CreateBuildValidator().Validate(dto).IsValid);
+    }
+
+    [Fact]
+    public void Validator_ABuildOnSaleWithEveryCondition_IsValid()
+    {
+        var dto = Dto(availability: "available");
+        dto.Components[0].ComponentConditionId = 1;
+
+        Assert.True(new CreateBuildValidator().Validate(dto).IsValid);
+    }
+
+    [Fact]
+    public async Task Summary_ListsTheDistinctConditionsInTheirOrder_AndWhetherEveryPartHasOne()
+    {
+        await using var db = CreateDbContext();
+        var used = new ComponentCondition { Key = "brukt", SortOrder = 2, Translations = [new ComponentConditionTranslation { Locale = "en", Name = "Used" }] };
+        var fresh = new ComponentCondition { Key = "ny", SortOrder = 1, Translations = [new ComponentConditionTranslation { Locale = "en", Name = "New" }] };
+        var build = new PcBuild
+        {
+            Slug = "pc",
+            Components =
+            [
+                new PcBuildComponent { Name = "a", Condition = used },
+                new PcBuildComponent { Name = "b", Condition = fresh },
+                new PcBuildComponent { Name = "c", Condition = used }
+            ]
+        };
+        db.PcBuilds.Add(build);
+        await db.SaveChangesAsync();
+
+        var summary = BuildMapping.ToSummary(build, "en");
+
+        Assert.Equal(["New", "Used"], summary.Conditions.Select(c => c.Name));
+        Assert.True(summary.AllPartsHaveCondition);
+        Assert.True(BuildMapping.ToDetail(build, "en").AllPartsHaveCondition);
+        Assert.True(BuildMapping.ToAdmin(build).AllPartsHaveCondition);
+
+        build.Components.Add(new PcBuildComponent { Name = "d" });
+        Assert.False(BuildMapping.ToSummary(build, "en").AllPartsHaveCondition);
+        Assert.Equal(2, BuildMapping.ToSummary(build, "en").Conditions.Count);
+        Assert.False(BuildMapping.ToSummary(new PcBuild { Slug = "empty" }, "en").AllPartsHaveCondition);
+    }
 }
