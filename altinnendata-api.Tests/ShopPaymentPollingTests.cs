@@ -352,6 +352,22 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task AnOrderThatEndedAfterTheBatchWasListed_IsNotReadFromVipps()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, first) = await SeedAsync(db, 1, OrderStatus.Pending);
+        var (_, second) = await SeedAsync(db, 2, OrderStatus.Reserved);
+        VippsShows(1, "AUTHORIZED");
+        // The second order is paid by the admin while the first one is handled.
+        _notifier.Setup(n => n.OrderReservedAsync(first, It.IsAny<CancellationToken>()))
+            .Returns(() => db.Orders.Where(o => o.Id == second).ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, OrderStatus.Paid), Ct));
+
+        Assert.Equal(0, await RunAsync(db));
+
+        _vipps.Verify(v => v.GetPaymentAsync(Ref(2), It.IsAny<bool?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task AFailedEmail_IsLogged_AndTheRunGoesOn()
     {
         await using var db = await postgres.NewContextAsync();
