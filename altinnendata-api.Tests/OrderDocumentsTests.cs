@@ -133,10 +133,32 @@ public class OrderDocumentsTests
         Assert.Contains("Jeg underretter herved om at jeg ønsker å gå fra min avtale om kjøp av følgende varer: Gaming PC <RTX>", text);
         Assert.Contains("Ordrenummer: AID-000042-1A2B3C4D", text);
         Assert.Contains("Avtalen ble inngått den: 19.10.2026", text);
-        foreach (var blank in new[] { "Varen ble mottatt den:", "Forbrukerens navn:", "Forbrukerens adresse:", "Dato:", "Underskrift (kun dersom skjemaet sendes på papir):" })
+        foreach (var blank in new[] { "Varen ble mottatt den:", "Forbrukerens navn:", "Forbrukerens adresse:", "Dato:", "Forbrukerens underskrift (kun dersom skjemaet sendes på papir):" })
             Assert.Contains(blank, text);
         Assert.Equal(5, Regex.Count(html, "<span class=\"blank\"></span>"));
         Assert.Contains("Gaming PC &lt;RTX&gt;", html);
+    }
+
+    [Theory]
+    [InlineData("no", "Avtalen ble inngått den: 24.10.2026", "Vilkårene ble godtatt: 19.10.2026")]
+    [InlineData("en", "Ordered on: 24.10.2026", "Terms accepted on: 19.10.2026")]
+    public void WithdrawalForm_DatesTheAgreement_ByWhenVippsConfirmedThePayment(string locale, string agreed, string accepted)
+    {
+        // Paid through a payment link days after checkout. 23:15 UTC on the 23rd is the 24th in Oslo.
+        var order = NewOrder(locale);
+        order.AuthorizedAt = new DateTime(2026, 10, 23, 23, 15, 0, DateTimeKind.Utc);
+
+        Assert.Contains(agreed, Text(OrderDocuments.WithdrawalFormHtml(order, Seller)));
+        Assert.Contains(accepted, Text(OrderDocuments.TermsHtml(order, Seller)!));
+    }
+
+    [Fact]
+    public void WithdrawalForm_WithoutAConfirmedPayment_DatesTheAgreementByTheTermsAccept()
+    {
+        var order = NewOrder();
+        order.AuthorizedAt = null;
+
+        Assert.Contains("Avtalen ble inngått den: 19.10.2026", Text(OrderDocuments.WithdrawalFormHtml(order, Seller)));
     }
 
     [Fact]

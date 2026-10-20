@@ -81,12 +81,12 @@ namespace altinnendata_api.Features.Shop
                 Field(body, "Utfylt skjema sendes til", $"<p class=\"seller\">{seller}</p>");
                 body.Append($"<p>Jeg underretter herved om at jeg ønsker å gå fra min avtale om kjøp av følgende varer: <strong>{Enc(o.BuildTitle)}</strong></p>");
                 Field(body, "Ordrenummer", Enc(o.Reference));
-                Field(body, "Avtalen ble inngått den", OsloDate(o.TermsAcceptedAt));
+                Field(body, "Avtalen ble inngått den", OsloDate(AgreedAt(o)));
                 Field(body, "Varen ble mottatt den", Blank);
                 Field(body, "Forbrukerens navn", Blank);
                 Field(body, "Forbrukerens adresse", Blank);
                 Field(body, "Dato", Blank);
-                Field(body, "Underskrift (kun dersom skjemaet sendes på papir)", Blank);
+                Field(body, "Forbrukerens underskrift (kun dersom skjemaet sendes på papir)", Blank);
                 return Page(o, "Standardskjema for bruk av angrerett", body.ToString());
             }
 
@@ -95,7 +95,7 @@ namespace altinnendata_api.Features.Shop
             Field(body, "To", $"<p class=\"seller\">{seller}</p>");
             body.Append($"<p>I hereby give notice that I withdraw from my contract of sale of the following goods: <strong>{Enc(o.BuildTitle)}</strong></p>");
             Field(body, "Order number", Enc(o.Reference));
-            Field(body, "Ordered on", OsloDate(o.TermsAcceptedAt));
+            Field(body, "Ordered on", OsloDate(AgreedAt(o)));
             Field(body, "Received on", Blank);
             Field(body, "Name of consumer", Blank);
             Field(body, "Address of consumer", Blank);
@@ -135,6 +135,12 @@ namespace altinnendata_api.Features.Shop
 
         private static string Page(Order o, string title, string body) =>
             $"<!doctype html><html lang=\"{(IsNorwegian(o) ? "nb" : "en")}\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{Csp}\"><title>{Enc(title)}</title>{Style}</head><body>{body}</body></html>";
+
+        /// <summary>
+        /// When the agreement was made: when Vipps confirmed the payment that succeeded, which after a payment link is
+        /// the link payment. Falls back to when the terms were accepted for an order Vipps has not confirmed.
+        /// </summary>
+        internal static DateTime AgreedAt(Order o) => o.AuthorizedAt ?? o.TermsAcceptedAt;
 
         private static string CompanyName(AppSettings s) =>
             string.IsNullOrWhiteSpace(s.CompanyLegalName) ? s.CompanyName : s.CompanyLegalName;
