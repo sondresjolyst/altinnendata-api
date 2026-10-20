@@ -80,6 +80,8 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("Storgata 1", msg.HtmlBody);
         Assert.Contains("Org.nr. 938 433 240 Foretaksregisteret", msg.HtmlBody);
         Assert.DoesNotContain("merverdiavgift", msg.HtmlBody);
+        Assert.Contains("Vi tar kontakt med deg om levering.", msg.HtmlBody);
+        Assert.DoesNotContain("Selger", msg.HtmlBody);
         Assert.Contains("https://www.altinnendata.no/no/terms", msg.HtmlBody);
         Assert.Contains("altinnendata@gmail.com", msg.HtmlBody);
     }
@@ -91,6 +93,7 @@ public class OrderEmailsTests : TestBase
 
         Assert.Contains("Torsdag etter 16", msg.HtmlBody);
         Assert.DoesNotContain("Storgata", msg.HtmlBody);
+        Assert.Contains("Vi tar kontakt med deg om henting.", msg.HtmlBody);
     }
 
     [Fact]
@@ -106,7 +109,7 @@ public class OrderEmailsTests : TestBase
     {
         var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings { VatRegistered = true }, Config());
 
-        Assert.DoesNotContain("ingen mva", msg.HtmlBody);
+        Assert.DoesNotContain("Merverdiavgiftsregisteret", msg.HtmlBody);
     }
 
     private static AppSettings Seller(bool vatRegistered = false) => new() { OrgNumber = "938 433 240", VatRegistered = vatRegistered };
@@ -114,7 +117,9 @@ public class OrderEmailsTests : TestBase
     [Fact]
     public void OwnerNewOrder_LinksTheAdminOrderAndRepliesToTheBuyer()
     {
-        var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
+        var order = NewOrder();
+        order.VippsReference = Reference + "-2";
+        var msg = OrderEmails.OwnerNewOrder(order, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
 
         Assert.Equal("Ny ordre AID-000001-ABCDEF12: Gaming PC RTX 3060", msg.Subject);
         Assert.Equal("shop@altinnendata.no", msg.To);
@@ -130,7 +135,9 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("13 189,00", msg.HtmlBody);
         Assert.Contains("19.10.2026", msg.HtmlBody); // 22:30 UTC is already the next day in Oslo
         Assert.Contains(Reference, msg.HtmlBody);
-        Assert.Contains("Ikke merverdiavgiftsregistrert, ingen mva.", msg.HtmlBody);
+        Assert.Contains("<p><strong>Ordrenummer:</strong> AID-000001-ABCDEF12</p>", msg.HtmlBody);
+        Assert.Contains("<p><strong>Vipps-referanse:</strong> AID-000001-ABCDEF12-2</p>", msg.HtmlBody);
+        Assert.Contains("Ikke registrert i Merverdiavgiftsregisteret.", msg.HtmlBody);
     }
 
     [Fact]
@@ -151,6 +158,8 @@ public class OrderEmailsTests : TestBase
 
         Assert.Equal("Ordre AID-000001-ABCDEF12 er kansellert", OrderEmails.BuyerCancelled(no, s).Subject);
         Assert.Equal("Order AID-000001-ABCDEF12 is cancelled", OrderEmails.BuyerCancelled(en, s).Subject);
+        Assert.Contains("Reservasjonen i Vipps er opphevet. Ingen penger er trukket.", OrderEmails.BuyerCancelled(no, s).HtmlBody);
+        Assert.Contains("The reservation in Vipps has been cancelled. No money has been taken.", OrderEmails.BuyerCancelled(en, s).HtmlBody);
         Assert.Contains("It can take a few days before the amount appears in your account.", OrderEmails.BuyerRefunded(Refunded(en), 1318900, s).HtmlBody);
     }
 
@@ -164,8 +173,8 @@ public class OrderEmailsTests : TestBase
     }
 
     [Theory]
-    [InlineData("no", "Pengene for ordre AID-000001-ABCDEF12 er betalt tilbake", "Vi har betalt tilbake 13 189,00 kr til Vipps.")]
-    [InlineData("en", "Order AID-000001-ABCDEF12 is refunded", "We have refunded 13,189.00 kr to Vipps.")]
+    [InlineData("no", "Pengene for ordre AID-000001-ABCDEF12 er betalt tilbake", "Vi har betalt tilbake 13 189,00 kr til betalingsmåten du brukte i Vipps.")]
+    [InlineData("en", "Order AID-000001-ABCDEF12 is refunded", "We have refunded 13,189.00 kr to the payment method you used in Vipps.")]
     public void RefundEmail_ForTheWholeOrder_KeepsTheSubject(string locale, string subject, string sentence)
     {
         var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder(locale)), 1318900, new AppSettings());
@@ -175,8 +184,8 @@ public class OrderEmailsTests : TestBase
     }
 
     [Theory]
-    [InlineData("no", "Vi har betalt tilbake 3 000,00 kr for ordre AID-000001-ABCDEF12", "Vi har betalt tilbake 3 000,00 kr til Vipps.")]
-    [InlineData("en", "We have refunded 3,000.00 kr for order AID-000001-ABCDEF12", "We have refunded 3,000.00 kr to Vipps.")]
+    [InlineData("no", "Vi har betalt tilbake 3 000,00 kr for ordre AID-000001-ABCDEF12", "Vi har betalt tilbake 3 000,00 kr til betalingsmåten du brukte i Vipps.")]
+    [InlineData("en", "We have refunded 3,000.00 kr for order AID-000001-ABCDEF12", "We have refunded 3,000.00 kr to the payment method you used in Vipps.")]
     public void RefundEmail_ForAPart_NamesTheAmountRefundedThisTime(string locale, string subject, string sentence)
     {
         var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder(locale), refunded: 700_000), 300_000, new AppSettings());
@@ -193,7 +202,7 @@ public class OrderEmailsTests : TestBase
         var msg = OrderEmails.BuyerRefunded(Refunded(NewOrder()), 318_900, new AppSettings());
 
         Assert.Equal("Pengene for ordre AID-000001-ABCDEF12 er betalt tilbake", msg.Subject);
-        Assert.Contains("Vi har betalt tilbake 3 189,00 kr til Vipps.", msg.HtmlBody);
+        Assert.Contains("Vi har betalt tilbake 3 189,00 kr til betalingsmåten du brukte i Vipps.", msg.HtmlBody);
     }
 
     [Theory]
@@ -303,8 +312,8 @@ public class OrderEmailsTests : TestBase
     }
 
     [Theory]
-    [InlineData("no", "Melding fra selger")]
-    [InlineData("en", "Message from the seller")]
+    [InlineData("no", "Melding fra oss")]
+    [InlineData("en", "Message from us")]
     public void BuyerShipped_ShowsTheNote_Encoded_WithItsLines(string locale, string label)
     {
         var order = NewOrder(locale);
@@ -324,8 +333,8 @@ public class OrderEmailsTests : TestBase
         order.ShippingNote = "   ";
         var msg = OrderEmails.BuyerShipped(order, new AppSettings());
 
-        Assert.DoesNotContain("Melding fra selger", msg.HtmlBody);
-        Assert.DoesNotContain("Message from the seller", msg.HtmlBody);
+        Assert.DoesNotContain("Melding fra oss", msg.HtmlBody);
+        Assert.DoesNotContain("Message from us", msg.HtmlBody);
         foreach (var word in new[] { "trekk", "belast", "betal", "Vipps", "charged", "taken", "paid", "capture" })
             Assert.DoesNotContain(word, msg.HtmlBody, StringComparison.OrdinalIgnoreCase);
     }
@@ -334,7 +343,7 @@ public class OrderEmailsTests : TestBase
     [InlineData("EXPIRED", "Reservasjonen utløp i Vipps 19.10.2026 (EXPIRED).")]
     [InlineData("ABORTED", "Betalingen ble avbrutt i Vipps 19.10.2026 (ABORTED).")]
     [InlineData("TERMINATED", "Betalingen ble avsluttet i Vipps 19.10.2026 (TERMINATED).")]
-    [InlineData("CANCELLED", "Reservasjonen ble kansellert i Vipps 19.10.2026 (CANCELLED).")]
+    [InlineData("CANCELLED", "Reservasjonen ble opphevet i Vipps 19.10.2026 (CANCELLED).")]
     public void OwnerReservationEnded_SaysWhatHappened_LinksTheOrder_AndAsksTheOwnerToAct(string vippsEvent, string what)
     {
         var order = NewOrder();
@@ -342,7 +351,7 @@ public class OrderEmailsTests : TestBase
 
         var msg = OrderEmails.OwnerReservationEnded(order, vippsEvent, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
 
-        Assert.Equal("Reservasjonen for ordre AID-000001-ABCDEF12 er borte", msg.Subject);
+        Assert.Equal("Reservasjonen i Vipps for ordre AID-000001-ABCDEF12 er opphevet", msg.Subject);
         Assert.Equal("shop@altinnendata.no", msg.To);
         Assert.Equal("ola@kunde.no", msg.ReplyTo);
         Assert.Contains(what, msg.HtmlBody);
@@ -362,13 +371,13 @@ public class OrderEmailsTests : TestBase
 
         Assert.DoesNotContain("<b>Ola</b>", msg.HtmlBody);
         Assert.DoesNotContain("<x>", msg.HtmlBody);
-        Assert.Contains("Reservasjonen ble avsluttet i Vipps (&lt;x&gt;).", msg.HtmlBody);
+        Assert.Contains("Reservasjonen ble opphevet i Vipps (&lt;x&gt;).", msg.HtmlBody);
     }
 
     [Theory]
-    [InlineData("no", "Betalingsreservasjonen for ordre AID-000001-ABCDEF12 er avsluttet", "Reservasjonen av betalingen i Vipps er avsluttet. Selger tar kontakt med deg om ordren.", "Org.nr.")]
-    [InlineData("en", "The payment reservation for order AID-000001-ABCDEF12 has ended", "The reservation of the payment in Vipps has ended. The seller will contact you about the order.", "Org. no.")]
-    public void BuyerReservationEnded_SaysTheSellerWillBeInTouch(string locale, string subject, string text, string org)
+    [InlineData("no", "Reservasjonen i Vipps for ordre AID-000001-ABCDEF12 er opphevet", "Reservasjonen i Vipps er opphevet. Ingen penger er trukket. Datamaskinen er fortsatt holdt av for deg. Vi tar kontakt med deg.", "Ordrenummer: <strong>AID-000001-ABCDEF12</strong>", "Org.nr.")]
+    [InlineData("en", "The reservation in Vipps for order AID-000001-ABCDEF12 has been cancelled", "The reservation in Vipps has been cancelled. No money has been taken. The computer is still held for you. We will contact you.", "Order number: <strong>AID-000001-ABCDEF12</strong>", "Org. no.")]
+    public void BuyerReservationEnded_SaysTheComputerIsStillHeld_AndWeWillBeInTouch(string locale, string subject, string text, string number, string org)
     {
         var msg = OrderEmails.BuyerReservationEnded(NewOrder(locale), new AppSettings { OrgNumber = "938 433 240", PublicEmail = "post@altinnendata.no" });
 
@@ -376,9 +385,8 @@ public class OrderEmailsTests : TestBase
         Assert.Equal("ola@kunde.no", msg.To);
         Assert.Equal("post@altinnendata.no", msg.ReplyTo);
         Assert.Contains(text, msg.HtmlBody);
+        Assert.Contains(number, msg.HtmlBody);
         Assert.Contains($"{org} 938 433 240 Foretaksregisteret", msg.HtmlBody);
-        Assert.DoesNotContain("trukket", msg.HtmlBody);
-        Assert.DoesNotContain("taken", msg.HtmlBody);
     }
 
     [Fact]

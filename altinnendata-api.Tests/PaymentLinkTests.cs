@@ -584,7 +584,7 @@ public class PaymentLinkTests : TestBase
     // Emails.
 
     [Theory]
-    [InlineData("no", "Ny betalingslenke for ordre " + Reference, "Lenken er gyldig til 23.10.2026 kl. 14:00.", "fortsatt holdt av til deg")]
+    [InlineData("no", "Ny betalingslenke for ordre " + Reference, "Lenken er gyldig til 23.10.2026 kl. 14:00.", "fortsatt holdt av for deg")]
     [InlineData("en", "New payment link for order " + Reference, "The link works until 23.10.2026 at 14:00.", "still held for you")]
     public void BuyerPaymentLink_SaysTheComputerIsHeldAndUntilWhen(string locale, string subject, string until, string held)
     {
