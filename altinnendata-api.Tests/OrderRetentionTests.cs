@@ -42,7 +42,7 @@ public class OrderRetentionTests : TestBase
     }
 
     [Fact]
-    public async Task Purge_DeletesFailedAndTestOrdersOlderThan90Days_AndKeepsTheRest()
+    public async Task Purge_DeletesFailed_UncapturedCancelled_AndTestOrdersOlderThan90Days_AndKeepsTheRest()
     {
         await using var db = CreateDbContext();
         var old = Now.AddDays(-90).AddSeconds(-1);
@@ -53,15 +53,18 @@ public class OrderRetentionTests : TestBase
         var testNew = NewOrder(OrderStatus.Paid, Now.AddDays(-89), isTest: true);
         var paidOld = NewOrder(OrderStatus.Paid, Now.AddYears(-2));
         var cancelledOld = NewOrder(OrderStatus.Cancelled, old);
+        var cancelledNew = NewOrder(OrderStatus.Cancelled, Now.AddDays(-90));
+        var cancelledCapturedOld = NewOrder(OrderStatus.Cancelled, old);
+        cancelledCapturedOld.CapturedInOre = 100;
         var refundedOld = NewOrder(OrderStatus.Refunded, old);
-        db.Orders.AddRange(failedOld, testPaidOld, testCancelledOld, failedNew, testNew, paidOld, cancelledOld, refundedOld);
+        db.Orders.AddRange(failedOld, testPaidOld, testCancelledOld, failedNew, testNew, paidOld, cancelledOld, cancelledNew, cancelledCapturedOld, refundedOld);
         await db.SaveChangesAsync(Ct);
 
-        Assert.Equal(3, await OrderRetention.PurgeAsync(db, Now, Ct));
+        Assert.Equal(4, await OrderRetention.PurgeAsync(db, Now, Ct));
 
         var left = await db.Orders.Select(o => o.Reference).ToListAsync(Ct);
         Assert.Equal(
-            new[] { failedNew, testNew, paidOld, cancelledOld, refundedOld }.Select(o => o.Reference).Order(),
+            new[] { failedNew, testNew, paidOld, cancelledNew, cancelledCapturedOld, refundedOld }.Select(o => o.Reference).Order(),
             left.Order());
         Assert.Equal(0, await OrderRetention.PurgeAsync(db, Now, Ct));
     }
@@ -72,14 +75,16 @@ public class OrderRetentionTests : TestBase
         await using var db = CreateDbContext();
         var held = NewOrder(OrderStatus.Failed, Now.AddDays(-200));
         var free = NewOrder(OrderStatus.Failed, Now.AddDays(-200));
-        db.Orders.AddRange(held, free);
+        var heldCancelled = NewOrder(OrderStatus.Cancelled, Now.AddDays(-200));
+        db.Orders.AddRange(held, free, heldCancelled);
         await db.SaveChangesAsync(Ct);
         db.PcBuilds.Add(new PcBuild { Slug = "pc", Availability = BuildAvailability.Reserved, HeldByOrderId = held.Id });
+        db.PcBuilds.Add(new PcBuild { Slug = "pc-2", Availability = BuildAvailability.Reserved, HeldByOrderId = heldCancelled.Id });
         await db.SaveChangesAsync(Ct);
 
         Assert.Equal(1, await OrderRetention.PurgeAsync(db, Now, Ct));
 
-        Assert.Equal(held.Id, (await db.Orders.SingleAsync(Ct)).Id);
+        Assert.Equal(new[] { held.Id, heldCancelled.Id }.Order(), (await db.Orders.Select(o => o.Id).ToListAsync(Ct)).Order());
     }
 
     [Fact]
@@ -117,7 +122,7 @@ public class OrderRetentionTests : TestBase
         Assert.Equal(1, await db.Orders.CountAsync(Ct));
         var entry = Assert.Single(log.Entries);
         Assert.Equal(LogLevel.Information, entry.Level);
-        Assert.Contains("Deleted 1 failed or test orders older than 90 days", entry.Message);
+        Assert.Contains("Deleted 1 failed, uncaptured cancelled or test orders older than 90 days", entry.Message);
     }
 
     [Fact]
@@ -156,14 +161,17 @@ public class OrderRetentionPostgresTests(PostgresDatabase postgres)
         var held = OrderRetentionTests.NewOrder(OrderStatus.Failed, now.AddDays(-120));
         var test = OrderRetentionTests.NewOrder(OrderStatus.Reserved, now.AddDays(-120), isTest: true);
         var sale = OrderRetentionTests.NewOrder(OrderStatus.Paid, now.AddDays(-120));
-        db.Orders.AddRange(held, test, sale);
+        var cancelled = OrderRetentionTests.NewOrder(OrderStatus.Cancelled, now.AddDays(-120));
+        var cancelledCaptured = OrderRetentionTests.NewOrder(OrderStatus.Cancelled, now.AddDays(-120));
+        cancelledCaptured.CapturedInOre = 100;
+        db.Orders.AddRange(held, test, sale, cancelled, cancelledCaptured);
         await db.SaveChangesAsync(ct);
         db.PcBuilds.Add(new PcBuild { Slug = "pc-ret", Availability = BuildAvailability.Reserved, HeldByOrderId = held.Id });
         await db.SaveChangesAsync(ct);
 
-        Assert.Equal(1, await OrderRetention.PurgeAsync(db, now, ct));
+        Assert.Equal(2, await OrderRetention.PurgeAsync(db, now, ct));
 
-        Assert.Equal(new[] { held.Id, sale.Id }.Order(), (await db.Orders.Select(o => o.Id).ToListAsync(ct)).Order());
+        Assert.Equal(new[] { held.Id, sale.Id, cancelledCaptured.Id }.Order(), (await db.Orders.Select(o => o.Id).ToListAsync(ct)).Order());
     }
 
     [Fact]

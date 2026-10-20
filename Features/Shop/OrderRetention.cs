@@ -5,8 +5,8 @@ using altinnendata_api.Models.Shop;
 namespace altinnendata_api.Features.Shop
 {
     /// <summary>
-    /// Deletes the orders there is no reason to keep: failed orders and orders made while Vipps was in test mode,
-    /// 90 days after they were created. An order that still holds a build is kept until the build is released.
+    /// Deletes the orders there is no reason to keep: failed orders, cancelled orders that were never captured and
+    /// orders made while Vipps was in test mode, 90 days after they were created. An order that still holds a build is kept until the build is released.
     /// Sales are kept for the accounts.
     /// </summary>
     public static class OrderRetention
@@ -22,7 +22,9 @@ namespace altinnendata_api.Features.Shop
             var cutoff = now - KeepFor;
             var expired = await db.Orders
                 .Where(o => o.CreatedAt < cutoff
-                    && (o.Status == OrderStatus.Failed || o.IsTest)
+                    && (o.Status == OrderStatus.Failed
+                        || (o.Status == OrderStatus.Cancelled && o.CapturedInOre == 0)
+                        || o.IsTest)
                     && !db.PcBuilds.Any(b => b.HeldByOrderId == o.Id))
                 .OrderBy(o => o.Id)
                 .Take(BatchSize)
@@ -63,11 +65,11 @@ namespace altinnendata_api.Features.Shop
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var deleted = await OrderRetention.PurgeAsync(db, time.GetUtcNow().UtcDateTime, ct);
                 if (deleted > 0)
-                    log.LogInformation("Deleted {Count} failed or test orders older than {Days} days", deleted, OrderRetention.KeepFor.TotalDays);
+                    log.LogInformation("Deleted {Count} failed, uncaptured cancelled or test orders older than {Days} days", deleted, OrderRetention.KeepFor.TotalDays);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                log.LogError(ex, "Deleting old failed and test orders failed, it is tried again tomorrow");
+                log.LogError(ex, "Deleting old failed, uncaptured cancelled and test orders failed, it is tried again tomorrow");
             }
         }
     }
