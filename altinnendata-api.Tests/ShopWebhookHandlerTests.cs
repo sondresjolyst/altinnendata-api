@@ -518,17 +518,26 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         VerifyNoEmails();
     }
 
-    [Fact]
-    public async Task Failed_FromReserved_ReleasesTheBuild()
+    [Theory]
+    [InlineData("ABORTED")]
+    [InlineData("EXPIRED")]
+    [InlineData("TERMINATED")]
+    public async Task Failed_FromReserved_KeepsTheBuildHeld_AndTellsTheOwnerAndTheBuyerOnce(string name)
     {
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
 
-        await DeliverAsync(db, Delivery("EXPIRED", amount: null));
+        var first = await DeliverAsync(db, Delivery(name, amount: null));
+        var again = await DeliverAsync(db, Delivery(name, amount: null));
 
+        Assert.NotNull(first.AfterCommit);
+        Assert.Null(again.AfterCommit);
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Failed, order.Status);
-        Assert.Equal(BuildAvailability.Available, build.Availability);
+        Assert.Equal(EventTime.UtcDateTime, order.ReservationEndedAt);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        _notifier.Verify(n => n.ReservationEndedAsync(orderId, name, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
     }
 
@@ -572,10 +581,32 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
-    public async Task Cancelled_FromVipps_ReleasesAndNotifies_AndAfterAdminCancelDoesNothing()
+    public async Task Cancelled_ByVippsOnItsOwn_KeepsTheBuildHeld_AndTellsTheOwnerAndTheBuyerOnce()
     {
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+
+        var first = await DeliverAsync(db, Delivery("CANCELLED"));
+        var again = await DeliverAsync(db, Delivery("CANCELLED"));
+
+        Assert.Equal(VippsWebhookOutcomeKind.Applied, first.Kind);
+        Assert.Null(again.AfterCommit);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+        Assert.Equal(EventTime.UtcDateTime, order.CancelledAt);
+        Assert.Equal(EventTime.UtcDateTime, order.ReservationEndedAt);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        _notifier.Verify(n => n.ReservationEndedAsync(orderId, "CANCELLED", It.IsAny<CancellationToken>()), Times.Once);
+        VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Cancelled_AfterTheAdminAskedVipps_ReleasesAndNotifiesTheBuyer_AndAfterAdminCancelDoesNothing()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        await db.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s.SetProperty(o => o.AdminCancelRequestedAt, DateTime.UtcNow), Ct);
 
         var first = await DeliverAsync(db, Delivery("CANCELLED"));
 
@@ -583,6 +614,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Cancelled, order.Status);
         Assert.Equal(EventTime.UtcDateTime, order.CancelledAt);
+        Assert.Null(order.ReservationEndedAt);
         Assert.Equal(BuildAvailability.Available, build.Availability);
         Assert.Null(build.HeldByOrderId);
         _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
@@ -592,6 +624,24 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
 
         Assert.Null(afterAdmin.AfterCommit);
         _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+        VerifyNoEmails();
+    }
+
+    [Theory]
+    [InlineData("EXPIRED")]
+    [InlineData("ABORTED")]
+    public async Task Failed_FromReserved_AfterTheAdminAskedToCancel_StillKeepsTheBuildAndTellsTheOwner(string name)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        await db.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s.SetProperty(o => o.AdminCancelRequestedAt, DateTime.UtcNow), Ct);
+
+        await DeliverAsync(db, Delivery(name, amount: null));
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Failed, order.Status);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        _notifier.Verify(n => n.ReservationEndedAsync(orderId, name, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
     }
 

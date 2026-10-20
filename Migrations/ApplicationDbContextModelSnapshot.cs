@@ -971,6 +971,9 @@ namespace altinnendata_api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("AdminCancelRequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("AuthorizedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1088,6 +1091,9 @@ namespace altinnendata_api.Migrations
 
                     b.Property<int>("RefundedInOre")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ReservationEndedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ShippedAt")
                         .HasColumnType("timestamp with time zone");

@@ -81,6 +81,19 @@ namespace altinnendata_api.Models.Shop
         public DateTime? ShippedAt { get; set; }
         public string? ShippingNote { get; set; }
         public DateTime? AuthorizedAt { get; set; }
+
+        /// <summary>
+        /// When Vipps ended the reservation of a Reserved order without the admin asking for it (expired, aborted,
+        /// terminated or cancelled). The build stays held until the admin releases it.
+        /// </summary>
+        public DateTime? ReservationEndedAt { get; set; }
+
+        /// <summary>
+        /// When the admin asked Vipps to cancel the order. Set before Vipps is called, so the CANCELLED event that
+        /// follows is known as the admin's own and releases the build as before. It stays set when the Vipps call
+        /// fails, since Vipps may still have cancelled.
+        /// </summary>
+        public DateTime? AdminCancelRequestedAt { get; set; }
         public DateTime? CapturedAt { get; set; }
         public DateTime? CancelledAt { get; set; }
         public DateTime? RefundedAt { get; set; }

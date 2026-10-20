@@ -103,6 +103,52 @@ namespace altinnendata_api.Features.Shop
             };
         }
 
+        /// <summary>
+        /// Tells the owner that Vipps ended the reservation of a reserved order. The build is still held for the order,
+        /// so the owner contacts the buyer or releases it.
+        /// </summary>
+        public static EmailMessage OwnerReservationEnded(Order o, string vippsEvent, AppSettings s, IConfiguration config)
+        {
+            var how = vippsEvent switch
+            {
+                "EXPIRED" => "Reservasjonen utløp i Vipps",
+                "ABORTED" => "Betalingen ble avbrutt i Vipps",
+                "TERMINATED" => "Betalingen ble avsluttet i Vipps",
+                "CANCELLED" => "Reservasjonen ble kansellert i Vipps",
+                _ => "Reservasjonen ble avsluttet i Vipps"
+            };
+            var when = o.ReservationEndedAt is { } at ? $" {OsloDate(at)}" : "";
+            var subject = $"Reservasjonen for ordre {o.Reference} er borte";
+            var body = new StringBuilder();
+            body.Append($"<h2>{Enc(subject)}</h2>");
+            body.Append($"<p>{how}{when} ({Enc(vippsEvent)}). Det var ikke du som kansellerte den.</p>");
+            body.Append($"<p>Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av ordren og vises ikke som tilgjengelig.</p>");
+            body.Append("<p>Ta kontakt med kjøperen og avtal videre, eller frigi datamaskinen fra ordren i admin hvis salget ikke blir noe av.</p>");
+            body.Append($"<p><strong>Kjøper:</strong> {Enc(o.BuyerName)}, {Enc(o.BuyerEmail)}, {Enc(o.BuyerPhone)}</p>");
+            body.Append($"<p><a href=\"{Enc(SiteLinks.AdminOrder(config, o.Id))}\">Åpne ordren i admin</a></p>");
+            return new EmailMessage(s.ContactRecipientEmail, subject, body.ToString())
+            {
+                ReplyTo = o.BuyerEmail,
+            };
+        }
+
+        /// <summary>Tells the buyer that the payment reservation in Vipps has ended and that the seller will be in touch.</summary>
+        public static EmailMessage BuyerReservationEnded(Order o, AppSettings s)
+        {
+            var no = IsNorwegian(o);
+            var subject = no
+                ? $"Betalingsreservasjonen for ordre {o.Reference} er avsluttet"
+                : $"The payment reservation for order {o.Reference} has ended";
+            var body = new StringBuilder();
+            body.Append($"<h2>{Enc(subject)}</h2>");
+            body.Append($"<p>{(no ? "Vare" : "Item")}: {Enc(o.BuildTitle)}</p>");
+            body.Append(no
+                ? "<p>Reservasjonen av betalingen i Vipps er avsluttet. Selger tar kontakt med deg om ordren.</p>"
+                : "<p>The reservation of the payment in Vipps has ended. The seller will contact you about the order.</p>");
+            AppendFooter(body, s, no);
+            return new EmailMessage(o.BuyerEmail, subject, body.ToString()) { ReplyTo = s.PublicEmail };
+        }
+
         /// <summary>The order is on its way, or ready for pickup. Says nothing about when the money is taken.</summary>
         public static EmailMessage BuyerShipped(Order o, AppSettings s)
         {

@@ -11,6 +11,9 @@ namespace altinnendata_api.Features.Shop
         Task OrderCancelledAsync(int orderId, CancellationToken ct);
         Task OrderRefundedAsync(int orderId, int amountInOre, CancellationToken ct);
         Task OrderShippedAsync(int orderId, CancellationToken ct);
+
+        /// <summary>Vipps ended the reservation of a Reserved order on its own. <paramref name="vippsEvent"/> is the event or state that ended it.</summary>
+        Task ReservationEndedAsync(int orderId, string vippsEvent, CancellationToken ct);
     }
 
     /// <summary>Emails the buyer and the owner about an order. A failed send is logged and never thrown.</summary>
@@ -48,6 +51,15 @@ namespace altinnendata_api.Features.Shop
             if (order == null) return;
 
             await SendAsync(OrderEmails.BuyerShipped(order, settings), order, ct);
+        }
+
+        public async Task ReservationEndedAsync(int orderId, string vippsEvent, CancellationToken ct)
+        {
+            var (order, settings) = await LoadAsync(orderId, ct);
+            if (order == null) return;
+
+            await SendAsync(OrderEmails.OwnerReservationEnded(order, vippsEvent, settings, config), order, ct);
+            await SendAsync(OrderEmails.BuyerReservationEnded(order, settings), order, ct);
         }
 
         private async Task<(Models.Shop.Order? Order, AppSettings Settings)> LoadAsync(int orderId, CancellationToken ct)

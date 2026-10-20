@@ -329,4 +329,77 @@ public class OrderEmailsTests : TestBase
         foreach (var word in new[] { "trekk", "belast", "betal", "Vipps", "charged", "taken", "paid", "capture" })
             Assert.DoesNotContain(word, msg.HtmlBody, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Theory]
+    [InlineData("EXPIRED", "Reservasjonen utløp i Vipps 19.10.2026 (EXPIRED).")]
+    [InlineData("ABORTED", "Betalingen ble avbrutt i Vipps 19.10.2026 (ABORTED).")]
+    [InlineData("TERMINATED", "Betalingen ble avsluttet i Vipps 19.10.2026 (TERMINATED).")]
+    [InlineData("CANCELLED", "Reservasjonen ble kansellert i Vipps 19.10.2026 (CANCELLED).")]
+    public void OwnerReservationEnded_SaysWhatHappened_LinksTheOrder_AndAsksTheOwnerToAct(string vippsEvent, string what)
+    {
+        var order = NewOrder();
+        order.ReservationEndedAt = new DateTime(2026, 10, 18, 23, 0, 0, DateTimeKind.Utc);
+
+        var msg = OrderEmails.OwnerReservationEnded(order, vippsEvent, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
+
+        Assert.Equal("Reservasjonen for ordre AID-000001-ABCDEF12 er borte", msg.Subject);
+        Assert.Equal("shop@altinnendata.no", msg.To);
+        Assert.Equal("ola@kunde.no", msg.ReplyTo);
+        Assert.Contains(what, msg.HtmlBody);
+        Assert.Contains("Ta kontakt med kjøperen", msg.HtmlBody);
+        Assert.Contains("frigi datamaskinen", msg.HtmlBody);
+        Assert.Contains("Gaming PC RTX 3060", msg.HtmlBody);
+        Assert.Contains("Ola Nordmann, ola@kunde.no, +4799999999", msg.HtmlBody);
+        Assert.Contains("href=\"https://www.altinnendata.no/no/admin/shop/orders/7\"", msg.HtmlBody);
+    }
+
+    [Fact]
+    public void OwnerReservationEnded_EncodesTheOrder()
+    {
+        var order = NewOrder(buyerName: "<b>Ola</b>");
+
+        var msg = OrderEmails.OwnerReservationEnded(order, "<x>", new AppSettings(), Config());
+
+        Assert.DoesNotContain("<b>Ola</b>", msg.HtmlBody);
+        Assert.DoesNotContain("<x>", msg.HtmlBody);
+        Assert.Contains("Reservasjonen ble avsluttet i Vipps (&lt;x&gt;).", msg.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("no", "Betalingsreservasjonen for ordre AID-000001-ABCDEF12 er avsluttet", "Reservasjonen av betalingen i Vipps er avsluttet. Selger tar kontakt med deg om ordren.", "Org.nr.")]
+    [InlineData("en", "The payment reservation for order AID-000001-ABCDEF12 has ended", "The reservation of the payment in Vipps has ended. The seller will contact you about the order.", "Org. no.")]
+    public void BuyerReservationEnded_SaysTheSellerWillBeInTouch(string locale, string subject, string text, string org)
+    {
+        var msg = OrderEmails.BuyerReservationEnded(NewOrder(locale), new AppSettings { OrgNumber = "938 433 240", PublicEmail = "post@altinnendata.no" });
+
+        Assert.Equal(subject, msg.Subject);
+        Assert.Equal("ola@kunde.no", msg.To);
+        Assert.Equal("post@altinnendata.no", msg.ReplyTo);
+        Assert.Contains(text, msg.HtmlBody);
+        Assert.Contains($"{org} 938 433 240 Foretaksregisteret", msg.HtmlBody);
+        Assert.DoesNotContain("trukket", msg.HtmlBody);
+        Assert.DoesNotContain("taken", msg.HtmlBody);
+    }
+
+    [Fact]
+    public async Task Notifier_ReservationEnded_EmailsTheOwnerThenTheBuyer()
+    {
+        await using var db = CreateDbContext();
+        var order = NewOrder();
+        order.Id = 0;
+        db.Orders.Add(order);
+        db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var sent = new List<EmailMessage>();
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<EmailMessage, CancellationToken>((m, _) => sent.Add(m))
+            .ReturnsAsync(new EmailResult(true));
+        var notifier = new OrderNotifier(db, email.Object, null!, Config(), NullLogger<OrderNotifier>.Instance);
+
+        await notifier.ReservationEndedAsync(order.Id, "EXPIRED", TestContext.Current.CancellationToken);
+
+        Assert.Equal(["shop@altinnendata.no", "ola@kunde.no"], sent.Select(m => m.To));
+        Assert.Contains("(EXPIRED)", sent[0].HtmlBody);
+    }
 }

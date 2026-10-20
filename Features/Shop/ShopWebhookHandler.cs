@@ -9,6 +9,8 @@ namespace altinnendata_api.Features.Shop
     /// Applies Vipps ePayment events to orders and their builds. An order only moves forward: Paid, Refunded,
     /// Failed and Cancelled are final, except that a Paid order can be refunded. A build is only released or
     /// marked sold while the order still holds it, so an admin's own change to it always stays.
+    /// When Vipps ends the reservation of a Reserved order on its own, the agreement with the buyer still stands,
+    /// so the build stays held, and the owner and the buyer are told.
     /// The changes are saved by the library endpoint together with the processed marker.
     /// </summary>
     public class ShopWebhookHandler(
@@ -63,6 +65,7 @@ namespace altinnendata_api.Features.Shop
             var previous = order.Status;
             var at = e.Timestamp?.UtcDateTime ?? DateTime.UtcNow;
             var refundedNow = 0;
+            var reservationEnded = false;
 
             try
             {
@@ -92,11 +95,11 @@ namespace altinnendata_api.Features.Shop
                     case "EXPIRED":
                     case "TERMINATED":
                         if (previous is OrderStatus.Pending or OrderStatus.Reserved)
-                            Fail(order, build, e.Name, eventKey);
+                            reservationEnded = Fail(order, build, e.Name, at, eventKey);
                         break;
                     case "CANCELLED":
                         if (previous is OrderStatus.Pending or OrderStatus.Reserved)
-                            Cancel(order, build, at, eventKey);
+                            reservationEnded = Cancel(order, build, at, eventKey);
                         break;
                     default:
                         log.LogInformation("Shop webhook {EventKey}: {Name} for order {OrderId} changes nothing", eventKey, e.Name, order.Id);
@@ -124,6 +127,14 @@ namespace altinnendata_api.Features.Shop
             if (order.Status == previous) return VippsWebhookOutcome.Applied();
 
             log.LogInformation("Shop webhook {EventKey}: order {OrderId} {Previous} -> {Status}", eventKey, order.Id, previous, order.Status);
+
+            if (reservationEnded)
+            {
+                var name = e.Name;
+                log.LogWarning("Shop webhook {EventKey}: Vipps ended the reservation of order {OrderId} with {Name}, the build stays held for the owner to sort out",
+                    eventKey, order.Id, name);
+                return VippsWebhookOutcome.Applied(ct => notifier.ReservationEndedAsync(orderId, name, ct));
+            }
 
             return order.Status switch
             {
@@ -187,41 +198,63 @@ namespace altinnendata_api.Features.Shop
             return added;
         }
 
-        private void Fail(Order order, PcBuild? build, string name, string eventKey)
+        /// <summary>
+        /// The payment failed. A Pending order fails and lets go of the build. A Reserved order fails too, but keeps
+        /// the build held and returns true, since the buyer already has an agreement.
+        /// </summary>
+        private bool Fail(Order order, PcBuild? build, string name, DateTime at, string eventKey)
         {
             // The buyer paid part of the order. That needs a person, so the order and the build stay as they are.
             if (order.CapturedInOre > 0)
             {
                 log.LogError("Shop webhook {EventKey}: {Name} on order {OrderId} after a capture of {Captured} of {Total} øre, the order stays {Status} and needs manual handling",
                     eventKey, name, order.Id, order.CapturedInOre, order.TotalInOre, order.Status);
-                return;
+                return false;
             }
 
+            var wasReserved = order.Status == OrderStatus.Reserved;
             order.Status = OrderStatus.Failed;
+            if (wasReserved)
+            {
+                order.ReservationEndedAt = at;
+                return true;
+            }
             if (build != null) BuildHold.Release(build, order.Id);
+            return false;
         }
 
-        private void Cancel(Order order, PcBuild? build, DateTime at, string eventKey)
+        /// <summary>
+        /// The payment was cancelled. A Pending order fails and lets go of the build. A Reserved order the admin asked
+        /// to cancel is cancelled and lets go of the build. One Vipps cancelled on its own is cancelled, keeps the
+        /// build held and returns true.
+        /// </summary>
+        private bool Cancel(Order order, PcBuild? build, DateTime at, string eventKey)
         {
             // The buyer paid part of the order and the rest was released. That needs a person, so the build stays held.
             if (order.CapturedInOre > 0)
             {
                 log.LogError("Shop webhook {EventKey}: order {OrderId} was captured for {Captured} of {Total} øre and the rest cancelled, the order stays {Status} and needs manual handling",
                     eventKey, order.Id, order.CapturedInOre, order.TotalInOre, order.Status);
-                return;
+                return false;
             }
 
             // A payment cancelled before the buyer authorized it never reserved anything, so the order fails without an email.
             if (order.Status == OrderStatus.Pending)
             {
                 order.Status = OrderStatus.Failed;
+                if (build != null) BuildHold.Release(build, order.Id);
+                return false;
             }
-            else
+
+            order.Status = OrderStatus.Cancelled;
+            order.CancelledAt = at;
+            if (order.AdminCancelRequestedAt == null)
             {
-                order.Status = OrderStatus.Cancelled;
-                order.CancelledAt = at;
+                order.ReservationEndedAt = at;
+                return true;
             }
             if (build != null) BuildHold.Release(build, order.Id);
+            return false;
         }
     }
 }

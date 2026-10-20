@@ -74,7 +74,10 @@ namespace altinnendata_api.Features.Shop
         string? ShippingNote,
         IReadOnlyList<OrderRefundDto> Refunds,
         DateTime? DeliveryDate,
-        string DeliveryPlace)
+        string DeliveryPlace,
+        DateTime? ReservationEndedAt,
+        bool HoldsBuild,
+        string? ReleaseBuildBlockedReason)
     {
         /// <summary>
         /// The order as the admin pages show it, with its refunds, oldest first, and where it is delivered. Every
@@ -88,7 +91,9 @@ namespace altinnendata_api.Features.Shop
                 .Select(r => new OrderRefundDto(r.AmountInOre, r.RefundedAt, r.Source.ToString()))
                 .ToListAsync(ct);
             var seller = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
-            return From(o, refunds, seller);
+            var holdsBuild = o.PcBuildId is int buildId
+                && await db.PcBuilds.AnyAsync(b => b.Id == buildId && b.HeldByOrderId == o.Id && b.Availability == BuildAvailability.Reserved, ct);
+            return From(o, refunds, seller, holdsBuild);
         }
 
         /// <summary>The buyer's address, or the seller's for pickup, as one line.</summary>
@@ -97,14 +102,24 @@ namespace altinnendata_api.Features.Shop
                 ? seller.FormattedAddress
                 : PostalAddress.Format(o.StreetAddress, o.PostalCode, o.City);
 
-        private static AdminOrderDto From(Order o, IReadOnlyList<OrderRefundDto> refunds, AppSettings seller) =>
+        /// <summary>
+        /// Why "release the build" cannot be used now, as the code its endpoint would answer with: <c>wrongStatus</c>
+        /// unless the order is failed or cancelled, <c>buildNotHeld</c> when it no longer holds the build. Null when it can.
+        /// </summary>
+        public static string? ReleaseBuildBlockedReasonOf(Order o, bool holdsBuild) =>
+            o.Status is not (OrderStatus.Failed or OrderStatus.Cancelled) ? "wrongStatus"
+            : !holdsBuild ? "buildNotHeld"
+            : null;
+
+        private static AdminOrderDto From(Order o, IReadOnlyList<OrderRefundDto> refunds, AppSettings seller, bool holdsBuild) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.Locale, o.BuyerName, o.BuyerEmail, o.BuyerPhone,
                 o.StreetAddress, o.PostalCode, o.City, o.DeliveryMethod.ToString(), o.DeliveryLabel, o.DeliveryPriceInOre,
                 o.WithinDistanceConfirmed, o.PickupNote, o.PcBuildId, o.BuildTitle, o.BuildSlug, o.BuildPriceInOre,
                 o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber,
                 o.TermsAcceptedAt, o.AuthorizedAt, o.CapturedAt, o.CancelledAt, o.RefundedAt, o.CreatedAt, o.UpdatedAt,
                 o.TermsVersion, o.TermsAcceptedIp, o.ConfirmationSentAt, o.ShippedAt, o.ShippingNote,
-                refunds, o.ShippedAt, DeliveryPlaceOf(o, seller));
+                refunds, o.ShippedAt, DeliveryPlaceOf(o, seller),
+                o.ReservationEndedAt, holdsBuild, ReleaseBuildBlockedReasonOf(o, holdsBuild));
     }
 
     /// <summary>One refund: the amount in øre, when, and whether the admin or a Vipps webhook recorded it.</summary>

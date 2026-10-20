@@ -91,6 +91,12 @@ namespace altinnendata_api.Features.Shop
             // The same case the cancel webhook leaves alone: the buyer paid part, so a person sorts it out in Vipps.
             if (order.CapturedInOre > 0) return WrongStatus(order, "A partly captured order cannot be cancelled here. Handle it in the Vipps portal.");
 
+            // Saved before Vipps is called, so a CANCELLED webhook that arrives before this action saves is known
+            // as the admin's own and releases the build instead of telling the owner the reservation is gone.
+            var (marked, refused) = await MarkCancelRequestedAsync(db, order, ct);
+            if (refused != null) return refused;
+            order = marked!;
+
             try
             {
                 await vipps.CancelPaymentAsync(order.Reference, $"cancel-{order.Reference}", order.IsTest, ct);
@@ -114,6 +120,57 @@ namespace altinnendata_api.Features.Shop
             log.LogInformation("Order {OrderId} cancelled by an admin", fresh.Id);
             return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, fresh, CancellationToken.None));
         }
+
+        private static async Task<(Order? Order, IResult? Refused)> MarkCancelRequestedAsync(ApplicationDbContext db, Order order, CancellationToken ct)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                order.AdminCancelRequestedAt ??= DateTime.UtcNow;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    return (order, null);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // A webhook changed the order after the read. Check it again on a fresh read.
+                    db.ChangeTracker.Clear();
+                    order = await db.Orders.FirstAsync(o => o.Id == order.Id, ct);
+                    if (order.Status != OrderStatus.Reserved || attempt == MaxSaveAttempts)
+                        return (null, WrongStatus(order, "The order changed while it was being cancelled."));
+                    if (order.CapturedInOre > 0)
+                        return (null, WrongStatus(order, "A partly captured order cannot be cancelled here. Handle it in the Vipps portal."));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Makes the build available again after Vipps ended the order's reservation and the sale did not go ahead.
+        /// Only a failed or cancelled order can do this, and only while it still holds the build, in one UPDATE, so
+        /// an admin's own change to the build or a new checkout is never undone.
+        /// </summary>
+        public static async Task<IResult> ReleaseBuild(int id, ApplicationDbContext db, ILogger<AdminOrderDto> log, CancellationToken ct)
+        {
+            var order = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id, ct);
+            if (order == null) return TypedResults.NotFound();
+            if (order.Status is not (OrderStatus.Failed or OrderStatus.Cancelled))
+                return WrongStatus(order, "Only a failed or cancelled order can release its build.");
+
+            var now = DateTime.UtcNow;
+            var rows = order.PcBuildId is not int buildId ? 0 : await db.PcBuilds
+                .Where(b => b.Id == buildId && b.HeldByOrderId == order.Id && b.Availability == BuildAvailability.Reserved)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(b => b.Availability, BuildAvailability.Available)
+                    .SetProperty(b => b.HeldByOrderId, (int?)null)
+                    .SetProperty(b => b.UpdatedAt, now), ct);
+            if (rows == 0) return BuildNotHeld();
+
+            log.LogInformation("Order {OrderId} released build {BuildId} by an admin", order.Id, order.PcBuildId);
+            return TypedResults.Ok(await AdminOrderDto.LoadAsync(db, order, CancellationToken.None));
+        }
+
+        private static IResult BuildNotHeld() =>
+            ShopProblems.Code(StatusCodes.Status409Conflict, "buildNotHeld", "The order no longer holds the build.");
 
         public static async Task<IResult> Refund(int id, RefundRequest? req, ApplicationDbContext db, IVippsClient vipps, IOrderNotifier notifier, ILogger<AdminOrderDto> log, CancellationToken ct)
         {
@@ -409,6 +466,7 @@ namespace altinnendata_api.Features.Shop
                 admin.MapPost("{id:int}/cancel", Cancel);
                 admin.MapPost("{id:int}/refund", Refund);
                 admin.MapPost("{id:int}/shipped", MarkShipped);
+                admin.MapPost("{id:int}/release-build", ReleaseBuild);
                 admin.MapPut("{id:int}/invoice-number", SetInvoiceNumber).WithValidation<InvoiceNumberRequest>();
             }
         }

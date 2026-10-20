@@ -565,6 +565,12 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
             Assert.Equal($"refund-{Reference}-0", order.PendingRefundKey);
             Assert.Equal(Total, order.PendingRefundInOre);
         }
+        else if (action == "cancel")
+        {
+            // The cancel may have happened in Vipps, so the order remembers that the admin asked for it.
+            Assert.NotNull(order.AdminCancelRequestedAt);
+            Assert.Equal(orderBefore.UpdatedAt, order.UpdatedAt);
+        }
         else
         {
             Assert.Equal(orderBefore.Version, order.Version);
@@ -909,6 +915,108 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
             _notifier.Verify(n => n.OrderCancelledAsync(orderId, It.Is<CancellationToken>(t => !t.CanBeCanceled)), Times.Once);
         if (action == "refund")
             _notifier.Verify(n => n.OrderRefundedAsync(orderId, Total, It.Is<CancellationToken>(t => !t.CanBeCanceled)), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Cancel_MarksTheRequestBeforeVippsIsCalled()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        DateTime? markedDuringTheCall = null;
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () => markedDuringTheCall = (await OrderAsync(db, orderId)).AdminCancelRequestedAt);
+
+        AssertOk(await Cancel(db, orderId));
+
+        Assert.NotNull(markedDuringTheCall);
+        Assert.Null((await OrderAsync(db, orderId)).ReservationEndedAt);
+    }
+
+    [Fact]
+    public async Task Cancel_WhenVippsFails_KeepsTheRequestMark_AndTheOrderReserved()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("down"));
+
+        AssertProblem(await Cancel(db, orderId), StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.NotNull(order.AdminCancelRequestedAt);
+        Assert.Equal(orderId, build.HeldByOrderId);
+    }
+
+    [Fact]
+    public async Task Cancel_WhenAWebhookChangesTheOrderBeforeTheMark_MarksTheFreshOrder()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        SetupCancel();
+        var interceptor = new OnceBeforeSave(() => WebhookChangesAsync(db, orderId, (o, _) => o.InvoiceNumber = "F-1"));
+
+        await using var admin = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(db.Database.GetConnectionString()).AddInterceptors(interceptor).Options);
+        var dto = AssertOk(await Cancel(admin, orderId));
+
+        Assert.Equal("Cancelled", dto.Status);
+        Assert.Equal("F-1", dto.InvoiceNumber);
+        Assert.True(interceptor.Fired);
+    }
+
+    [Fact]
+    public async Task Cancel_WhenAWebhookCancelsBeforeTheMark_Returns409_AndDoesNotCallVipps()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        var interceptor = new OnceBeforeSave(() => WebhookChangesAsync(db, orderId, (o, _) => o.Status = OrderStatus.Cancelled));
+
+        await using var admin = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(db.Database.GetConnectionString()).AddInterceptors(interceptor).Options);
+
+        AssertProblem(await Cancel(admin, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+        _vipps.VerifyNoOtherCalls();
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Cancel_RacingTheRealCancelledWebhook_ReleasesTheBuild_SendsTheCancelEmailOnce_AndNoReservationEndedEmail()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        var webhookNotifier = new Mock<IOrderNotifier>();
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference, "cancel-" + Reference, true, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // Vipps sends CANCELLED while the admin action still waits for its answer.
+                await using var hook = postgres.NewContextOn(db);
+                var delivery = new VippsWebhookDelivery<VippsPaymentEvent>
+                {
+                    Event = new VippsPaymentEvent
+                    {
+                        Msn = "1", Reference = Reference, PspReference = "psp-cancel", Name = "CANCELLED",
+                        Amount = new VippsWebhookAmount { Value = Total, Currency = "NOK" }, Timestamp = WebhookTime, Success = true
+                    },
+                    IsTest = true, EventKey = "cancel-event", Slot = ShopVipps.Slot
+                };
+                var outcome = await new ShopWebhookHandler(hook, _vipps.Object, webhookNotifier.Object, new ListLogger<ShopWebhookHandler>())
+                    .HandleAsync(delivery, Ct);
+                await hook.SaveChangesAsync(Ct);
+                await outcome.AfterCommit!(Ct);
+            });
+
+        var dto = AssertOk(await Cancel(db, orderId));
+
+        Assert.Equal("Cancelled", dto.Status);
+        Assert.Null(dto.ReservationEndedAt);
+        Assert.False(dto.HoldsBuild);
+        var (build, _) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+        Assert.Null(build.HeldByOrderId);
+        webhookNotifier.Verify(n => n.OrderCancelledAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        webhookNotifier.VerifyNoOtherCalls();
         _notifier.VerifyNoOtherCalls();
     }
 
@@ -1265,5 +1373,118 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         Assert.Equal((shippedAt, "Posten", confirmedAt, "2026-10-01T08:00:00.000000Z"),
             (summary.ShippedAt, summary.ShippingNote, summary.ConfirmationSentAt, summary.TermsVersion));
         Assert.Equal(dto.TermsAcceptedAt, summary.TermsAcceptedAt);
+    }
+
+    private Task<IResult> ReleaseBuild(ApplicationDbContext db, int id) => AdminOrders.ReleaseBuild(id, db, _log, Ct);
+
+    /// <summary>An order Vipps ended while it was reserved: it still holds its build.</summary>
+    private async Task<(int BuildId, int OrderId)> SeedEndedAsync(ApplicationDbContext db, OrderStatus status)
+    {
+        var (buildId, orderId) = await SeedAsync(db, OrderStatus.Reserved);
+        await db.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s
+            .SetProperty(o => o.Status, status)
+            .SetProperty(o => o.ReservationEndedAt, WebhookTime), Ct);
+        return (buildId, orderId);
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Failed)]
+    [InlineData(OrderStatus.Cancelled)]
+    public async Task ReleaseBuild_MakesTheBuildAvailable_AndThenAnswersBuildNotHeld(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedEndedAsync(db, status);
+
+        var before = AssertOk(await AdminOrders.Get(orderId, db, Ct));
+        Assert.True(before.HoldsBuild);
+        Assert.Null(before.ReleaseBuildBlockedReason);
+        Assert.Equal(WebhookTime, before.ReservationEndedAt);
+
+        var dto = AssertOk(await ReleaseBuild(db, orderId));
+
+        Assert.False(dto.HoldsBuild);
+        Assert.Equal("buildNotHeld", dto.ReleaseBuildBlockedReason);
+        Assert.Equal(status.ToString(), dto.Status);
+        var (build, _) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+        Assert.Null(build.HeldByOrderId);
+
+        AssertProblem(await ReleaseBuild(db, orderId), StatusCodes.Status409Conflict, "buildNotHeld");
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Pending)]
+    [InlineData(OrderStatus.Reserved)]
+    [InlineData(OrderStatus.Paid)]
+    [InlineData(OrderStatus.Refunded)]
+    public async Task ReleaseBuild_OnAnOrderThatIsNotFailedOrCancelled_Returns409WrongStatus(OrderStatus status)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, status);
+        var before = (await ReloadAsync(db, buildId, orderId)).Build;
+
+        AssertProblem(await ReleaseBuild(db, orderId), StatusCodes.Status409Conflict, "wrongStatus");
+
+        var after = (await ReloadAsync(db, buildId, orderId)).Build;
+        Assert.Equal(before.Availability, after.Availability);
+        Assert.Equal(before.HeldByOrderId, after.HeldByOrderId);
+        Assert.Equal("wrongStatus", AssertOk(await AdminOrders.Get(orderId, db, Ct)).ReleaseBuildBlockedReason);
+    }
+
+    [Fact]
+    public async Task ReleaseBuild_LeavesABuildTheAdminReservedByHand()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedEndedAsync(db, OrderStatus.Failed);
+        await db.PcBuilds.Where(b => b.Id == buildId).ExecuteUpdateAsync(s => s.SetProperty(b => b.HeldByOrderId, (int?)null), Ct);
+
+        Assert.Equal("buildNotHeld", AssertOk(await AdminOrders.Get(orderId, db, Ct)).ReleaseBuildBlockedReason);
+        AssertProblem(await ReleaseBuild(db, orderId), StatusCodes.Status409Conflict, "buildNotHeld");
+
+        var (build, _) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+    }
+
+    [Fact]
+    public async Task ReleaseBuild_LeavesASoldBuildStillPointingAtTheOrder()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedEndedAsync(db, OrderStatus.Cancelled);
+        await db.PcBuilds.Where(b => b.Id == buildId).ExecuteUpdateAsync(s => s.SetProperty(b => b.Availability, BuildAvailability.Sold), Ct);
+
+        Assert.False(AssertOk(await AdminOrders.Get(orderId, db, Ct)).HoldsBuild);
+        AssertProblem(await ReleaseBuild(db, orderId), StatusCodes.Status409Conflict, "buildNotHeld");
+        Assert.Equal(BuildAvailability.Sold, (await ReloadAsync(db, buildId, orderId)).Build.Availability);
+    }
+
+    [Fact]
+    public async Task ReleaseBuild_ForAnOrderWithoutABuild_Returns409BuildNotHeld_AndUnknownReturns404()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedEndedAsync(db, OrderStatus.Failed);
+        await db.Orders.Where(o => o.Id == orderId).ExecuteUpdateAsync(s => s.SetProperty(o => o.PcBuildId, (int?)null), Ct);
+
+        AssertProblem(await ReleaseBuild(db, orderId), StatusCodes.Status409Conflict, "buildNotHeld");
+        Assert.IsType<NotFound>(await ReleaseBuild(db, orderId + 1000));
+        Assert.Equal(orderId, (await ReloadAsync(db, buildId, orderId)).Build.HeldByOrderId);
+    }
+
+    /// <summary>Runs <paramref name="before"/> once, just before the first save, so another writer can get in first.</summary>
+    private sealed class OnceBeforeSave(Func<Task> before) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Fired)
+            {
+                Fired = true;
+                await before();
+            }
+            return result;
+        }
     }
 }
