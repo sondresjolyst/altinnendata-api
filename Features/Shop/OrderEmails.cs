@@ -69,38 +69,8 @@ namespace altinnendata_api.Features.Shop
 
         public static EmailMessage OwnerNewOrder(Order o, AppSettings s, IConfiguration config)
         {
-            var body = new StringBuilder();
-
-            void Row(string label, string value) => body.Append($"<p><strong>{label}:</strong> {value}</p>");
-
-            Row("Ordrenummer", Enc(o.Reference));
-            Row("Vipps-referanse", Enc(o.VippsReference));
-            Row("Navn", Enc(o.BuyerName));
-            Row("E-post", Enc(o.BuyerEmail));
-            Row("Telefon", Enc(o.BuyerPhone));
-            if (o.DeliveryMethod == DeliveryMethod.Pickup)
-            {
-                Row("Levering", Enc(o.DeliveryLabel));
-                if (!string.IsNullOrWhiteSpace(o.PickupNote)) Row("Henting", EncMultiline(o.PickupNote));
-            }
-            else
-            {
-                Row("Adresse", AddressHtml(o));
-            }
-
-            body.Append("<p><strong>Fakturalinjer</strong></p>");
-            body.Append($"<p>1. {Enc(o.BuildTitle)}: {Kroner(o.BuildPriceInOre, "no")} kr<br/>");
-            body.Append($"2. {Enc(o.DeliveryLabel)}: {Kroner(o.DeliveryPriceInOre, "no")} kr</p>");
-            Row("Totalt", $"{Kroner(o.TotalInOre, "no")} kr");
-            Row("Bestilt", OsloDate(o.CreatedAt));
-            Row("Betaling reservert", o.AuthorizedAt is { } at ? OsloDate(at) : "Ukjent");
-            if (!s.VatRegistered) body.Append("<p>Ikke registrert i Merverdiavgiftsregisteret.</p>");
-
-            var html = BrandedEmail.Html(s, true, "Ny ordre", "Ny ordre", "", AdminButton(o, config), body.ToString());
-            return new EmailMessage(s.ContactRecipientEmail, $"Ny ordre {o.Reference}: {o.BuildTitle}", html)
-            {
-                ReplyTo = o.BuyerEmail,
-            };
+            var html = BrandedEmail.Html(s, true, "Ny ordre", "Ny ordre", "", AdminButton(o, config), OwnerFacts(o));
+            return new EmailMessage(s.ContactRecipientEmail, $"Ny ordre {o.Reference}: {o.BuildTitle}", html);
         }
 
         /// <summary>
@@ -123,12 +93,9 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<p>{how}{when} ({Enc(vippsEvent)}). Det var ikke du som kansellerte ordren.</p>");
             body.Append($"<p>Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av ordren og vises ikke som tilgjengelig.</p>");
             body.Append("<p>Ta kontakt med kjøperen og avtal videre, eller frigi datamaskinen fra ordren i admin hvis salget ikke blir noe av.</p>");
-            body.Append($"<p><strong>Kjøper:</strong> {Enc(o.BuyerName)}, {Enc(o.BuyerEmail)}, {Enc(o.BuyerPhone)}</p>");
+            body.Append(OwnerFacts(o));
             var html = BrandedEmail.Html(s, true, "Reservasjon opphevet", subject, body.ToString(), AdminButton(o, config));
-            return new EmailMessage(s.ContactRecipientEmail, subject, html)
-            {
-                ReplyTo = o.BuyerEmail,
-            };
+            return new EmailMessage(s.ContactRecipientEmail, subject, html);
         }
 
         /// <summary>Tells the buyer that the reservation in Vipps is cancelled, that the computer is still held for them and that we will be in touch.</summary>
@@ -178,12 +145,9 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<p>Betalingslenken{sent} ble ikke brukt før den utløp.</p>");
             body.Append($"<p>Datamaskinen {Enc(o.BuildTitle)} er fortsatt holdt av ordren og vises ikke som tilgjengelig.</p>");
             body.Append("<p>Ta kontakt med kjøperen og send en ny betalingslenke, eller frigi datamaskinen fra ordren i admin hvis salget ikke blir noe av.</p>");
-            body.Append($"<p><strong>Kjøper:</strong> {Enc(o.BuyerName)}, {Enc(o.BuyerEmail)}, {Enc(o.BuyerPhone)}</p>");
+            body.Append(OwnerFacts(o));
             var html = BrandedEmail.Html(s, true, "Lenke utløpt", subject, body.ToString(), AdminButton(o, config));
-            return new EmailMessage(s.ContactRecipientEmail, subject, html)
-            {
-                ReplyTo = o.BuyerEmail,
-            };
+            return new EmailMessage(s.ContactRecipientEmail, subject, html);
         }
 
         /// <summary>The order is on its way, or ready for pickup. Says nothing about when the money is taken.</summary>
@@ -246,6 +210,23 @@ namespace altinnendata_api.Features.Shop
             body.Append($"<tr><td>{Enc(o.DeliveryLabel)}</td><td align=\"right\">{Kroner(o.DeliveryPriceInOre, o.Locale)} kr</td></tr>");
             body.Append($"<tr><td><strong>{(no ? "Totalt" : "Total")}</strong></td><td align=\"right\"><strong>{Kroner(o.TotalInOre, o.Locale)} kr</strong></td></tr>");
             body.Append("</table>");
+        }
+
+        /// <summary>
+        /// The order facts in an owner email. The owner inbox has no data processing agreement, so it carries no buyer
+        /// details and points to admin for them.
+        /// </summary>
+        private static string OwnerFacts(Order o)
+        {
+            var body = new StringBuilder();
+            void Row(string label, string value) => body.Append($"<p><strong>{label}:</strong> {value}</p>");
+            Row("Ordrenummer", Enc(o.Reference));
+            Row("Vare", Enc(o.BuildTitle));
+            Row("Levering", Enc(o.DeliveryLabel));
+            Row("Totalt", $"{Kroner(o.TotalInOre, "no")} kr");
+            Row("Bestilt", OsloDate(o.CreatedAt));
+            body.Append("<p>Kundens opplysninger finner du i admin.</p>");
+            return body.ToString();
         }
 
         private static EmailButton AdminButton(Order o, IConfiguration config) =>

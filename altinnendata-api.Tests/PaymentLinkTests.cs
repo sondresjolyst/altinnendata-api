@@ -623,6 +623,6 @@ public class PaymentLinkTests : TestBase
         Assert.Equal("Betalingslenken for ordre " + Reference + " er utløpt", mail.Subject);
         Assert.Contains("<a href=\"https://shop.test/no/admin/shop/orders/7\" style=\"display:inline-block;", mail.HtmlBody);
         Assert.Contains(">Lenke utl&#248;pt</span>", mail.HtmlBody);
-        Assert.Equal("ola@example.com", mail.ReplyTo);
+        Assert.Null(mail.ReplyTo);
     }
 }

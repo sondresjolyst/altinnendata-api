@@ -104,40 +104,48 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("Org.nr. 938 433 240 MVA Foretaksregisteret", msg.HtmlBody);
     }
 
-    [Fact]
-    public void OwnerNewOrder_LeavesOutTheNoVatLineOnceRegistered()
-    {
-        var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings { VatRegistered = true }, Config());
+    public static TheoryData<DeliveryMethod> DeliveryMethods() => new() { DeliveryMethod.Shipping, DeliveryMethod.Pickup };
 
-        Assert.DoesNotContain("Merverdiavgiftsregisteret", msg.HtmlBody);
+    [Theory]
+    [MemberData(nameof(DeliveryMethods))]
+    public void OwnerEmails_CarryOnlyTheOrderFacts_AndNoBuyerDetails(DeliveryMethod method)
+    {
+        var order = NewOrder(method: method);
+        order.ShippingNote = "Ring meg";
+        order.ReservationEndedAt = new DateTime(2026, 10, 19, 8, 0, 0, DateTimeKind.Utc);
+        order.PaymentLinkSentAt = new DateTime(2026, 10, 19, 9, 0, 0, DateTimeKind.Utc);
+        var s = new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" };
+        var mails = new[]
+        {
+            OrderEmails.OwnerNewOrder(order, s, Config()),
+            OrderEmails.OwnerReservationEnded(order, "EXPIRED", s, Config()),
+            OrderEmails.OwnerPaymentLinkExpired(order, s, Config()),
+        };
+
+        Assert.All(mails, mail =>
+        {
+            Assert.Null(mail.ReplyTo);
+            Assert.Contains("<p><strong>Ordrenummer:</strong> AID-000001-ABCDEF12</p>", mail.HtmlBody);
+            Assert.Contains("<p><strong>Vare:</strong> Gaming PC RTX 3060</p>", mail.HtmlBody);
+            Assert.Contains("<p><strong>Levering:</strong> Frakt</p>", mail.HtmlBody);
+            Assert.Contains("<p><strong>Totalt:</strong> 13 189,00 kr</p>", mail.HtmlBody);
+            Assert.Contains("<p><strong>Bestilt:</strong> 19.10.2026</p>", mail.HtmlBody); // 22:30 UTC is already the next day in Oslo
+            Assert.Contains("<p>Kundens opplysninger finner du i admin.</p>", mail.HtmlBody);
+            Assert.Contains("href=\"https://www.altinnendata.no/no/admin/shop/orders/7\"", mail.HtmlBody);
+            foreach (var personal in new[] { "Ola", "Nordmann", "ola@kunde.no", "+4799999999", "99999999", "Storgata", "0155", "Oslo", "Torsdag etter 16", "Ring meg" })
+                Assert.DoesNotContain(personal, mail.HtmlBody);
+        });
     }
 
     private static AppSettings Seller(bool vatRegistered = false) => new() { OrgNumber = "938 433 240", VatRegistered = vatRegistered };
 
     [Fact]
-    public void OwnerNewOrder_LinksTheAdminOrderAndRepliesToTheBuyer()
+    public void OwnerNewOrder_GoesToTheOwnerWithTheBuildInTheSubject()
     {
-        var order = NewOrder();
-        order.VippsReference = Reference + "-2";
-        var msg = OrderEmails.OwnerNewOrder(order, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
+        var msg = OrderEmails.OwnerNewOrder(NewOrder(), new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" }, Config());
 
         Assert.Equal("Ny ordre AID-000001-ABCDEF12: Gaming PC RTX 3060", msg.Subject);
         Assert.Equal("shop@altinnendata.no", msg.To);
-        Assert.Equal("ola@kunde.no", msg.ReplyTo);
-        Assert.Contains("https://www.altinnendata.no/no/admin/shop/orders/7", msg.HtmlBody);
-        Assert.Contains("Ola Nordmann", msg.HtmlBody);
-        Assert.Contains("+4799999999", msg.HtmlBody);
-        Assert.Contains("Storgata 1", msg.HtmlBody);
-        Assert.Contains("0155", msg.HtmlBody);
-        Assert.Contains("Oslo", msg.HtmlBody);
-        Assert.Contains("12 990,00", msg.HtmlBody);
-        Assert.Contains("199,00", msg.HtmlBody);
-        Assert.Contains("13 189,00", msg.HtmlBody);
-        Assert.Contains("19.10.2026", msg.HtmlBody); // 22:30 UTC is already the next day in Oslo
-        Assert.Contains(Reference, msg.HtmlBody);
-        Assert.Contains("<p><strong>Ordrenummer:</strong> AID-000001-ABCDEF12</p>", msg.HtmlBody);
-        Assert.Contains("<p><strong>Vipps-referanse:</strong> AID-000001-ABCDEF12-2</p>", msg.HtmlBody);
-        Assert.Contains("Ikke registrert i Merverdiavgiftsregisteret.", msg.HtmlBody);
     }
 
     [Fact]
@@ -225,15 +233,6 @@ public class OrderEmailsTests : TestBase
         Assert.Contains(">Reservasjon opphevet</span>", msg.HtmlBody);
         Assert.Contains(">Reservasjonen i Vipps for ordre AID-000001-ABCDEF12 er opphevet</h1>", msg.HtmlBody);
         Assert.Contains("background:#00887a;color:#fff;font-weight:700;font-size:14px;text-decoration:none\">&#197;pne ordren i admin</a>", msg.HtmlBody);
-    }
-
-    [Fact]
-    public void OwnerNewOrder_ForPickupLeavesOutTheAddressAndShowsTheNote()
-    {
-        var msg = OrderEmails.OwnerNewOrder(NewOrder(method: DeliveryMethod.Pickup), new AppSettings(), Config());
-
-        Assert.Contains("Torsdag etter 16", msg.HtmlBody);
-        Assert.DoesNotContain("Storgata", msg.HtmlBody);
     }
 
     [Fact]
@@ -325,7 +324,7 @@ public class OrderEmailsTests : TestBase
 
         foreach (var body in bodies)
             Assert.DoesNotContain("<script>", body);
-        Assert.Contains("&lt;script&gt;x&lt;/script&gt;", bodies[1]);
+        Assert.Contains("&lt;script&gt;x&lt;/script&gt;", bodies[0]);
     }
 
     [Fact]
@@ -441,23 +440,24 @@ public class OrderEmailsTests : TestBase
 
         Assert.Equal("Reservasjonen i Vipps for ordre AID-000001-ABCDEF12 er opphevet", msg.Subject);
         Assert.Equal("shop@altinnendata.no", msg.To);
-        Assert.Equal("ola@kunde.no", msg.ReplyTo);
+        Assert.Null(msg.ReplyTo);
         Assert.Contains(what, msg.HtmlBody);
         Assert.Contains("Ta kontakt med kjøperen", msg.HtmlBody);
         Assert.Contains("frigi datamaskinen", msg.HtmlBody);
         Assert.Contains("Gaming PC RTX 3060", msg.HtmlBody);
-        Assert.Contains("Ola Nordmann, ola@kunde.no, +4799999999", msg.HtmlBody);
         Assert.Contains("href=\"https://www.altinnendata.no/no/admin/shop/orders/7\"", msg.HtmlBody);
     }
 
     [Fact]
     public void OwnerReservationEnded_EncodesTheOrder()
     {
-        var order = NewOrder(buyerName: "<b>Ola</b>");
+        var order = NewOrder();
+        order.BuildTitle = "<b>PC</b>";
 
         var msg = OrderEmails.OwnerReservationEnded(order, "<x>", new AppSettings(), Config());
 
-        Assert.DoesNotContain("<b>Ola</b>", msg.HtmlBody);
+        Assert.DoesNotContain("<b>PC</b>", msg.HtmlBody);
+        Assert.Contains("&lt;b&gt;PC&lt;/b&gt;", msg.HtmlBody);
         Assert.DoesNotContain("<x>", msg.HtmlBody);
         Assert.Contains("Reservasjonen ble opphevet i Vipps (&lt;x&gt;).", msg.HtmlBody);
     }
