@@ -186,6 +186,62 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task Checkout_SendsVippsNoProfile()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        var recorder = new RecordingVippsHandler();
+        var environment = new Mock<IVippsEnvironment>();
+        environment.Setup(e => e.IsTestAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(environment.Object);
+        services.AddAppKitVipps(o =>
+            {
+                o.SystemName = "altinnendata";
+                o.SystemVersion = "1.0.0";
+                o.Test.BaseUrl = "https://vipps.test";
+                o.Test.ClientId = "id";
+                o.Test.ClientSecret = "secret";
+                o.Test.SubscriptionKey = "key";
+                o.Test.MerchantSerialNumber = "123456";
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => recorder);
+        await using var provider = services.BuildServiceProvider();
+
+        var result = await Checkout.Handle(Request(), Caller(true), db, provider.GetRequiredService<IVippsClient>(), Config, NullLogger<CheckoutRequest>.Instance, Ct);
+
+        Assert.IsType<Ok<CheckoutResponse>>(result);
+        using var body = System.Text.Json.JsonDocument.Parse(Assert.Single(recorder.PaymentBodies));
+        Assert.True(body.RootElement.TryGetProperty("reference", out _));
+        Assert.False(body.RootElement.TryGetProperty("profile", out _));
+    }
+
+    /// <summary>Answers the Vipps token and create payment calls and keeps the create payment bodies.</summary>
+    private sealed class RecordingVippsHandler : HttpMessageHandler
+    {
+        public List<string> PaymentBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/accesstoken/get")
+                return Json("""{"access_token":"token","expires_in":"3600"}""");
+            if (path == "/epayment/v1/payments" && request.Method == HttpMethod.Post)
+            {
+                var body = await request.Content!.ReadAsStringAsync(cancellationToken);
+                PaymentBodies.Add(body);
+                var reference = System.Text.Json.JsonDocument.Parse(body).RootElement.GetProperty("reference").GetString();
+                return Json($$"""{"reference":"{{reference}}","redirectUrl":"{{FakeUrl}}"}""");
+            }
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        }
+
+        private static HttpResponseMessage Json(string json) =>
+            new(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") };
+    }
+
+    [Fact]
     public async Task Checkout_AddsADeliveryLine_WhenDeliveryCostsSomething()
     {
         await using var db = await postgres.NewContextAsync();

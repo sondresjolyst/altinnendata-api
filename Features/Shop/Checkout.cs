@@ -168,8 +168,8 @@ namespace altinnendata_api.Features.Shop
                 PhoneNumber = order.BuyerPhone,
                 ReturnUrl = SiteLinks.ShopReturn(config, order.Locale, order.PublicToken),
                 Description = $"Altinnendata {order.Reference}",
-                // Buyer details come from the form, so Vipps must not ask for profile sharing. AppKit.Vipps 1.1.0
-                // leaves out the profile when Scope is empty. Set Scope = null here with that upgrade.
+                // Buyer details come from the form, so Vipps must not ask for profile sharing.
+                Scope = null,
                 ReceiptLines = lines
             };
         }

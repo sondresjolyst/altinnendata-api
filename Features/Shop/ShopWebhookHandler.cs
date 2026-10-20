@@ -44,7 +44,7 @@ namespace altinnendata_api.Features.Shop
                 return VippsWebhookOutcome.Rejected;
             }
 
-            var change = new PaymentChange(e.Name, e.Amount?.Value, e.Timestamp?.UtcDateTime ?? DateTime.UtcNow, eventKey, RefundSource.Webhook);
+            var change = new PaymentChange(e.Name, e.Amount?.Value, e.Timestamp?.UtcDateTime ?? DateTime.UtcNow, eventKey, RefundSource.Webhook, e.CaptureGuaranteedUntil);
             return await ApplyAsync(order, change, null, cancellationToken);
         }
 
@@ -90,6 +90,8 @@ namespace altinnendata_api.Features.Shop
                         {
                             order.Status = OrderStatus.Reserved;
                             order.AuthorizedAt = at;
+                            order.CaptureGuaranteedUntil = change.CaptureGuaranteedUntil
+                                ?? (payment != null ? payment.CaptureGuaranteedUntil : await ReadCaptureGuaranteeAsync(order, eventKey, cancellationToken));
                         }
                         break;
                     case "CAPTURED":
@@ -158,6 +160,23 @@ namespace altinnendata_api.Features.Shop
                 OrderStatus.Cancelled => VippsWebhookOutcome.Applied(ct => notifier.OrderCancelledAsync(orderId, ct)),
                 _ => VippsWebhookOutcome.Applied()
             };
+        }
+
+        /// <summary>
+        /// Reads the capture guarantee from Vipps when neither the event nor a payment already read carried it.
+        /// A failed lookup leaves it empty, because the order is reserved either way and the date is only shown to the owner.
+        /// </summary>
+        private async Task<DateTimeOffset?> ReadCaptureGuaranteeAsync(Order order, string eventKey, CancellationToken ct)
+        {
+            try
+            {
+                return (await vipps.GetPaymentAsync(order.Reference, order.IsTest, ct)).CaptureGuaranteedUntil;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                log.LogWarning(ex, "Shop webhook {EventKey}: could not read the capture guarantee of order {OrderId} from Vipps, it stays empty", eventKey, order.Id);
+                return null;
+            }
         }
 
         /// <summary>
@@ -274,7 +293,8 @@ namespace altinnendata_api.Features.Shop
 
     /// <summary>
     /// One change to a payment, from a webhook event or read from the payment by polling. <paramref name="Key"/>
-    /// names it in the logs and on a refund row.
+    /// names it in the logs and on a refund row. <paramref name="CaptureGuaranteedUntil"/> is the date Vipps
+    /// guarantees an AUTHORIZED payment can be captured until, when the change carried it.
     /// </summary>
-    public sealed record PaymentChange(string Name, int? Amount, DateTime At, string Key, RefundSource Source);
+    public sealed record PaymentChange(string Name, int? Amount, DateTime At, string Key, RefundSource Source, DateTimeOffset? CaptureGuaranteedUntil = null);
 }

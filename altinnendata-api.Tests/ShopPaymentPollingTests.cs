@@ -62,12 +62,13 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         return (build.Id, order.Id);
     }
 
-    private void VippsShows(int n, string state, int captured = 0, int refunded = 0, int cancelled = 0) =>
+    private void VippsShows(int n, string state, int captured = 0, int refunded = 0, int cancelled = 0, DateTimeOffset? guarantee = null) =>
         _vipps.Setup(v => v.GetPaymentAsync(Ref(n), true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new VippsPayment
             {
                 Reference = Ref(n), State = state,
-                CapturedAmountInOre = captured, RefundedAmountInOre = refunded, CancelledAmountInOre = cancelled
+                CapturedAmountInOre = captured, RefundedAmountInOre = refunded, CancelledAmountInOre = cancelled,
+                CaptureGuaranteedUntil = guarantee
             });
 
     private async Task<int> RunAsync(ApplicationDbContext existing, int afterId = 0, IInterceptor? interceptor = null)
@@ -104,6 +105,37 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         _notifier.Verify(n => n.OrderReservedAsync(orderId, CancellationToken.None), Times.Once);
         _notifier.VerifyNoOtherCalls();
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("AUTHORIZED"));
+    }
+
+    [Fact]
+    public async Task LostAuthorized_StoresTheGuaranteeFromThePayment_WithoutAskingVippsAgain()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        var guarantee = new DateTimeOffset(2026, 11, 17, 12, 30, 0, TimeSpan.Zero);
+        VippsShows(1, "AUTHORIZED", guarantee: guarantee);
+
+        await RunAsync(db);
+
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(guarantee, order.CaptureGuaranteedUntil);
+        _vipps.Verify(v => v.GetPaymentAsync(Ref(1), true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LostAuthorized_WithoutAGuarantee_LeavesItEmpty_WithoutAskingVippsAgain()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsShows(1, "AUTHORIZED");
+
+        await RunAsync(db);
+
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Null(order.CaptureGuaranteedUntil);
+        _vipps.Verify(v => v.GetPaymentAsync(Ref(1), true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

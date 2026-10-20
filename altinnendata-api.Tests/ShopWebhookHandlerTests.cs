@@ -22,13 +22,15 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
     private readonly ListLogger<ShopWebhookHandler> _log = new();
 
     private static readonly DateTimeOffset EventTime = new(2026, 10, 18, 12, 30, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Guarantee = new(2026, 11, 17, 12, 30, 0, TimeSpan.Zero);
 
     private static VippsWebhookDelivery<VippsPaymentEvent> Delivery(
         string name,
         int? amount = Total,
         bool isTest = true,
         bool success = true,
-        string reference = Reference) => new()
+        string reference = Reference,
+        DateTimeOffset? guarantee = null) => new()
     {
         Event = new VippsPaymentEvent
         {
@@ -38,6 +40,7 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
             Name = name,
             Amount = amount is { } value ? new VippsWebhookAmount { Value = value, Currency = "NOK" } : null,
             Timestamp = EventTime,
+            CaptureGuaranteedUntil = guarantee ?? Guarantee,
             Success = success
         },
         IsTest = isTest,
@@ -136,6 +139,75 @@ public class ShopWebhookHandlerTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(orderId, build.HeldByOrderId);
         _notifier.Verify(n => n.OrderReservedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
         VerifyNoEmails();
+    }
+
+    [Fact]
+    public async Task Authorized_StoresTheGuaranteeFromTheEvent()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+
+        await DeliverAsync(db, Delivery("AUTHORIZED"));
+
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(Guarantee, order.CaptureGuaranteedUntil);
+        _vipps.Verify(v => v.GetPaymentAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Authorized_ReadsTheGuaranteeFromVipps_WhenTheEventHasNone()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VippsPayment { Reference = Reference, State = "AUTHORIZED", CaptureGuaranteedUntil = Guarantee });
+        var delivery = Delivery("AUTHORIZED");
+        delivery = delivery with { Event = delivery.Event with { CaptureGuaranteedUntil = null } };
+
+        await DeliverAsync(db, delivery);
+
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(Guarantee, order.CaptureGuaranteedUntil);
+    }
+
+    [Fact]
+    public async Task Authorized_StillReserves_WhenTheGuaranteeLookupFails()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Vipps is down"));
+        var delivery = Delivery("AUTHORIZED");
+        delivery = delivery with { Event = delivery.Event with { CaptureGuaranteedUntil = null } };
+
+        var outcome = await DeliverAsync(db, delivery);
+
+        Assert.Equal(VippsWebhookOutcomeKind.Applied, outcome.Kind);
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Null(order.CaptureGuaranteedUntil);
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("guarantee"));
+        _notifier.Verify(n => n.OrderReservedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Authorized_StillReserves_WhenTheGuaranteeLookupTimesOut()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("The request timed out"));
+        var delivery = Delivery("AUTHORIZED");
+        delivery = delivery with { Event = delivery.Event with { CaptureGuaranteedUntil = null } };
+
+        var outcome = await DeliverAsync(db, delivery);
+
+        Assert.Equal(VippsWebhookOutcomeKind.Applied, outcome.Kind);
+        var (_, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Null(order.CaptureGuaranteedUntil);
+        _notifier.Verify(n => n.OrderReservedAsync(orderId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
