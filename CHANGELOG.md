@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.10.1...v1.11.0) (2026-10-20)
+
+
+### Features
+
+* **shop:** sell builds with Vipps from the build page ([#120](https://github.com/sondresjolyst/altinnendata-api/issues/120)) ([077edbe](https://github.com/sondresjolyst/altinnendata-api/commit/077edbe279cb98bd6af9d5142ee4cdf7b6ba0742))
+
 ## [1.10.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.10.0...v1.10.1) (2026-10-20)
 
 
