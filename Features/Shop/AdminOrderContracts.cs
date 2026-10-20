@@ -26,12 +26,13 @@ namespace altinnendata_api.Features.Shop
         string? ShippingNote,
         DateTime? ConfirmationSentAt,
         DateTime TermsAcceptedAt,
-        string? TermsVersion)
+        string? TermsVersion,
+        DateTime? CapturedAt)
     {
         public static AdminOrderSummaryDto From(Order o) =>
             new(o.Id, o.Reference, o.Status.ToString(), o.BuyerName, o.BuildTitle, o.PcBuildId, o.DeliveryMethod.ToString(),
                 o.TotalInOre, o.CapturedInOre, o.RefundedInOre, o.IsTest, o.CaptureGuaranteedUntil, o.InvoiceNumber, o.CreatedAt,
-                o.ShippedAt, o.ShippingNote, o.ConfirmationSentAt, o.TermsAcceptedAt, o.TermsVersion);
+                o.ShippedAt, o.ShippingNote, o.ConfirmationSentAt, o.TermsAcceptedAt, o.TermsVersion, o.CapturedAt);
     }
 
     public record AdminOrderDto(

@@ -1375,6 +1375,20 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(dto.TermsAcceptedAt, summary.TermsAcceptedAt);
     }
 
+    [Fact]
+    public async Task List_ShowsWhenTheOrderWasCaptured()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var capturedAt = new DateTime(2026, 10, 5, 10, 0, 0, DateTimeKind.Utc);
+        await SeedAsync(db, OrderStatus.Paid, editOrder: o => o.CapturedAt = capturedAt);
+        await SeedAsync(db, OrderStatus.Reserved, reference: "order-ref-2", slug: "other-pc");
+
+        var list = Assert.IsType<Ok<List<AdminOrderSummaryDto>>>(await AdminOrders.List(db, Ct)).Value!;
+
+        Assert.Equal(capturedAt, list.Single(o => o.Status == "Paid").CapturedAt);
+        Assert.Null(list.Single(o => o.Status == "Reserved").CapturedAt);
+    }
+
     private Task<IResult> ReleaseBuild(ApplicationDbContext db, int id) => AdminOrders.ReleaseBuild(id, db, _log, Ct);
 
     /// <summary>An order Vipps ended while it was reserved: it still holds its build.</summary>
