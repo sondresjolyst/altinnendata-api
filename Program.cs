@@ -63,6 +63,8 @@ namespace altinnendata_api
             builder.Services.TryAddSingleton(TimeProvider.System);
             builder.Services.AddSingleton<altinnendata_api.Features.Contact.ContactReceiptGate>();
             builder.Services.AddHostedService<OrderRetentionService>();
+            builder.Services.AddHostedService<altinnendata_api.Features.Contact.EnquiryNoticeRetryService>();
+            builder.Services.AddHostedService<altinnendata_api.Features.Contact.EnquiryRetentionService>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
 
             builder.Services.AddControllers()

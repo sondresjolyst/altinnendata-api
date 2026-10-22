@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Net.Mail;
 using System.Text;
 using FluentValidation;
@@ -45,7 +44,19 @@ namespace altinnendata_api.Features.Contact
             RuleFor(x => x.BuildSlug).MaximumLength(160);
             RuleFor(x => x.Message).NotEmpty().MaximumLength(4000);
             RuleFor(x => x.Locale).MaximumLength(10);
+
+            // Postgres refuses a text value with a NUL character, which would turn a bad request into a server error.
+            RuleFor(x => x.Name).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.Email).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.").WithName("Email").OverridePropertyName(EmailField);
+            RuleFor(x => x.Phone).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.UseCase).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.BudgetNok).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.BuildSlug).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.Message).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.Locale).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
         }
+
+        private static bool HasNoNul(string? value) => value is null || !value.Contains('\0');
 
         public const string EmailField = "email";
 
@@ -86,14 +97,21 @@ namespace altinnendata_api.Features.Contact
             catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
         });
 
+        /// <summary>
+        /// Saves the enquiry, then sends the notice and the receipt. A failed email never fails the request, and a
+        /// receipt that did not go out is recorded on the enquiry. <paramref name="aborted"/> is deliberately ignored
+        /// once the request is valid, so an aborted request still saves.
+        /// </summary>
         public static async Task<IResult> Handle(
             ContactRequest req,
             ApplicationDbContext db,
             IEmailSender email,
             IConfiguration config,
             ContactReceiptGate receipts,
-            CancellationToken ct)
+            ILogger<ContactRequest> log,
+            CancellationToken aborted)
         {
+            var ct = CancellationToken.None;
             var sender = req.Email.Trim();
             var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
 
@@ -103,48 +121,133 @@ namespace altinnendata_api.Features.Contact
                     .Include(b => b.Translations)
                     .FirstOrDefaultAsync(b => b.Slug == req.BuildSlug, ct);
 
+            var now = DateTime.UtcNow;
             var receipt = receipts.TryAcquire(sender);
-            await email.SendAsync(
-                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config, receipt, settings))
-                {
-                    ReplyTo = sender,
-                },
-                ct);
+            var enquiry = new Enquiry
+            {
+                CreatedAt = now,
+                UpdatedAt = now,
+                Name = req.Name,
+                Email = sender,
+                Phone = req.Phone,
+                UseCase = req.UseCase,
+                BudgetNok = req.BudgetNok,
+                BuildSlug = req.BuildSlug,
+                BuildTitle = build == null ? null : BuildMapping.PickTranslation(build, Locales.Default)?.Title,
+                Locale = Locales.Normalize(req.Locale),
+                Message = req.Message,
+                ReceiptSent = receipt,
+                Status = EnquiryStatus.New,
+            };
+            db.Enquiries.Add(enquiry);
+            await db.SaveChangesAsync(ct);
 
-            if (receipt)
-                await email.SendAsync(BuildReceipt(sender, req.Locale, settings, DateTime.UtcNow), ct);
+            try
+            {
+                if (!await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct))
+                    log.LogWarning("The notice of enquiry {EnquiryId} was not sent. The retry job will try again", enquiry.Id);
+            }
+            catch (Exception ex)
+            {
+                // The enquiry is saved, so a database error here must not fail the request and invite a resubmit.
+                log.LogError(ex, "The notice of enquiry {EnquiryId} could not be attempted", enquiry.Id);
+            }
+
+            if (receipt && !await TrySendReceiptAsync(email, BuildReceipt(sender, req.Locale, settings, now), enquiry.Id, log, ct))
+            {
+                try
+                {
+                    await db.Enquiries.Where(e => e.Id == enquiry.Id)
+                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReceiptSent, false), ct);
+                }
+                catch (Exception ex)
+                {
+                    log.LogError(ex, "Could not record that the receipt of enquiry {EnquiryId} was not sent", enquiry.Id);
+                }
+            }
 
             return TypedResults.Ok(new MessageResponse("Thanks. We will be in touch."));
         }
 
-        /// <summary>
-        /// The owner's copy. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a
-        /// withdrawal sent through the form then has to be confirmed by hand.
-        /// </summary>
-        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config, bool receiptSent, AppSettings settings)
+        private static async Task<bool> TrySendReceiptAsync(IEmailSender email, EmailMessage receipt, int enquiryId, ILogger log, CancellationToken ct)
         {
-            string Enc(string? v) => WebUtility.HtmlEncode(v ?? string.Empty);
-
-            var body = new StringBuilder();
-
-            void Row(string label, string? value)
+            try
             {
-                if (!string.IsNullOrWhiteSpace(value))
-                    body.Append($"<p><strong>{label}:</strong> {value}</p>");
+                var result = await email.SendAsync(receipt, ct);
+                if (result.Sent) return true;
+                log.LogWarning("The receipt of enquiry {EnquiryId} was refused: {Error}", enquiryId, result.Error);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                log.LogWarning(ex, "The receipt of enquiry {EnquiryId} could not be sent", enquiryId);
+            }
+            return false;
+        }
+
+        /// <summary>How long a claimed attempt is left alone, so a try still sending is not taken over by another.</summary>
+        public static readonly TimeSpan NoticeLease = TimeSpan.FromMinutes(2);
+
+        /// <summary>
+        /// Sends the notice of enquiry <paramref name="enquiryId"/> if it is still unsent and no attempt was claimed
+        /// within <see cref="NoticeLease"/>. The attempt is claimed on the row first, so two instances or a retry
+        /// never send the same try twice. Returns true when the email was
+        /// accepted. A failed or throwing send gives false. A database error or cancellation reaches the caller, who logs it. Logs nothing itself.
+        /// </summary>
+        public static async Task<bool> TrySendNoticeAsync(
+            ApplicationDbContext db, IEmailSender email, IConfiguration config, int enquiryId, DateTime now, CancellationToken ct)
+        {
+            var leaseEnded = now - NoticeLease;
+            var seen = await db.Enquiries.AsNoTracking()
+                .Where(e => e.Id == enquiryId && e.NoticeSentAt == null && (e.NoticeAttemptedAt == null || e.NoticeAttemptedAt <= leaseEnded))
+                .Select(e => (int?)e.NoticeAttempts)
+                .FirstOrDefaultAsync(ct);
+            if (seen == null) return false;
+
+            var claimed = await db.Enquiries
+                .Where(e => e.Id == enquiryId && e.NoticeSentAt == null && e.NoticeAttempts == seen
+                    && (e.NoticeAttemptedAt == null || e.NoticeAttemptedAt <= leaseEnded))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(e => e.NoticeAttempts, seen.Value + 1)
+                    .SetProperty(e => e.NoticeAttemptedAt, now), ct);
+            if (claimed == 0) return false;
+
+            try
+            {
+                var enquiry = await db.Enquiries.AsNoTracking().FirstAsync(e => e.Id == enquiryId, ct);
+                var settings = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
+                if (!(await email.SendAsync(BuildNotice(enquiry, settings, config), ct)).Sent) return false;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                return false;
             }
 
-            Row("Name", Enc(req.Name));
-            Row("Email", Enc(req.Email));
-            Row("Phone", Enc(req.Phone));
-            Row("Use case", Enc(req.UseCase));
-            Row("Budget", req.BudgetNok is { } budget ? $"{budget} NOK" : null);
-            Row("Build", BuildLink(req.BuildSlug, build, config));
+            // The email is out, so a failed record of it must not fail the caller. It is swallowed here because this
+            // method has no logger and its signature is fixed, and the retry job would resend the notice.
+            try
+            {
+                await db.Enquiries.Where(e => e.Id == enquiryId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(e => e.NoticeSentAt, now), CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+            return true;
+        }
 
-            body.Append("<p><strong>Message:</strong></p>");
-            body.Append($"<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>");
-            if (!receiptSent)
-                body.Append($"<p><strong>{NoReceiptNote}</strong></p>");
-            return BrandedEmail.Html(settings, false, "Enquiry", "New enquiry", body.ToString());
+        /// <summary>
+        /// The notice to the owner. It holds no name, address, phone or message, only a link to the enquiry in the
+        /// admin. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a withdrawal sent
+        /// through the form then has to be confirmed by hand.
+        /// </summary>
+        internal static EmailMessage BuildNotice(Enquiry enquiry, AppSettings settings, IConfiguration config)
+        {
+            var body = "<p>En ny henvendelse har kommet inn.</p>"
+                + (enquiry.ReceiptSent ? "" : $"<p><strong>{NoReceiptNote}</strong></p>");
+            var html = BrandedEmail.Html(settings, true, "Henvendelse", "Ny henvendelse", body,
+                new EmailButton("Åpne i admin", SiteLinks.AdminEnquiry(config, enquiry.Id)));
+            return new EmailMessage(settings.ContactRecipientEmail, "Ny henvendelse", html);
         }
 
         /// <summary>
@@ -163,16 +266,6 @@ namespace altinnendata_api.Features.Contact
             var html = BrandedEmail.Html(settings, no, no ? "Melding mottatt" : "Message received", subject, body.ToString(),
                 footer: BrandedEmail.MessageFooter(no));
             return new EmailMessage(to, subject, html) { ReplyTo = settings.PublicEmail };
-        }
-
-        private static string? BuildLink(string? slug, PcBuild? build, IConfiguration config)
-        {
-            if (string.IsNullOrWhiteSpace(slug)) return null;
-            if (build == null) return WebUtility.HtmlEncode(slug);
-
-            var title = BuildMapping.PickTranslation(build, Locales.Default)?.Title ?? build.Slug;
-            var url = SiteLinks.Build(config, build.Slug);
-            return $"<a href=\"{WebUtility.HtmlEncode(url)}\" style=\"{BrandedEmail.LinkStyle}\">{WebUtility.HtmlEncode(title)}</a> ({WebUtility.HtmlEncode(build.Slug)})";
         }
 
         public class Endpoint : IEndpoint

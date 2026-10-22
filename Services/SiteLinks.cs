@@ -26,6 +26,9 @@ namespace altinnendata_api.Services
         public static string AdminOrder(IConfiguration config, int id) =>
             $"{BaseUrl(config)}/{DefaultLocale}/admin/shop/orders/{id}";
 
+        public static string AdminEnquiry(IConfiguration config, int id) =>
+            $"{BaseUrl(config)}/{DefaultLocale}/admin/enquiries/{id}";
+
         public static string Terms(IConfiguration config, string locale) =>
             $"{BaseUrl(config)}/{locale}/terms";
     }
