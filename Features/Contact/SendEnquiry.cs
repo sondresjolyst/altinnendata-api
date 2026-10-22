@@ -130,8 +130,16 @@ namespace altinnendata_api.Features.Contact
             db.Enquiries.Add(enquiry);
             await db.SaveChangesAsync(ct);
 
-            if (!await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct))
-                log.LogWarning("The notice of enquiry {EnquiryId} was not sent. The retry job will try again", enquiry.Id);
+            try
+            {
+                if (!await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct))
+                    log.LogWarning("The notice of enquiry {EnquiryId} was not sent. The retry job will try again", enquiry.Id);
+            }
+            catch (Exception ex)
+            {
+                // The enquiry is saved, so a database error here must not fail the request and invite a resubmit.
+                log.LogError(ex, "The notice of enquiry {EnquiryId} could not be attempted", enquiry.Id);
+            }
 
             if (receipt && !await TrySendReceiptAsync(email, BuildReceipt(sender, req.Locale, settings, now), enquiry.Id, log, ct))
             {
@@ -171,7 +179,7 @@ namespace altinnendata_api.Features.Contact
         /// Sends the notice of enquiry <paramref name="enquiryId"/> if it is still unsent and no attempt was claimed
         /// within <see cref="NoticeLease"/>. The attempt is claimed on the row first, so two instances or a retry
         /// never send the same try twice. Returns true when the email was
-        /// accepted. Never throws, except on cancellation. Logs nothing, the caller does.
+        /// accepted. A failed or throwing send gives false. A database error or cancellation reaches the caller, who logs it. Logs nothing itself.
         /// </summary>
         public static async Task<bool> TrySendNoticeAsync(
             ApplicationDbContext db, IEmailSender email, IConfiguration config, int enquiryId, DateTime now, CancellationToken ct)
@@ -202,7 +210,8 @@ namespace altinnendata_api.Features.Contact
                 return false;
             }
 
-            // The email is out, so a failed record of it must not fail the caller. The retry job would resend it.
+            // The email is out, so a failed record of it must not fail the caller. It is swallowed here because this
+            // method has no logger and its signature is fixed, and the retry job would resend the notice.
             try
             {
                 await db.Enquiries.Where(e => e.Id == enquiryId)
