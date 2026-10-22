@@ -36,6 +36,7 @@ namespace altinnendata_api.Models
         public DbSet<ShopSettings> ShopSettings { get; set; }
         public DbSet<DeliveryOption> DeliveryOptions { get; set; }
         public DbSet<Order> Orders { get; set; }
+        public DbSet<Enquiry> Enquiries { get; set; }
         public DbSet<OutsideSalesMonth> OutsideSalesMonths { get; set; }
         public DbSet<OrderRefund> OrderRefunds { get; set; }
         public DbSet<OrderPayment> OrderPayments { get; set; }
@@ -142,6 +143,26 @@ namespace altinnendata_api.Models
                 refund.Property(r => r.IdempotencyKey).HasMaxLength(100);
                 refund.Property(r => r.Source).HasConversion<string>().HasMaxLength(20);
                 refund.HasIndex(r => r.OrderId);
+            });
+
+            modelBuilder.Entity<Enquiry>(enquiry =>
+            {
+                enquiry.Property(e => e.Name).HasMaxLength(120);
+                enquiry.Property(e => e.Email).HasMaxLength(200);
+                enquiry.Property(e => e.Phone).HasMaxLength(30);
+                enquiry.Property(e => e.UseCase).HasMaxLength(160);
+                enquiry.Property(e => e.BudgetNok).HasMaxLength(20);
+                enquiry.Property(e => e.BuildSlug).HasMaxLength(160);
+                enquiry.Property(e => e.BuildTitle).HasMaxLength(200);
+                enquiry.Property(e => e.Locale).HasMaxLength(10);
+                enquiry.Property(e => e.Message).HasMaxLength(4000);
+                enquiry.Property(e => e.Status).HasConversion<string>().HasMaxLength(20);
+                enquiry.HasIndex(e => e.CreatedAt);
+
+                enquiry.HasOne(e => e.AssignedUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.AssignedUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<OutsideSalesMonth>()
