@@ -15,6 +15,9 @@ namespace altinnendata_api.Features.Contact
     {
         public const int PageSize = 50;
 
+        private static readonly StringComparer NorwegianOrder =
+            StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("nb-NO"), true);
+
         /// <summary>An enquiry with its owner as stored and whether that owner is still an active admin.</summary>
         private record Row(Enquiry Enquiry, bool OwnerActive, string? OwnerFirstName, string? OwnerLastName);
 
@@ -60,7 +63,7 @@ namespace altinnendata_api.Features.Contact
             ApplicationDbContext db,
             HttpContext http,
             [FromQuery] EnquiryStatus[]? status,
-            bool mine,
+            bool? mine,
             string? q,
             int? page,
             CancellationToken ct)
@@ -70,7 +73,7 @@ namespace altinnendata_api.Features.Contact
                 ? enquiries.Where(e => status.Contains(e.Status))
                 : enquiries.Where(e => e.Status != EnquiryStatus.Done);
 
-            if (mine)
+            if (mine == true)
             {
                 var me = http.User.GetUserId();
                 enquiries = enquiries.Where(e => e.AssignedUserId == me);
@@ -106,7 +109,7 @@ namespace altinnendata_api.Features.Contact
 
             return TypedResults.Ok(users
                 .Select(u => new AssigneeDto(u.Id, DisplayName(u.FirstName, u.LastName)))
-                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(a => a.Name, NorwegianOrder)
                 .ToList());
         }
 

@@ -1,4 +1,10 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
+using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -298,5 +304,66 @@ public class AdminEnquiriesTests(PostgresDatabase postgres)
         Assert.Equal(6, endpoints.Count);
         Assert.All(endpoints, e =>
             Assert.Contains(e.Metadata.GetOrderedMetadata<IAuthorizeData>(), a => a.Policy == Policies.Admin));
+    }
+
+    private sealed class TestAuth(Microsoft.Extensions.Options.IOptionsMonitor<AuthenticationSchemeOptions> options,
+        Microsoft.Extensions.Logging.ILoggerFactory logger, System.Text.Encodings.Web.UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            if (!Request.Headers.TryGetValue("X-User", out var user)) return Task.FromResult(AuthenticateResult.NoResult());
+            var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.ToString())], "Test");
+            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), "Test")));
+        }
+    }
+
+    private async Task<(WebApplication App, HttpClient Client, ApplicationDbContext Db)> StartAsync()
+    {
+        var db = await postgres.NewContextAsync();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddDbContext<ApplicationDbContext>(o => o.UseNpgsql(db.Database.GetConnectionString()));
+        builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuth>("Test", null);
+        builder.Services.AddAuthorization(o => o.AddPolicy(Policies.Admin, p => p.RequireAuthenticatedUser()));
+        builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+        var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        new AdminEnquiries.Endpoints().Map(app);
+        await app.StartAsync(Ct);
+        var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-User", "me");
+        return (app, client, db);
+    }
+
+    [Fact]
+    public async Task Http_BindsTheQueryAndWritesStatusAsAName()
+    {
+        var (app, client, db) = await StartAsync();
+        await using var _ = app;
+        await using var __ = db;
+        var me = await AddAdminAsync(db, "me", "Mia");
+        var kari = await AddEnquiryAsync(db, 3, name: "Kari", email: "kari@firma.no", owner: me.Id);
+        var done = await AddEnquiryAsync(db, 2, EnquiryStatus.Done, name: "Ferdig");
+        var answered = await AddEnquiryAsync(db, 1, EnquiryStatus.Answered, name: "Svart");
+
+        var plain = await client.GetStringAsync("/api/admin/enquiries", Ct);
+        Assert.Contains("\"status\":\"New\"", plain);
+        Assert.DoesNotContain("Ferdig", plain);
+
+        async Task<int[]> Ids(string query) =>
+            (await client.GetFromJsonAsync<EnquiryPage>("/api/admin/enquiries" + query, Ct))!.Items.Select(i => i.Id).ToArray();
+
+        Assert.Equal([answered.Id, done.Id], await Ids("?status=Done&status=Answered"));
+        Assert.Equal([kari.Id], await Ids("?mine=true"));
+        Assert.Equal([kari.Id], await Ids("?q=KARI@"));
+        Assert.Empty(await Ids("?page=2"));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await app.GetTestServer().CreateClient().GetAsync("/api/admin/enquiries", Ct)).StatusCode);
+
+        var patch = await client.PatchAsJsonAsync($"/api/admin/enquiries/{kari.Id}", new { status = "Answered" }, Ct);
+        Assert.Contains("\"status\":\"Answered\"", await patch.Content.ReadAsStringAsync(Ct));
+        var empty = await client.PatchAsJsonAsync($"/api/admin/enquiries/{kari.Id}", new { }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
     }
 }

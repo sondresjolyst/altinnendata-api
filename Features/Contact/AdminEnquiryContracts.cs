@@ -53,6 +53,8 @@ namespace altinnendata_api.Features.Contact
         public UpdateEnquiryRequestValidator()
         {
             RuleFor(x => x.Status).IsInEnum();
+            RuleFor(x => x).Must(x => x.Status != null || x.SetOwner)
+                .WithMessage("Set a status or an owner.");
         }
     }
 }
