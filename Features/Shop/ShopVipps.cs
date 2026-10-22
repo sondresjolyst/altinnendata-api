@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Memory;
 using SjolystInnovation.AppKit.Vipps;
+using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 
 namespace altinnendata_api.Features.Shop
@@ -58,13 +59,14 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>
         /// Registers the Vipps client with the credentials in the <c>Vipps</c> section and the shop's test mode,
-        /// the ePayment webhook and the payment polling that stands in for lost webhooks. The Data Protection keys that protect the webhook secrets are kept in the database.
+        /// the ePayment webhook and the payment polling that stands in for lost webhooks. The Data Protection keys that protect the webhook secrets are kept in the database, encrypted with the configured certificate.
         /// </summary>
-        public static IServiceCollection AddShopVipps(this IServiceCollection services, IConfiguration config)
+        public static IServiceCollection AddShopVipps(this IServiceCollection services, IConfiguration config, bool requireKeyCertificate)
         {
             services.AddDataProtection()
                 .PersistKeysToDbContext<ApplicationDbContext>()
-                .SetApplicationName("altinnendata-api");
+                .SetApplicationName("altinnendata-api")
+                .ProtectKeysWithConfiguredCertificate(config, requireKeyCertificate);
             services.AddSingleton<IVippsEnvironment, ShopVippsEnvironment>();
             services.AddAppKitVipps(config.GetSection("Vipps"), o =>
                 {

@@ -541,7 +541,7 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Vipps:ClientId"] = "live-id", ["Vipps:TestClientId"] = "test-id" })
             .Build();
 
-        services.AddShopVipps(config);
+        services.AddShopVipps(config, requireKeyCertificate: false);
         using var provider = services.BuildServiceProvider();
 
         Assert.IsType<ShopVippsEnvironment>(provider.GetRequiredService<IVippsEnvironment>());

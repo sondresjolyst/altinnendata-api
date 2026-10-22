@@ -54,7 +54,7 @@ namespace altinnendata_api
                 options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
             builder.Services.AddMemoryCache();
-            builder.Services.AddShopVipps(builder.Configuration);
+            builder.Services.AddShopVipps(builder.Configuration, requireKeyCertificate: builder.Environment.IsProduction());
             builder.Services.AddScoped<IOrderNotifier, OrderNotifier>();
             builder.Services.AddAppKitPdf();
             builder.Services.AddScoped<OrderConfirmation>();
