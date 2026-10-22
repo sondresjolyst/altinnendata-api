@@ -1,5 +1,6 @@
 namespace altinnendata_api.Models
 {
+    [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
     public enum EnquiryStatus { New, InProgress, Answered, Done }
 
     /// <summary>
