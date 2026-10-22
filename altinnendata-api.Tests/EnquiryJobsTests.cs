@@ -107,6 +107,32 @@ public class EnquiryJobsTests(PostgresDatabase postgres)
     }
 
     [Fact]
+    public async Task Retry_LogsADatabaseFailureOnOneEnquiry_AndSendsTheNext()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var broken = await AddUnsentAsync(db, 0, null);
+        var fine = await AddUnsentAsync(db, 0, null);
+        // A trigger makes any update of the first enquiry fail in the database, the way a real outage would.
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION fail_claim() RETURNS trigger AS $$
+            BEGIN
+                IF OLD."Id" = (SELECT MIN("Id") FROM "Enquiries") THEN RAISE EXCEPTION 'claim refused'; END IF;
+                RETURN NEW;
+            END $$ LANGUAGE plpgsql;
+            CREATE TRIGGER fail_claim BEFORE UPDATE ON "Enquiries" FOR EACH ROW EXECUTE FUNCTION fail_claim();
+            """, Ct);
+        var log = new ListLogger<EnquiryJobsTests>();
+
+        Assert.Equal(1, await EnquiryNoticeRetry.ResendMissingAsync(db, Sender().Object, Config(), Now, Ct, log));
+
+        var saved = await db.Enquiries.AsNoTracking().ToDictionaryAsync(e => e.Id, Ct);
+        Assert.Null(saved[broken.Id].NoticeSentAt);
+        Assert.NotNull(saved[fine.Id].NoticeSentAt);
+        var entry = Assert.Single(log.Entries);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Error, entry.Level);
+    }
+
+    [Fact]
     public async Task Purge_DeletesEnquiriesOlderThanTwelveMonths_InAnyStatus()
     {
         await using var db = await postgres.NewContextAsync();

@@ -126,21 +126,35 @@ namespace altinnendata_api.Features.Contact
             while (await timer.WaitForNextTickAsync(stoppingToken));
         }
 
-        /// <summary>One run. A failure is logged and the next run tries again.</summary>
+        /// <summary>One run. The owner release and the purge each log their own failure, so one does not skip the other. The next run tries again.</summary>
         public async Task RunOnceAsync(CancellationToken ct)
         {
             try
             {
                 using var scope = scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var deleted = await EnquiryRetention.PurgeAsync(db, time.GetUtcNow().UtcDateTime, ct);
-                if (deleted > 0)
-                    log.LogInformation("Deleted {Count} enquiries older than {Days} days", deleted, EnquiryRetention.KeepFor.TotalDays);
-                var released = await EnquiryRetention.ReleaseRemovedOwnersAsync(db, ct);
-                if (released > 0)
-                    log.LogInformation("Released {Count} enquiries whose owner is no longer an admin", released);
+                try
+                {
+                    var released = await EnquiryRetention.ReleaseRemovedOwnersAsync(db, ct);
+                    if (released > 0)
+                        log.LogInformation("Released {Count} enquiries whose owner is no longer an admin", released);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    log.LogError(ex, "Releasing the owners of enquiries failed, it is tried again tomorrow");
+                }
+                try
+                {
+                    var deleted = await EnquiryRetention.PurgeAsync(db, time.GetUtcNow().UtcDateTime, ct);
+                    if (deleted > 0)
+                        log.LogInformation("Deleted {Count} enquiries older than {Days} days", deleted, EnquiryRetention.KeepFor.TotalDays);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    log.LogError(ex, "Deleting old enquiries failed, it is tried again tomorrow");
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 log.LogError(ex, "Cleaning up enquiries failed, it is tried again tomorrow");
             }
