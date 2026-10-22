@@ -350,6 +350,8 @@ public class AdminEnquiriesTests(PostgresDatabase postgres)
 
         var plain = await client.GetStringAsync("/api/admin/enquiries", Ct);
         Assert.Contains("\"status\":\"New\"", plain);
+        var assignees = await client.GetFromJsonAsync<List<AssigneeDto>>("/api/admin/enquiries/assignees", Ct);
+        Assert.Equal(["Mia Admin"], assignees!.Select(a => a.Name));
         Assert.DoesNotContain("Ferdig", plain);
 
         async Task<int[]> Ids(string query) =>

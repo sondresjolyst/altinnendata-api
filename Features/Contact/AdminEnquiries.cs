@@ -15,9 +15,6 @@ namespace altinnendata_api.Features.Contact
     {
         public const int PageSize = 50;
 
-        private static readonly StringComparer NorwegianOrder =
-            StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("nb-NO"), true);
-
         /// <summary>An enquiry with its owner as stored and whether that owner is still an active admin.</summary>
         private record Row(Enquiry Enquiry, bool OwnerActive, string? OwnerFirstName, string? OwnerLastName);
 
@@ -104,12 +101,12 @@ namespace altinnendata_api.Features.Contact
             var active = EnquiryOwners.ActiveAdminIds(db);
             var users = await db.Users.AsNoTracking()
                 .Where(u => active.Contains(u.Id))
+                .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
                 .Select(u => new { u.Id, u.FirstName, u.LastName })
                 .ToListAsync(ct);
 
             return TypedResults.Ok(users
                 .Select(u => new AssigneeDto(u.Id, DisplayName(u.FirstName, u.LastName)))
-                .OrderBy(a => a.Name, NorwegianOrder)
                 .ToList());
         }
 
