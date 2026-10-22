@@ -528,6 +528,26 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public void Validator_RefusesANulCharacterInAnyTextField()
+    {
+        var validator = new ContactRequestValidator();
+        var nul = "a\0b";
+        var requests = new[]
+        {
+            new ContactRequest(nul, "ola@kunde.no", null, null, null, null, "Hei"),
+            new ContactRequest("Ola", nul, null, null, null, null, "Hei"),
+            new ContactRequest("Ola", "ola@kunde.no", nul, null, null, null, "Hei"),
+            new ContactRequest("Ola", "ola@kunde.no", null, nul, null, null, "Hei"),
+            new ContactRequest("Ola", "ola@kunde.no", null, null, nul, null, "Hei"),
+            new ContactRequest("Ola", "ola@kunde.no", null, null, null, nul, "Hei"),
+            new ContactRequest("Ola", "ola@kunde.no", null, null, null, null, nul),
+            new ContactRequest("Ola", "ola@kunde.no", null, null, null, null, "Hei", nul),
+        };
+
+        Assert.All(requests, request => Assert.False(validator.Validate(request).IsValid));
+    }
+
+    [Fact]
     public void Validator_RefusesALongLocale()
     {
         var validator = new ContactRequestValidator();

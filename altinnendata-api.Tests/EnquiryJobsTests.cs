@@ -107,6 +107,22 @@ public class EnquiryJobsTests(PostgresDatabase postgres)
     }
 
     [Fact]
+    public async Task Retry_LogsAWarningWithTheIdAndAttempt_WhenTheSendIsRefused()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var enquiry = await AddUnsentAsync(db, 2, Now.AddHours(-1));
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>())).ReturnsAsync(new EmailResult(false, "refused"));
+        var log = new ListLogger<EnquiryJobsTests>();
+
+        Assert.Equal(0, await EnquiryNoticeRetry.ResendMissingAsync(db, email.Object, Config(), Now, Ct, log));
+
+        var entry = Assert.Single(log.Entries);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, entry.Level);
+        Assert.Equal($"The notice of enquiry {enquiry.Id} was not sent on retry 3", entry.Message);
+    }
+
+    [Fact]
     public async Task Retry_LogsADatabaseFailureOnOneEnquiry_AndSendsTheNext()
     {
         await using var db = await postgres.NewContextAsync();

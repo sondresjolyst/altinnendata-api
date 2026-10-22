@@ -44,7 +44,19 @@ namespace altinnendata_api.Features.Contact
             RuleFor(x => x.BuildSlug).MaximumLength(160);
             RuleFor(x => x.Message).NotEmpty().MaximumLength(4000);
             RuleFor(x => x.Locale).MaximumLength(10);
+
+            // Postgres refuses a text value with a NUL character, which would turn a bad request into a server error.
+            RuleFor(x => x.Name).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.Email).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.").WithName("Email").OverridePropertyName(EmailField);
+            RuleFor(x => x.Phone).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.UseCase).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.BudgetNok).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.BuildSlug).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.Message).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
+            RuleFor(x => x.Locale).Must(HasNoNul).WithMessage("'{PropertyName}' must not contain NUL characters.");
         }
+
+        private static bool HasNoNul(string? value) => value is null || !value.Contains('\0');
 
         public const string EmailField = "email";
 
