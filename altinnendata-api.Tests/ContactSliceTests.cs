@@ -31,23 +31,128 @@ public class ContactSliceTests : TestBase
             .Build();
 
     [Fact]
-    public async Task Send_UsesConfiguredRecipientAndRepliesToSender()
+    public async Task Send_SavesTheEnquiryWithEveryField()
+    {
+        await using var db = CreateDbContext();
+        db.PcBuilds.Add(new PcBuild
+        {
+            Slug = "lenovo-rtx-3060-3700x-2",
+            Translations = [new PcBuildTranslation { Locale = "no", Title = "Lenovo RTX 3060 / 3700X" }],
+        });
+        await db.SaveChangesAsync();
+        var email = Sender();
+
+        var req = new ContactRequest("Ola", " ola@kunde.no ", "12345678", "gaming", "25000+", "lenovo-rtx-3060-3700x-2", "Er den ledig?", "en");
+        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+        Assert.Equal("Thanks. We will be in touch.", ok.Value!.Message);
+
+        var saved = Assert.Single(db.Enquiries);
+        Assert.Equal("Ola", saved.Name);
+        Assert.Equal("ola@kunde.no", saved.Email);
+        Assert.Equal("12345678", saved.Phone);
+        Assert.Equal("gaming", saved.UseCase);
+        Assert.Equal("25000+", saved.BudgetNok);
+        Assert.Equal("lenovo-rtx-3060-3700x-2", saved.BuildSlug);
+        Assert.Equal("Lenovo RTX 3060 / 3700X", saved.BuildTitle);
+        Assert.Equal("en", saved.Locale);
+        Assert.Equal("Er den ledig?", saved.Message);
+        Assert.Equal(EnquiryStatus.New, saved.Status);
+        Assert.NotNull(saved.NoticeSentAt);
+        Assert.True(saved.ReceiptSent);
+    }
+
+    [Fact]
+    public async Task Send_NoticeCarriesNoPersonalData()
     {
         await using var db = CreateDbContext();
         db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
         await db.SaveChangesAsync();
         EmailMessage? sent = null;
         var email = Sender(m => sent = m);
-        using var cts = new CancellationTokenSource();
 
-        var req = new ContactRequest("Ola", "ola@kunde.no", null, "gaming", "25000+", "gaming-pc", "Hi");
-        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), cts.Token));
-        Assert.Equal("Thanks. We will be in touch.", ok.Value!.Message);
+        var req = new ContactRequest("Ola Nordmann", "ola@kunde.no", "98765432", null, null, null, "Hemmelig melding");
+        await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default);
 
-        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), cts.Token), Times.Exactly(2));
+        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        var id = Assert.Single(db.Enquiries).Id;
         Assert.Equal("shop@altinnendata.no", sent!.To);
-        Assert.Equal("ola@kunde.no", sent.ReplyTo);
-        Assert.Equal("New enquiry from Ola", sent.Subject);
+        Assert.Equal("Ny henvendelse", sent.Subject);
+        Assert.Null(sent.ReplyTo);
+        Assert.Contains($"https://www.altinnendata.no/no/admin/enquiries/{id}", sent.HtmlBody);
+        Assert.DoesNotContain("Ola", sent.HtmlBody);
+        Assert.DoesNotContain("ola@kunde.no", sent.HtmlBody);
+        Assert.DoesNotContain("98765432", sent.HtmlBody);
+        Assert.DoesNotContain("Hemmelig", sent.HtmlBody);
+        Assert.DoesNotContain(SendEnquiry.NoReceiptNote, sent.HtmlBody);
+    }
+
+    [Fact]
+    public async Task Send_NoticeSaysWhenTheReceiptWasHeldBack()
+    {
+        await using var db = CreateDbContext();
+        var messages = new List<EmailMessage>();
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
+            .ReturnsAsync(new EmailResult(true));
+        var gate = Cache();
+
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), gate, default);
+        messages.Clear();
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "2"), db, email.Object, Config(), gate, default);
+
+        var notice = Assert.Single(messages);
+        Assert.Contains(SendEnquiry.NoReceiptNote, notice.HtmlBody);
+        Assert.False(db.Enquiries.OrderBy(e => e.Id).Last().ReceiptSent);
+    }
+
+    [Fact]
+    public async Task Send_KeepsTheEnquiryWhenTheNoticeFails()
+    {
+        await using var db = CreateDbContext();
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailResult(false))
+            .ReturnsAsync(new EmailResult(true));
+
+        var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+
+        var saved = Assert.Single(db.Enquiries);
+        Assert.Null(saved.NoticeSentAt);
+        Assert.Equal(1, saved.NoticeAttempts);
+        Assert.NotNull(saved.NoticeAttemptedAt);
+    }
+
+    [Fact]
+    public async Task Send_KeepsTheEnquiryWhenTheNoticeThrows()
+    {
+        await using var db = CreateDbContext();
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("down"))
+            .ReturnsAsync(new EmailResult(true));
+
+        var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+
+        var saved = Assert.Single(db.Enquiries);
+        Assert.Null(saved.NoticeSentAt);
+        Assert.Equal(1, saved.NoticeAttempts);
+    }
+
+    [Fact]
+    public async Task Send_StillReturnsOkWhenTheReceiptThrows()
+    {
+        await using var db = CreateDbContext();
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailResult(true))
+            .ThrowsAsync(new HttpRequestException("down"));
+
+        var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+        Assert.NotNull(Assert.Single(db.Enquiries).NoticeSentAt);
     }
 
     [Fact]
@@ -61,59 +166,6 @@ public class ContactSliceTests : TestBase
 
         email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         Assert.Equal("sonyslyst@gmail.com", sent!.To);
-        Assert.Equal("kari@kunde.no", sent.ReplyTo);
-    }
-
-    [Fact]
-    public async Task Send_NamesAndLinksTheBuildTheEnquiryIsAbout()
-    {
-        await using var db = CreateDbContext();
-        db.PcBuilds.Add(new PcBuild
-        {
-            Slug = "lenovo-rtx-3060-3700x-2",
-            Translations = [new PcBuildTranslation { Locale = "no", Title = "Lenovo RTX 3060 / 3700X" }],
-        });
-        await db.SaveChangesAsync();
-
-        string? body = null;
-        var email = Sender(m => body = m.HtmlBody);
-
-        var req = new ContactRequest("Ola", "ola@kunde.no", null, null, null, "lenovo-rtx-3060-3700x-2", "Er den ledig?");
-        await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default);
-
-        Assert.Contains("Lenovo RTX 3060 / 3700X", body);
-        Assert.Contains("https://www.altinnendata.no/no/builds/lenovo-rtx-3060-3700x-2", body);
-        Assert.Contains("lenovo-rtx-3060-3700x-2", body);
-    }
-
-    [Fact]
-    public async Task Send_LeavesOutTheFieldsTheSenderDidNotFill()
-    {
-        await using var db = CreateDbContext();
-        string? body = null;
-        var email = Sender(m => body = m.HtmlBody);
-
-        await SendEnquiry.Handle(
-            new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), default);
-
-        Assert.DoesNotContain("Use case", body);
-        Assert.DoesNotContain("Budget", body);
-        Assert.DoesNotContain("Build", body);
-        Assert.Contains("Kari", body);
-    }
-
-    [Fact]
-    public async Task Send_KeepsAnUnknownSlugAsPlainText()
-    {
-        await using var db = CreateDbContext();
-        string? body = null;
-        var email = Sender(m => body = m.HtmlBody);
-
-        await SendEnquiry.Handle(
-            new ContactRequest("Ola", "ola@kunde.no", null, null, null, "gone", "Hei"), db, email.Object, Config(), Cache(), default);
-
-        Assert.Contains("gone", body);
-        Assert.DoesNotContain("<a href", body);
     }
 
     [Fact]
@@ -140,18 +192,6 @@ public class ContactSliceTests : TestBase
         Assert.DoesNotContain("evil", receipt.HtmlBody);
         Assert.DoesNotContain("prize", receipt.HtmlBody);
         Assert.Contains("<br>post@altinnendata.no</div>", receipt.HtmlBody);
-    }
-
-    [Fact]
-    public async Task Send_TheOwnerReplyToIsTheTrimmedAddress()
-    {
-        await using var db = CreateDbContext();
-        EmailMessage? sent = null;
-        var email = Sender(m => sent = m);
-
-        await SendEnquiry.Handle(new ContactRequest("Kari", " kari@kunde.no ", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), default);
-
-        Assert.Equal("kari@kunde.no", sent!.ReplyTo);
     }
 
     [Fact]

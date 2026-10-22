@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Net.Mail;
 using System.Text;
 using FluentValidation;
@@ -86,14 +85,19 @@ namespace altinnendata_api.Features.Contact
             catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
         });
 
+        /// <summary>
+        /// Saves the enquiry, then sends the notice and the receipt. Once the request is valid nothing here is
+        /// cancelled, so an aborted request still saves. A failed email never fails the request.
+        /// </summary>
         public static async Task<IResult> Handle(
             ContactRequest req,
             ApplicationDbContext db,
             IEmailSender email,
             IConfiguration config,
             ContactReceiptGate receipts,
-            CancellationToken ct)
+            CancellationToken _)
         {
+            var ct = CancellationToken.None;
             var sender = req.Email.Trim();
             var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
 
@@ -103,48 +107,85 @@ namespace altinnendata_api.Features.Contact
                     .Include(b => b.Translations)
                     .FirstOrDefaultAsync(b => b.Slug == req.BuildSlug, ct);
 
+            var now = DateTime.UtcNow;
             var receipt = receipts.TryAcquire(sender);
-            await email.SendAsync(
-                new EmailMessage(settings.ContactRecipientEmail, $"New enquiry from {req.Name}", BuildBody(req, build, config, receipt, settings))
-                {
-                    ReplyTo = sender,
-                },
-                ct);
+            var enquiry = new Enquiry
+            {
+                CreatedAt = now,
+                UpdatedAt = now,
+                Name = req.Name,
+                Email = sender,
+                Phone = req.Phone,
+                UseCase = req.UseCase,
+                BudgetNok = req.BudgetNok,
+                BuildSlug = req.BuildSlug,
+                BuildTitle = build == null ? null : BuildMapping.PickTranslation(build, Locales.Default)?.Title,
+                Locale = Locales.Normalize(req.Locale),
+                Message = req.Message,
+                ReceiptSent = receipt,
+                Status = EnquiryStatus.New,
+            };
+            db.Enquiries.Add(enquiry);
+            await db.SaveChangesAsync(ct);
+
+            await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct);
 
             if (receipt)
-                await email.SendAsync(BuildReceipt(sender, req.Locale, settings, DateTime.UtcNow), ct);
+            {
+                try
+                {
+                    await email.SendAsync(BuildReceipt(sender, req.Locale, settings, now), ct);
+                }
+                catch (Exception)
+                {
+                    // The enquiry is saved, and a lost receipt must not fail the request.
+                }
+            }
 
             return TypedResults.Ok(new MessageResponse("Thanks. We will be in touch."));
         }
 
         /// <summary>
-        /// The owner's copy. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a
-        /// withdrawal sent through the form then has to be confirmed by hand.
+        /// Sends the notice for a saved enquiry and sets <see cref="Enquiry.NoticeSentAt"/> when it went out.
+        /// Every call counts as an attempt. Returns false when the send failed or threw.
         /// </summary>
-        private static string BuildBody(ContactRequest req, PcBuild? build, IConfiguration config, bool receiptSent, AppSettings settings)
+        public static async Task<bool> TrySendNoticeAsync(
+            ApplicationDbContext db, IEmailSender email, IConfiguration config, int enquiryId, DateTime now, CancellationToken ct)
         {
-            string Enc(string? v) => WebUtility.HtmlEncode(v ?? string.Empty);
+            var enquiry = await db.Enquiries.FindAsync([enquiryId], ct);
+            if (enquiry == null) return false;
 
-            var body = new StringBuilder();
-
-            void Row(string label, string? value)
+            var sent = false;
+            try
             {
-                if (!string.IsNullOrWhiteSpace(value))
-                    body.Append($"<p><strong>{label}:</strong> {value}</p>");
+                var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
+                var result = await email.SendAsync(BuildNotice(enquiry, settings, config), ct);
+                sent = result.Sent;
+            }
+            catch (Exception)
+            {
+                // Counted as a failed attempt below, so the retry job picks it up.
             }
 
-            Row("Name", Enc(req.Name));
-            Row("Email", Enc(req.Email));
-            Row("Phone", Enc(req.Phone));
-            Row("Use case", Enc(req.UseCase));
-            Row("Budget", req.BudgetNok is { } budget ? $"{budget} NOK" : null);
-            Row("Build", BuildLink(req.BuildSlug, build, config));
+            enquiry.NoticeAttempts++;
+            enquiry.NoticeAttemptedAt = now;
+            if (sent) enquiry.NoticeSentAt = now;
+            await db.SaveChangesAsync(ct);
+            return sent;
+        }
 
-            body.Append("<p><strong>Message:</strong></p>");
-            body.Append($"<p>{Enc(req.Message).Replace("\n", "<br/>")}</p>");
-            if (!receiptSent)
-                body.Append($"<p><strong>{NoReceiptNote}</strong></p>");
-            return BrandedEmail.Html(settings, false, "Enquiry", "New enquiry", body.ToString());
+        /// <summary>
+        /// The notice to the owner. It holds no name, address, phone or message, only a link to the enquiry in the
+        /// admin. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a withdrawal sent
+        /// through the form then has to be confirmed by hand.
+        /// </summary>
+        internal static EmailMessage BuildNotice(Enquiry enquiry, AppSettings settings, IConfiguration config)
+        {
+            var body = "<p>En ny henvendelse har kommet inn.</p>"
+                + (enquiry.ReceiptSent ? "" : $"<p><strong>{NoReceiptNote}</strong></p>");
+            var html = BrandedEmail.Html(settings, true, "Henvendelse", "Ny henvendelse", body,
+                new EmailButton("Åpne i admin", SiteLinks.AdminEnquiry(config, enquiry.Id)));
+            return new EmailMessage(settings.ContactRecipientEmail, "Ny henvendelse", html);
         }
 
         /// <summary>
@@ -163,16 +204,6 @@ namespace altinnendata_api.Features.Contact
             var html = BrandedEmail.Html(settings, no, no ? "Melding mottatt" : "Message received", subject, body.ToString(),
                 footer: BrandedEmail.MessageFooter(no));
             return new EmailMessage(to, subject, html) { ReplyTo = settings.PublicEmail };
-        }
-
-        private static string? BuildLink(string? slug, PcBuild? build, IConfiguration config)
-        {
-            if (string.IsNullOrWhiteSpace(slug)) return null;
-            if (build == null) return WebUtility.HtmlEncode(slug);
-
-            var title = BuildMapping.PickTranslation(build, Locales.Default)?.Title ?? build.Slug;
-            var url = SiteLinks.Build(config, build.Slug);
-            return $"<a href=\"{WebUtility.HtmlEncode(url)}\" style=\"{BrandedEmail.LinkStyle}\">{WebUtility.HtmlEncode(title)}</a> ({WebUtility.HtmlEncode(build.Slug)})";
         }
 
         public class Endpoint : IEndpoint

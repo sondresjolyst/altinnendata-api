@@ -58,4 +58,12 @@ public class SiteLinksTests
 
         Assert.Equal("https://www.altinnendata.no/en/terms", link);
     }
+
+    [Fact]
+    public void AdminEnquiry_PointsAtTheAdminPage()
+    {
+        var link = SiteLinks.AdminEnquiry(Config("https://dev.altinnendata.no/"), 7);
+
+        Assert.Equal("https://dev.altinnendata.no/no/admin/enquiries/7", link);
+    }
 }
