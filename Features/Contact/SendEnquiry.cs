@@ -86,8 +86,9 @@ namespace altinnendata_api.Features.Contact
         });
 
         /// <summary>
-        /// Saves the enquiry, then sends the notice and the receipt. Once the request is valid nothing here is
-        /// cancelled, so an aborted request still saves. A failed email never fails the request.
+        /// Saves the enquiry, then sends the notice and the receipt. A failed email never fails the request, and a
+        /// receipt that did not go out is recorded on the enquiry. <paramref name="aborted"/> is deliberately ignored
+        /// once the request is valid, so an aborted request still saves.
         /// </summary>
         public static async Task<IResult> Handle(
             ContactRequest req,
@@ -95,7 +96,8 @@ namespace altinnendata_api.Features.Contact
             IEmailSender email,
             IConfiguration config,
             ContactReceiptGate receipts,
-            CancellationToken _)
+            ILogger<ContactRequest> log,
+            CancellationToken aborted)
         {
             var ct = CancellationToken.None;
             var sender = req.Email.Trim();
@@ -128,50 +130,89 @@ namespace altinnendata_api.Features.Contact
             db.Enquiries.Add(enquiry);
             await db.SaveChangesAsync(ct);
 
-            await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct);
+            if (!await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct))
+                log.LogWarning("The notice of enquiry {EnquiryId} was not sent. The retry job will try again", enquiry.Id);
 
-            if (receipt)
+            if (receipt && !await TrySendReceiptAsync(email, BuildReceipt(sender, req.Locale, settings, now), enquiry.Id, log, ct))
             {
                 try
                 {
-                    await email.SendAsync(BuildReceipt(sender, req.Locale, settings, now), ct);
+                    await db.Enquiries.Where(e => e.Id == enquiry.Id)
+                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReceiptSent, false), ct);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // The enquiry is saved, and a lost receipt must not fail the request.
+                    log.LogError(ex, "Could not record that the receipt of enquiry {EnquiryId} was not sent", enquiry.Id);
                 }
             }
 
             return TypedResults.Ok(new MessageResponse("Thanks. We will be in touch."));
         }
 
+        private static async Task<bool> TrySendReceiptAsync(IEmailSender email, EmailMessage receipt, int enquiryId, ILogger log, CancellationToken ct)
+        {
+            try
+            {
+                var result = await email.SendAsync(receipt, ct);
+                if (result.Sent) return true;
+                log.LogWarning("The receipt of enquiry {EnquiryId} was refused: {Error}", enquiryId, result.Error);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                log.LogWarning(ex, "The receipt of enquiry {EnquiryId} could not be sent", enquiryId);
+            }
+            return false;
+        }
+
+        /// <summary>How long a claimed attempt is left alone, so a try still sending is not taken over by another.</summary>
+        public static readonly TimeSpan NoticeLease = TimeSpan.FromMinutes(2);
+
         /// <summary>
-        /// Sends the notice for a saved enquiry and sets <see cref="Enquiry.NoticeSentAt"/> when it went out.
-        /// Every call counts as an attempt. Returns false when the send failed or threw.
+        /// Sends the notice of enquiry <paramref name="enquiryId"/> if it is still unsent and no attempt was claimed
+        /// within <see cref="NoticeLease"/>. The attempt is claimed on the row first, so two instances or a retry
+        /// never send the same try twice. Returns true when the email was
+        /// accepted. Never throws, except on cancellation. Logs nothing, the caller does.
         /// </summary>
         public static async Task<bool> TrySendNoticeAsync(
             ApplicationDbContext db, IEmailSender email, IConfiguration config, int enquiryId, DateTime now, CancellationToken ct)
         {
-            var enquiry = await db.Enquiries.FindAsync([enquiryId], ct);
-            if (enquiry == null) return false;
+            var leaseEnded = now - NoticeLease;
+            var seen = await db.Enquiries.AsNoTracking()
+                .Where(e => e.Id == enquiryId && e.NoticeSentAt == null && (e.NoticeAttemptedAt == null || e.NoticeAttemptedAt <= leaseEnded))
+                .Select(e => (int?)e.NoticeAttempts)
+                .FirstOrDefaultAsync(ct);
+            if (seen == null) return false;
 
-            var sent = false;
+            var claimed = await db.Enquiries
+                .Where(e => e.Id == enquiryId && e.NoticeSentAt == null && e.NoticeAttempts == seen
+                    && (e.NoticeAttemptedAt == null || e.NoticeAttemptedAt <= leaseEnded))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(e => e.NoticeAttempts, seen.Value + 1)
+                    .SetProperty(e => e.NoticeAttemptedAt, now), ct);
+            if (claimed == 0) return false;
+
             try
             {
-                var settings = await db.AppSettings.FindAsync([1], ct) ?? new AppSettings();
-                var result = await email.SendAsync(BuildNotice(enquiry, settings, config), ct);
-                sent = result.Sent;
+                var enquiry = await db.Enquiries.AsNoTracking().FirstAsync(e => e.Id == enquiryId, ct);
+                var settings = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
+                if (!(await email.SendAsync(BuildNotice(enquiry, settings, config), ct)).Sent) return false;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            // The email is out, so a failed record of it must not fail the caller. The retry job would resend it.
+            try
+            {
+                await db.Enquiries.Where(e => e.Id == enquiryId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(e => e.NoticeSentAt, now), CancellationToken.None);
             }
             catch (Exception)
             {
-                // Counted as a failed attempt below, so the retry job picks it up.
+                return true;
             }
-
-            enquiry.NoticeAttempts++;
-            enquiry.NoticeAttemptedAt = now;
-            if (sent) enquiry.NoticeSentAt = now;
-            await db.SaveChangesAsync(ct);
-            return sent;
+            return true;
         }
 
         /// <summary>

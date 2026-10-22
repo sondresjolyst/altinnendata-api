@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using altinnendata_api.Features.Contact;
 using altinnendata_api.Infrastructure;
@@ -10,8 +13,11 @@ using Xunit;
 
 namespace altinnendata_api.Tests;
 
-public class ContactSliceTests : TestBase
+[Collection("postgres")]
+public class ContactSliceTests(PostgresDatabase postgres) : TestBase
 {
+    private static readonly ILogger<ContactRequest> Log = NullLogger<ContactRequest>.Instance;
+
     /// <summary>A sender that hands the owner's message to <paramref name="sent"/> and the receipt to <paramref name="receipt"/>.</summary>
     private static Mock<IEmailSender> Sender(Action<EmailMessage>? sent = null, Action<EmailMessage>? receipt = null)
     {
@@ -21,6 +27,14 @@ public class ContactSliceTests : TestBase
             .Callback<EmailMessage, CancellationToken>((m, _) => (count++ == 0 ? sent : receipt)?.Invoke(m))
             .ReturnsAsync(new EmailResult(true));
         return email;
+    }
+
+    private static async Task SetSettingsAsync(ApplicationDbContext db, AppSettings settings)
+    {
+        db.AppSettings.RemoveRange(await db.AppSettings.ToListAsync());
+        settings.Id = 1;
+        db.AppSettings.Add(settings);
+        await db.SaveChangesAsync();
     }
 
     private static ContactReceiptGate Cache() => new(TimeProvider.System);
@@ -33,7 +47,7 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_SavesTheEnquiryWithEveryField()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         db.PcBuilds.Add(new PcBuild
         {
             Slug = "lenovo-rtx-3060-3700x-2",
@@ -43,10 +57,10 @@ public class ContactSliceTests : TestBase
         var email = Sender();
 
         var req = new ContactRequest("Ola", " ola@kunde.no ", "12345678", "gaming", "25000+", "lenovo-rtx-3060-3700x-2", "Er den ledig?", "en");
-        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
         Assert.Equal("Thanks. We will be in touch.", ok.Value!.Message);
 
-        var saved = Assert.Single(db.Enquiries);
+        var saved = Assert.Single(db.Enquiries.AsNoTracking());
         Assert.Equal("Ola", saved.Name);
         Assert.Equal("ola@kunde.no", saved.Email);
         Assert.Equal("12345678", saved.Phone);
@@ -64,17 +78,16 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_NoticeCarriesNoPersonalData()
     {
-        await using var db = CreateDbContext();
-        db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
-        await db.SaveChangesAsync();
+        await using var db = await postgres.NewContextAsync();
+        await SetSettingsAsync(db, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
         EmailMessage? sent = null;
         var email = Sender(m => sent = m);
 
         var req = new ContactRequest("Ola Nordmann", "ola@kunde.no", "98765432", null, null, null, "Hemmelig melding");
-        await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default);
+        await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default);
 
         email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
-        var id = Assert.Single(db.Enquiries).Id;
+        var id = Assert.Single(db.Enquiries.AsNoTracking()).Id;
         Assert.Equal("shop@altinnendata.no", sent!.To);
         Assert.Equal("Ny henvendelse", sent.Subject);
         Assert.Null(sent.ReplyTo);
@@ -89,7 +102,7 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_NoticeSaysWhenTheReceiptWasHeldBack()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         var messages = new List<EmailMessage>();
         var email = new Mock<IEmailSender>();
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
@@ -97,28 +110,28 @@ public class ContactSliceTests : TestBase
             .ReturnsAsync(new EmailResult(true));
         var gate = Cache();
 
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), gate, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), gate, Log, default);
         messages.Clear();
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "2"), db, email.Object, Config(), gate, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "2"), db, email.Object, Config(), gate, Log, default);
 
         var notice = Assert.Single(messages);
         Assert.Contains(SendEnquiry.NoReceiptNote, notice.HtmlBody);
-        Assert.False(db.Enquiries.OrderBy(e => e.Id).Last().ReceiptSent);
+        Assert.False(db.Enquiries.AsNoTracking().OrderBy(e => e.Id).Last().ReceiptSent);
     }
 
     [Fact]
     public async Task Send_KeepsTheEnquiryWhenTheNoticeFails()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         var email = new Mock<IEmailSender>();
         email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EmailResult(false))
             .ReturnsAsync(new EmailResult(true));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
 
-        var saved = Assert.Single(db.Enquiries);
+        var saved = Assert.Single(db.Enquiries.AsNoTracking());
         Assert.Null(saved.NoticeSentAt);
         Assert.Equal(1, saved.NoticeAttempts);
         Assert.NotNull(saved.NoticeAttemptedAt);
@@ -127,16 +140,16 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_KeepsTheEnquiryWhenTheNoticeThrows()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         var email = new Mock<IEmailSender>();
         email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("down"))
             .ReturnsAsync(new EmailResult(true));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
 
-        var saved = Assert.Single(db.Enquiries);
+        var saved = Assert.Single(db.Enquiries.AsNoTracking());
         Assert.Null(saved.NoticeSentAt);
         Assert.Equal(1, saved.NoticeAttempts);
     }
@@ -144,25 +157,168 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_StillReturnsOkWhenTheReceiptThrows()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         var email = new Mock<IEmailSender>();
         email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EmailResult(true))
             .ThrowsAsync(new HttpRequestException("down"));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), default));
-        Assert.NotNull(Assert.Single(db.Enquiries).NoticeSentAt);
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+        Assert.NotNull(Assert.Single(db.Enquiries.AsNoTracking()).NoticeSentAt);
+    }
+
+    [Fact]
+    public async Task Send_MarksTheReceiptUnsentWhenItThrows_AndLogsIt()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailResult(true))
+            .ThrowsAsync(new HttpRequestException("down"));
+        var log = new ListLogger<ContactRequest>();
+
+        var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), log, default));
+
+        var saved = await db.Enquiries.AsNoTracking().SingleAsync();
+        Assert.False(saved.ReceiptSent);
+        Assert.NotNull(saved.NoticeSentAt);
+        Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("receipt"));
+    }
+
+    [Fact]
+    public async Task Send_MarksTheReceiptUnsentWhenItIsRefused()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailResult(true))
+            .ReturnsAsync(new EmailResult(false));
+
+        var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+
+        Assert.False((await db.Enquiries.AsNoTracking().SingleAsync()).ReceiptSent);
+    }
+
+    [Fact]
+    public async Task Send_LogsAFailedNotice()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailResult(false))
+            .ReturnsAsync(new EmailResult(true));
+        var log = new ListLogger<ContactRequest>();
+
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), log, default);
+
+        Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("notice"));
+    }
+
+    [Fact]
+    public async Task Send_SavesTheEnquiryEvenWhenTheRequestWasAborted()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var email = Sender();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, cts.Token));
+
+        Assert.Single(await db.Enquiries.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Send_KeepsAnUnknownSlugWithoutATitle()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var email = Sender();
+
+        await SendEnquiry.Handle(new ContactRequest("Ola", "ola@kunde.no", null, null, null, "gone", "Hei"), db, email.Object, Config(), Cache(), Log, default);
+
+        var saved = await db.Enquiries.AsNoTracking().SingleAsync();
+        Assert.Equal("gone", saved.BuildSlug);
+        Assert.Null(saved.BuildTitle);
+    }
+
+    private static async Task<int> SeedEnquiryAsync(ApplicationDbContext db, Action<Enquiry>? edit = null)
+    {
+        var enquiry = new Enquiry
+        {
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            Name = "Kari", Email = "kari@kunde.no", Locale = "no", Message = "Hei", ReceiptSent = true,
+        };
+        edit?.Invoke(enquiry);
+        db.Enquiries.Add(enquiry);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        return enquiry.Id;
+    }
+
+    [Fact]
+    public async Task TrySendNotice_SkipsANoticeAlreadySent()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var id = await SeedEnquiryAsync(db, e => e.NoticeSentAt = DateTime.UtcNow);
+        var email = Sender();
+
+        Assert.False(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, DateTime.UtcNow, default));
+
+        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(0, (await db.Enquiries.AsNoTracking().SingleAsync()).NoticeAttempts);
+    }
+
+    [Fact]
+    public async Task TrySendNotice_FromTwoInstancesAtOnce_SendsOnce()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var id = await SeedEnquiryAsync(db);
+        await using var other = postgres.NewContextOn(db);
+        var email = Sender();
+
+        var results = await Task.WhenAll(
+            SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, DateTime.UtcNow, default),
+            SendEnquiry.TrySendNoticeAsync(other, email.Object, Config(), id, DateTime.UtcNow, default));
+
+        Assert.Single(results, r => r);
+        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        var saved = await db.Enquiries.AsNoTracking().SingleAsync();
+        Assert.Equal(1, saved.NoticeAttempts);
+        Assert.NotNull(saved.NoticeSentAt);
+    }
+
+    [Fact]
+    public async Task TrySendNotice_CountsEachAttemptAndSendsOnALaterTry()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var id = await SeedEnquiryAsync(db);
+        var email = new Mock<IEmailSender>();
+        email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailResult(false))
+            .ReturnsAsync(new EmailResult(true));
+
+        var now = DateTime.UtcNow;
+        Assert.False(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, now, default));
+        Assert.False(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, now.AddMinutes(1), default));
+        Assert.True(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, now.AddMinutes(5), default));
+        Assert.False(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, now.AddMinutes(10), default));
+
+        var saved = await db.Enquiries.AsNoTracking().SingleAsync();
+        Assert.Equal(2, saved.NoticeAttempts);
+        Assert.NotNull(saved.NoticeSentAt);
     }
 
     [Fact]
     public async Task Send_FallsBackToDefaultRecipientWhenNoSettings()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         EmailMessage? sent = null;
         var email = Sender(m => sent = m);
 
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), Log, default);
 
         email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         Assert.Equal("sonyslyst@gmail.com", sent!.To);
@@ -171,15 +327,14 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_SendsTheSenderAFixedReceipt_WithNothingTheyTyped()
     {
-        await using var db = CreateDbContext();
-        db.AppSettings.Add(new AppSettings { ContactRecipientEmail = "shop@altinnendata.no", PublicEmail = "post@altinnendata.no" });
-        await db.SaveChangesAsync();
+        await using var db = await postgres.NewContextAsync();
+        await SetSettingsAsync(db, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no", PublicEmail = "post@altinnendata.no" });
         EmailMessage? receipt = null;
         var email = Sender(receipt: m => receipt = m);
 
         await SendEnquiry.Handle(
             new ContactRequest("Kari Visit evil.example", " kari@kunde.no ", null, "Win a prize", null, null, "Click https://evil.example now"),
-            db, email.Object, Config(), Cache(), default);
+            db, email.Object, Config(), Cache(), Log, default);
 
         Assert.Equal("kari@kunde.no", receipt!.To);
         Assert.Equal("post@altinnendata.no", receipt.ReplyTo);
@@ -197,7 +352,7 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_SendsOneReceiptPerAddressInTenMinutes_ButEveryEnquiry()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         var messages = new List<EmailMessage>();
         var email = new Mock<IEmailSender>();
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
@@ -205,9 +360,9 @@ public class ContactSliceTests : TestBase
             .ReturnsAsync(new EmailResult(true));
         var cache = Cache();
 
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), cache, default);
-        await SendEnquiry.Handle(new ContactRequest("Kari", "KARI@kunde.no", null, null, null, null, "2"), db, email.Object, Config(), cache, default);
-        await SendEnquiry.Handle(new ContactRequest("Ola", "ola@kunde.no", null, null, null, null, "3"), db, email.Object, Config(), cache, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), cache, Log, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "KARI@kunde.no", null, null, null, null, "2"), db, email.Object, Config(), cache, Log, default);
+        await SendEnquiry.Handle(new ContactRequest("Ola", "ola@kunde.no", null, null, null, null, "3"), db, email.Object, Config(), cache, Log, default);
 
         Assert.Equal(3, messages.Count(m => m.To == "sonyslyst@gmail.com"));
         Assert.Equal(["kari@kunde.no", "ola@kunde.no"], messages.Where(m => m.To != "sonyslyst@gmail.com").Select(m => m.To));
@@ -220,7 +375,7 @@ public class ContactSliceTests : TestBase
     [Fact]
     public async Task Send_AtTheGlobalCap_StillSendsTheEnquiryButNoReceipt()
     {
-        await using var db = CreateDbContext();
+        await using var db = await postgres.NewContextAsync();
         var messages = new List<EmailMessage>();
         var email = new Mock<IEmailSender>();
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
@@ -229,7 +384,7 @@ public class ContactSliceTests : TestBase
         var gate = Cache();
         for (var i = 0; i < ContactReceiptGate.GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
 
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), gate, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), gate, Log, default);
 
         var owner = Assert.Single(messages);
         Assert.Equal("sonyslyst@gmail.com", owner.To);
