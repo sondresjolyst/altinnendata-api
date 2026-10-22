@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.11.0...v1.12.0) (2026-10-22)
+
+
+### Features
+
+* **contact:** store enquiries for the admin ([#128](https://github.com/sondresjolyst/altinnendata-api/issues/128)) ([cb09663](https://github.com/sondresjolyst/altinnendata-api/commit/cb09663373073e0e79ed0588db5f289f880a1a10))
+* **security:** encrypt the Data Protection keys with a certificate ([#130](https://github.com/sondresjolyst/altinnendata-api/issues/130)) ([5295f19](https://github.com/sondresjolyst/altinnendata-api/commit/5295f1928de0377bde093cdf57737f26f519f6ed))
+
 ## [1.11.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.10.1...v1.11.0) (2026-10-20)
 
 
