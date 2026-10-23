@@ -8,6 +8,12 @@ namespace altinnendata_api.Infrastructure
     {
         public const string ZoneId = "Europe/Oslo";
 
+        /// <summary>
+        /// The same zone under its Windows name. With InvariantGlobalization, Windows cannot map the IANA name, so a
+        /// local run on Windows finds the zone through this instead. Linux, where the app runs in production, uses the IANA name.
+        /// </summary>
+        public const string WindowsZoneId = "W. Europe Standard Time";
+
         private static readonly Lazy<TimeZoneInfo> LazyZone = new(() => Load(TimeZoneInfo.FindSystemTimeZoneById));
 
         public static TimeZoneInfo Zone => LazyZone.Value;
@@ -27,6 +33,15 @@ namespace altinnendata_api.Infrastructure
             }
             catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
             {
+                try
+                {
+                    return find(WindowsZoneId);
+                }
+                catch (Exception windows) when (windows is TimeZoneNotFoundException or InvalidTimeZoneException)
+                {
+                    // Neither name is known, so the error below names the IANA zone the image needs.
+                }
+
                 throw new InvalidOperationException(
                     $"The {ZoneId} time zone is missing, so dates would be shown in UTC. Install the time zone data (tzdata) in the image.", ex);
             }
