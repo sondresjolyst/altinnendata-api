@@ -1101,6 +1101,9 @@ namespace altinnendata_api.Migrations
                     b.Property<DateTime?>("AdminCancelRequestedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("AnonymisedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("AuthorizedAt")
                         .HasColumnType("timestamp with time zone");
 

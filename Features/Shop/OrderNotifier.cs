@@ -97,6 +97,13 @@ namespace altinnendata_api.Features.Shop
 
         private async Task SendAsync(EmailMessage message, Models.Shop.Order order, CancellationToken ct)
         {
+            // An anonymised order has no address, and nothing is sent to an empty one.
+            if (string.IsNullOrWhiteSpace(message.To))
+            {
+                log.LogWarning("Did not send {Subject} for order {Reference}, it has no recipient", message.Subject, order.Reference);
+                return;
+            }
+
             try
             {
                 await email.SendAsync(message, ct);

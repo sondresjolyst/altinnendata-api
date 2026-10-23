@@ -25,7 +25,7 @@ namespace altinnendata_api.Features.Shop
         {
             var now = DateTime.UtcNow;
             var claimed = await db.Orders
-                .Where(o => o.Id == orderId && o.ConfirmationSentAt == null && o.ConfirmationAttempts == attemptsSeen)
+                .Where(o => o.Id == orderId && o.AnonymisedAt == null && o.ConfirmationSentAt == null && o.ConfirmationAttempts == attemptsSeen)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(o => o.ConfirmationAttempts, attemptsSeen + 1)
                     .SetProperty(o => o.ConfirmationAttemptedAt, now), ct);
@@ -34,6 +34,11 @@ namespace altinnendata_api.Features.Shop
             var order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == orderId, ct);
             var settings = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
             var attempt = attemptsSeen + 1;
+            if (string.IsNullOrWhiteSpace(order.BuyerEmail))
+            {
+                log.LogWarning("Order {OrderId} has no buyer email, so the confirmation is not sent", orderId);
+                return false;
+            }
 
             EmailMessage message;
             try
@@ -107,7 +112,7 @@ namespace altinnendata_api.Features.Shop
         {
             var candidates = await db.Orders.AsNoTracking()
                 .Where(o => (o.Status == OrderStatus.Reserved || o.Status == OrderStatus.Paid)
-                    && o.ConfirmationSentAt == null && o.ConfirmationAttempts < OrderConfirmation.MaxAttempts)
+                    && o.AnonymisedAt == null && o.ConfirmationSentAt == null && o.ConfirmationAttempts < OrderConfirmation.MaxAttempts)
                 .Select(o => new { o.Id, o.ConfirmationAttempts, o.ConfirmationAttemptedAt, o.CreatedAt })
                 .ToListAsync(ct);
 

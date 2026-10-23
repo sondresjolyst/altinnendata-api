@@ -121,6 +121,9 @@ namespace altinnendata_api.Models.Shop
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        /// <summary>When the buyer's name, email, phone and address were removed, five years after the financial year of the sale.</summary>
+        public DateTime? AnonymisedAt { get; set; }
+
         /// <summary>Postgres xmin. A save from a stale read fails, so a webhook and an admin action cannot overwrite each other.</summary>
         public uint Version { get; set; }
     }
