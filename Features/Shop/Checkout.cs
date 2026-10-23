@@ -4,7 +4,7 @@ using Npgsql;
 using SjolystInnovation.AppKit.Vipps;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Builds;
-using altinnendata_api.Helpers;
+using SjolystInnovation.AppKit.Hosting;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Shop;
