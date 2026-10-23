@@ -20,6 +20,22 @@ public class OsloTimeTests
     public void EnsureAvailable_FindsTheZoneHere() => OsloTime.EnsureAvailable();
 
     [Fact]
+    public void Load_FallsBackToTheWindowsNameWhenTheIanaNameIsUnknown()
+    {
+        var oslo = TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(1), "test", "test");
+        var asked = new List<string>();
+
+        var zone = OsloTime.Load(id =>
+        {
+            asked.Add(id);
+            return id == OsloTime.WindowsZoneId ? oslo : throw new TimeZoneNotFoundException(id);
+        });
+
+        Assert.Same(oslo, zone);
+        Assert.Equal([OsloTime.ZoneId, OsloTime.WindowsZoneId], asked);
+    }
+
+    [Fact]
     public void Load_StopsWithAClearErrorWhenTheZoneIsMissing()
     {
         var ex = Assert.Throws<InvalidOperationException>(() => OsloTime.Load(id => throw new TimeZoneNotFoundException(id)));
