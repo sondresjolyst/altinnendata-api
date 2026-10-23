@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.12.1...v1.13.0) (2026-10-23)
+
+
+### Features
+
+* **shop:** anonymise buyer details on orders five years after the financial year ([#138](https://github.com/sondresjolyst/altinnendata-api/issues/138)) ([cd5a0f5](https://github.com/sondresjolyst/altinnendata-api/commit/cd5a0f5491e5a21877671e087fa22f514eee6dad))
+* **shop:** use the withdrawal form from SjolystInnovation.AppKit.Pdf 1.1.0 ([#139](https://github.com/sondresjolyst/altinnendata-api/issues/139)) ([a25b2d8](https://github.com/sondresjolyst/altinnendata-api/commit/a25b2d8bd9d38cb631d9ef36fe4bc6c57fef3d25))
+
+
+### Bug Fixes
+
+* **time:** find the Oslo time zone by its Windows name on Windows ([#137](https://github.com/sondresjolyst/altinnendata-api/issues/137)) ([676e5ab](https://github.com/sondresjolyst/altinnendata-api/commit/676e5ab843086da6d0ab56c56addf0a955b193a2))
+* **time:** load the Oslo time zone once at startup ([#135](https://github.com/sondresjolyst/altinnendata-api/issues/135)) ([75b995f](https://github.com/sondresjolyst/altinnendata-api/commit/75b995f9e3ab50b5f6004dd8b65601a1af6a17b7))
+
 ## [1.12.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.12.0...v1.12.1) (2026-10-23)
 
 
