@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.12.0...v1.12.1) (2026-10-23)
+
+
+### Miscellaneous Chores
+
+* release 1.12.1 ([#133](https://github.com/sondresjolyst/altinnendata-api/issues/133)) ([4cb5d39](https://github.com/sondresjolyst/altinnendata-api/commit/4cb5d39b48eb0012225360c7f0d4cc604bf74424))
+
 ## [1.12.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.11.0...v1.12.0) (2026-10-22)
 
 
