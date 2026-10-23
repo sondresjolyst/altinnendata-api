@@ -34,6 +34,7 @@ namespace altinnendata_api
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+            OsloTime.EnsureAvailable();
 
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()

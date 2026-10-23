@@ -5,6 +5,7 @@ using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
 using altinnendata_api.Services;
 using SjolystInnovation.AppKit.Email;
+using altinnendata_api.Infrastructure;
 
 namespace altinnendata_api.Features.Shop
 {
@@ -14,11 +15,6 @@ namespace altinnendata_api.Features.Shop
     /// </summary>
     public static class OrderEmails
     {
-        private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Oslo"); }
-            catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
-        });
 
         public static EmailMessage BuyerConfirmation(Order o, AppSettings s, IConfiguration config)
         {
@@ -246,11 +242,11 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>The date and time in Oslo, <c>23.10.2026 kl. 17:42</c> or <c>23.10.2026 at 17:42</c>.</summary>
         internal static string OsloDateTime(DateTime utc, bool no) =>
-            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value)
+            OsloTime.FromUtc(utc)
                 .ToString(no ? "dd.MM.yyyy 'kl.' HH:mm" : "dd.MM.yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
 
         internal static string OsloDate(DateTime utc) =>
-            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value)
+            OsloTime.FromUtc(utc)
                 .ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
         /// <summary>

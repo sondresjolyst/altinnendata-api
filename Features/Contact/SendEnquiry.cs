@@ -77,11 +77,6 @@ namespace altinnendata_api.Features.Contact
             o.GlobalLimit = 30;
         }
 
-        private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Oslo"); }
-            catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
-        });
 
         /// <summary>
         /// Saves the enquiry, then sends the notice and the receipt. A failed email never fails the request, and a
@@ -243,7 +238,7 @@ namespace altinnendata_api.Features.Contact
         internal static EmailMessage BuildReceipt(string to, string? locale, AppSettings settings, DateTime receivedUtc)
         {
             var no = Locales.Normalize(locale) == "no";
-            var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(receivedUtc, DateTimeKind.Utc), Oslo.Value);
+            var local = OsloTime.FromUtc(receivedUtc);
             var subject = no ? "Vi har mottatt meldingen din" : "We have received your message";
             var body = new StringBuilder();
             body.Append(no
