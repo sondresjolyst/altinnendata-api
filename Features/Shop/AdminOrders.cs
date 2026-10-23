@@ -44,7 +44,7 @@ namespace altinnendata_api.Features.Shop
             {
                 payment = await vipps.CapturePaymentAsync(order.VippsReference, order.TotalInOre, $"capture-{order.VippsReference}", order.IsTest, ct);
             }
-            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
+            catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "capture", order);
             }
@@ -101,7 +101,7 @@ namespace altinnendata_api.Features.Shop
             {
                 await vipps.CancelPaymentAsync(order.VippsReference, $"cancel-{order.VippsReference}", order.IsTest, ct);
             }
-            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
+            catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "cancel", order);
             }
@@ -208,7 +208,7 @@ namespace altinnendata_api.Features.Shop
             {
                 payment = await vipps.RefundPaymentAsync(order.VippsReference, amount, key, order.IsTest, ct);
             }
-            catch (HttpRequestException ex) when (ShopVipps.IsRejection(ex))
+            catch (HttpRequestException ex) when (VippsFailures.IsRefusal(ex))
             {
                 // A rejection can still follow an earlier try that Vipps did pay, so the payment says what happened.
                 // Vipps has answered, so an aborted admin request must not stop the lookup or the save.
@@ -217,7 +217,7 @@ namespace altinnendata_api.Features.Shop
                 {
                     current = await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, CancellationToken.None);
                 }
-                catch (Exception lookup) when (ShopVipps.IsProviderFailure(lookup, CancellationToken.None))
+                catch (Exception lookup) when (VippsFailures.IsProviderFailure(lookup, CancellationToken.None))
                 {
                     return ProviderUnavailable(log, lookup, "refund", order);
                 }
@@ -234,7 +234,7 @@ namespace altinnendata_api.Features.Shop
                     amount, order.Id, (int)ex.StatusCode!.Value, current.RefundedAmountInOre);
                 payment = current;
             }
-            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
+            catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, ct))
             {
                 return ProviderUnavailable(log, ex, "refund", order);
             }

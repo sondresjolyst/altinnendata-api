@@ -38,7 +38,7 @@ namespace altinnendata_api.Features.Shop
                 return VippsWebhookOutcome.Rejected;
             }
 
-            if (delivery.IsTest != order.IsTest)
+            if (!VippsPaymentEventChecks.EnvironmentMatches(delivery, order.IsTest))
             {
                 log.LogError("Shop webhook {EventKey} rejected: sent from the {Sent} environment for {Order} order {OrderId}",
                     eventKey, delivery.IsTest ? "test" : "production", order.IsTest ? "test" : "production", order.Id);
@@ -77,13 +77,7 @@ namespace altinnendata_api.Features.Shop
 
             // AUTHORIZED reserves the whole order. CAPTURED and REFUNDED can each be part of it.
             var amount = change.Amount;
-            var amountFits = change.Name switch
-            {
-                "AUTHORIZED" => amount == order.TotalInOre,
-                "CAPTURED" or "REFUNDED" => amount > 0 && amount <= order.TotalInOre,
-                _ => true
-            };
-            if (!amountFits)
+            if (!VippsPaymentEventChecks.AmountFits(change.Name, amount, order.TotalInOre))
             {
                 log.LogError("Shop webhook {EventKey} rejected: {Name} amount {Got} does not fit the total {Total} of order {OrderId}",
                     eventKey, change.Name, amount, order.TotalInOre, order.Id);
@@ -140,7 +134,7 @@ namespace altinnendata_api.Features.Shop
                         break;
                 }
             }
-            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, cancellationToken))
+            catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, cancellationToken))
             {
                 log.LogWarning(ex, "Shop webhook {EventKey}: could not read the payment of order {OrderId} from Vipps, left for a retry", eventKey, order.Id);
                 return VippsWebhookOutcome.Retry;

@@ -110,13 +110,13 @@ namespace altinnendata_api.Features.Shop
             {
                 payment = await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, ct);
             }
-            catch (HttpRequestException ex) when (ShopVipps.IsRejection(ex))
+            catch (HttpRequestException ex) when (VippsFailures.IsRefusal(ex))
             {
                 log.LogWarning(ex, "Payment polling: Vipps refused to show the payment of order {OrderId} with {Status}, it is tried again next run",
                     order.Id, (int)ex.StatusCode!.Value);
                 return true;
             }
-            catch (Exception ex) when (ShopVipps.IsProviderFailure(ex, ct))
+            catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, ct))
             {
                 log.LogWarning(ex, "Payment polling: could not read the payment of order {OrderId} from Vipps, the run stops and the next run tries again", order.Id);
                 return false;
@@ -170,35 +170,13 @@ namespace altinnendata_api.Features.Shop
         }
 
         /// <summary>
-        /// The changes a payment shows, in the order Vipps makes them. A payment that is still AUTHORIZED carries its
-        /// captures, refunds and cancellation as amounts. ABORTED, EXPIRED and TERMINATED are states of their own.
-        /// CREATED shows nothing yet.
+        /// The changes a payment shows, in the order Vipps makes them, as <see cref="VippsPaymentPolling.EventsOf"/>
+        /// reads them. Each is marked as found by polling, so a refund it records says so.
         /// </summary>
-        public static IReadOnlyList<PaymentChange> ChangesOf(Order order, VippsPayment payment, DateTime now)
-        {
-            PaymentChange Change(string name, int? amount) =>
-                new(name, amount, now, $"poll:{order.VippsReference}:{name}:{amount}", RefundSource.Polling);
-
-            switch (payment.State)
-            {
-                case "ABORTED":
-                case "EXPIRED":
-                case "TERMINATED":
-                    return [Change(payment.State, null)];
-                case "AUTHORIZED":
-                    if (payment.CapturedAmountInOre > 0)
-                    {
-                        List<PaymentChange> changes = [Change("CAPTURED", payment.CapturedAmountInOre)];
-                        if (payment.RefundedAmountInOre > 0) changes.Add(Change("REFUNDED", payment.RefundedAmountInOre));
-                        return changes;
-                    }
-                    if (payment.CancelledAmountInOre > 0) return [Change("CANCELLED", null)];
-                    // Vipps authorizes the amount the payment was created with, which is the order's total.
-                    return [Change("AUTHORIZED", order.TotalInOre)];
-                default:
-                    return [];
-            }
-        }
+        public static IReadOnlyList<PaymentChange> ChangesOf(Order order, VippsPayment payment, DateTime now) =>
+            VippsPaymentPolling.EventsOf(payment, new DateTimeOffset(now.Ticks, TimeSpan.Zero))
+                .Select(e => new PaymentChange(e.Name, e.Amount?.Value, now, $"poll:{order.VippsReference}:{e.Name}:{e.Amount?.Value}", RefundSource.Polling))
+                .ToList();
     }
 
     /// <summary>Runs <see cref="ShopPaymentPolling"/> every <see cref="Interval"/>, after a first wait of the same length.</summary>

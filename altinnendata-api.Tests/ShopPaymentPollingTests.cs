@@ -66,7 +66,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         _vipps.Setup(v => v.GetPaymentAsync(Ref(n), true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new VippsPayment
             {
-                Reference = Ref(n), State = state,
+                Reference = Ref(n), State = state, AuthorizedAmountInOre = Total,
                 CapturedAmountInOre = captured, RefundedAmountInOre = refunded, CancelledAmountInOre = cancelled,
                 CaptureGuaranteedUntil = guarantee
             });
@@ -419,7 +419,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     {
         { "CREATED", 0, 0, 0, [] },
         { "AUTHORIZED", 0, 0, 0, ["AUTHORIZED:1899000"] },
-        { "AUTHORIZED", 0, 0, Total, ["CANCELLED:"] },
+        { "AUTHORIZED", 0, 0, Total, ["CANCELLED:1899000"] },
         { "AUTHORIZED", Total, 0, 0, ["CAPTURED:1899000"] },
         { "AUTHORIZED", 500, 0, Total - 500, ["CAPTURED:500"] },
         { "AUTHORIZED", Total, 1000, 0, ["CAPTURED:1899000", "REFUNDED:1000"] },
@@ -440,7 +440,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         };
         var payment = new VippsPayment
         {
-            Reference = order.Reference, State = state,
+            Reference = order.Reference, State = state, AuthorizedAmountInOre = Total,
             CapturedAmountInOre = captured, RefundedAmountInOre = refunded, CancelledAmountInOre = cancelled
         };
 
