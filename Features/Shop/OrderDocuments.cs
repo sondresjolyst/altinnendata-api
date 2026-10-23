@@ -5,6 +5,8 @@ using Markdig;
 using Markdig.Renderers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using SjolystInnovation.AppKit.Pdf;
+using altinnendata_api.Infrastructure;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
 
@@ -23,8 +25,6 @@ namespace altinnendata_api.Features.Shop
 
         private const string Csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";
 
-        private const string Blank = "<span class=\"blank\"></span>";
-
         private const string Style = """
             <style>
               @page { size: A4; margin: 20mm 18mm; }
@@ -38,19 +38,11 @@ namespace altinnendata_api.Features.Shop
               .meta strong { color: #1a1a1a; }
               a { color: #00665c; }
               p, li { overflow-wrap: anywhere; }
-              .lead { font-style: italic; }
-              .field { margin: 12pt 0; }
-              .field .label { font-weight: bold; }
-              .blank { display: inline-block; min-width: 70mm; border-bottom: 1px solid #333; height: 1.1em; vertical-align: bottom; }
-              .seller { margin: 4pt 0 0 0; }
             </style>
             """;
 
         public static string FileNameOfTerms(Order o) =>
             IsNorwegian(o) ? $"vilkar-{o.Reference}.pdf" : $"terms-{o.Reference}.pdf";
-
-        public static string FileNameOfWithdrawalForm(Order o) =>
-            IsNorwegian(o) ? "angrerettskjema.pdf" : "withdrawal-form.pdf";
 
         /// <summary>The terms snapshot of the order, or null when the order has none.</summary>
         public static string? TermsHtml(Order o, AppSettings s)
@@ -67,42 +59,23 @@ namespace altinnendata_api.Features.Shop
             return Page(o, o.TermsTitle ?? (no ? "Vilkår" : "Terms"), body.ToString());
         }
 
-        /// <summary>The standard withdrawal form, filled in with the seller, the item, the order number and the order date.</summary>
-        public static string WithdrawalFormHtml(Order o, AppSettings s)
-        {
-            var no = IsNorwegian(o);
-            var seller = $"{Enc(CompanyName(s))}, {Enc(s.FormattedAddress)}, {Enc(s.PublicEmail)}";
-            var body = new StringBuilder();
-            body.Append($"<header><div class=\"company\">{Enc(CompanyName(s))}</div>");
-            if (no)
+        /// <summary>
+        /// The withdrawal form of the order, in the buyer's language, filled in with the seller, the item, the order
+        /// number and the date the agreement was made in Oslo.
+        /// </summary>
+        public static WithdrawalFormRequest WithdrawalFormRequest(Order o, AppSettings s) =>
+            new(
+                new WithdrawalFormSeller(s.CompanyName)
+                {
+                    LegalName = s.CompanyLegalName,
+                    OrganizationNumber = s.OrgNumber,
+                    AddressLines = [s.FormattedAddress],
+                    Email = s.PublicEmail,
+                },
+                new WithdrawalFormOrder(o.Reference, DateOnly.FromDateTime(OsloTime.FromUtc(AgreedAt(o))), [o.BuildTitle]))
             {
-                body.Append("<h1>Standardskjema for bruk av angrerett</h1></header>");
-                body.Append("<p class=\"lead\">(Fyll ut og returner dette skjemaet dersom du ønsker å gå fra avtalen.)</p>");
-                Field(body, "Utfylt skjema sendes til", $"<p class=\"seller\">{seller}</p>");
-                body.Append($"<p>Jeg underretter herved om at jeg ønsker å gå fra min avtale om kjøp av følgende varer: <strong>{Enc(o.BuildTitle)}</strong></p>");
-                Field(body, "Ordrenummer", Enc(o.Reference));
-                Field(body, "Avtalen ble inngått den", OsloDate(AgreedAt(o)));
-                Field(body, "Varen ble mottatt den", Blank);
-                Field(body, "Forbrukerens navn", Blank);
-                Field(body, "Forbrukerens adresse", Blank);
-                Field(body, "Dato", Blank);
-                Field(body, "Forbrukerens underskrift (kun dersom skjemaet sendes på papir)", Blank);
-                return Page(o, "Standardskjema for bruk av angrerett", body.ToString());
-            }
-
-            body.Append("<h1>Model withdrawal form</h1></header>");
-            body.Append("<p class=\"lead\">(Complete and return this form only if you wish to withdraw from the contract.)</p>");
-            Field(body, "To", $"<p class=\"seller\">{seller}</p>");
-            body.Append($"<p>I hereby give notice that I withdraw from my contract of sale of the following goods: <strong>{Enc(o.BuildTitle)}</strong></p>");
-            Field(body, "Order number", Enc(o.Reference));
-            Field(body, "Ordered on", OsloDate(AgreedAt(o)));
-            Field(body, "Received on", Blank);
-            Field(body, "Name of consumer", Blank);
-            Field(body, "Address of consumer", Blank);
-            Field(body, "Date", Blank);
-            Field(body, "Signature of consumer (only if this form is notified on paper)", Blank);
-            return Page(o, "Model withdrawal form", body.ToString());
-        }
+                Language = IsNorwegian(o) ? WithdrawalFormLanguage.Norwegian : WithdrawalFormLanguage.English,
+            };
 
         /// <summary>The terms Markdown as HTML, with images left out and each link as its text followed by its address.</summary>
         internal static string TermsBodyHtml(string markdown)
@@ -129,9 +102,6 @@ namespace altinnendata_api.Features.Shop
             writer.Flush();
             return writer.ToString();
         }
-
-        private static void Field(StringBuilder body, string label, string value) =>
-            body.Append($"<div class=\"field\"><span class=\"label\">{Enc(label)}:</span> {value}</div>");
 
         private static string Page(Order o, string title, string body) =>
             $"<!doctype html><html lang=\"{(IsNorwegian(o) ? "nb" : "en")}\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{Csp}\"><title>{Enc(title)}</title>{Style}</head><body>{body}</body></html>";

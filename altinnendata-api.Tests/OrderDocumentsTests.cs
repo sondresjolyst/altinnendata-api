@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using altinnendata_api.Features.Shop;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
+using SjolystInnovation.AppKit.Pdf;
 using Xunit;
 
 namespace altinnendata_api.Tests;
@@ -43,12 +44,11 @@ public class OrderDocumentsTests
     };
 
     [Theory]
-    [InlineData("no", "vilkar-AID-000042-1A2B3C4D.pdf", "angrerettskjema.pdf")]
-    [InlineData("en", "terms-AID-000042-1A2B3C4D.pdf", "withdrawal-form.pdf")]
-    public void FileNames_FollowTheBuyersLanguage(string locale, string terms, string form)
+    [InlineData("no", "vilkar-AID-000042-1A2B3C4D.pdf")]
+    [InlineData("en", "terms-AID-000042-1A2B3C4D.pdf")]
+    public void TermsFileName_FollowsTheBuyersLanguage(string locale, string terms)
     {
         Assert.Equal(terms, OrderDocuments.FileNameOfTerms(NewOrder(locale)));
-        Assert.Equal(form, OrderDocuments.FileNameOfWithdrawalForm(NewOrder(locale)));
     }
 
     [Theory]
@@ -95,12 +95,11 @@ public class OrderDocumentsTests
     }
 
     [Fact]
-    public void Documents_CarryAContentSecurityPolicy_ThatAllowsOnlyInlineStylesAndDataImages()
+    public void Terms_CarryAContentSecurityPolicy_ThatAllowsOnlyInlineStylesAndDataImages()
     {
         const string csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\">";
 
         Assert.Contains(csp, OrderDocuments.TermsHtml(NewOrder(), Seller)!);
-        Assert.Contains(csp, OrderDocuments.WithdrawalFormHtml(NewOrder(), Seller));
     }
 
     [Fact]
@@ -122,72 +121,71 @@ public class OrderDocumentsTests
     }
 
     [Fact]
-    public void WithdrawalForm_InNorwegian_UsesTheOfficialWording_FilledIn()
+    public void WithdrawalForm_IsFilledIn_WithTheSeller_TheItem_AndTheOrderNumber()
     {
-        var html = OrderDocuments.WithdrawalFormHtml(NewOrder("no"), Seller);
-        var text = Text(html);
+        var seller = new AppSettings
+        {
+            CompanyName = "Altinnendata",
+            CompanyLegalName = "Altinnendata Sjølyst",
+            OrgNumber = "123 456 789",
+            StreetAddress = "Mårvegen 21a",
+            PostalCode = "4347",
+            AddressLocality = "Lye",
+            PublicEmail = "altinnendata@gmail.com",
+        };
 
-        Assert.Contains("Standardskjema for bruk av angrerett", text);
-        Assert.Contains("(Fyll ut og returner dette skjemaet dersom du ønsker å gå fra avtalen.)", text);
-        Assert.Contains("Utfylt skjema sendes til: Altinnendata Sjølyst, Mårvegen 21a, 4347 Lye, altinnendata@gmail.com", text);
-        Assert.Contains("Jeg underretter herved om at jeg ønsker å gå fra min avtale om kjøp av følgende varer: Gaming PC <RTX>", text);
-        Assert.Contains("Ordrenummer: AID-000042-1A2B3C4D", text);
-        Assert.Contains("Avtalen ble inngått den: 19.10.2026", text);
-        foreach (var blank in new[] { "Varen ble mottatt den:", "Forbrukerens navn:", "Forbrukerens adresse:", "Dato:", "Forbrukerens underskrift (kun dersom skjemaet sendes på papir):" })
-            Assert.Contains(blank, text);
-        Assert.Equal(5, Regex.Count(html, "<span class=\"blank\"></span>"));
-        Assert.Contains("Gaming PC &lt;RTX&gt;", html);
+        var form = OrderDocuments.WithdrawalFormRequest(NewOrder(), seller);
+
+        Assert.Equal("Altinnendata", form.Seller.Name);
+        Assert.Equal("Altinnendata Sjølyst", form.Seller.LegalName);
+        Assert.Equal("123 456 789", form.Seller.OrganizationNumber);
+        Assert.Equal(["Mårvegen 21a, 4347 Lye"], form.Seller.AddressLines);
+        Assert.Equal("altinnendata@gmail.com", form.Seller.Email);
+        Assert.Equal("AID-000042-1A2B3C4D", form.Order.Reference);
+        Assert.Equal(["Gaming PC <RTX>"], form.Order.Items);
+        Assert.Null(form.Order.ReceivedOn);
     }
 
     [Theory]
-    [InlineData("no", "Avtalen ble inngått den: 24.10.2026", "Vilkårene ble godtatt: 19.10.2026")]
-    [InlineData("en", "Ordered on: 24.10.2026", "Terms accepted on: 19.10.2026")]
-    public void WithdrawalForm_DatesTheAgreement_ByWhenVippsConfirmedThePayment(string locale, string agreed, string accepted)
+    [InlineData("no", WithdrawalFormLanguage.Norwegian)]
+    [InlineData("nb", WithdrawalFormLanguage.Norwegian)]
+    [InlineData("en", WithdrawalFormLanguage.English)]
+    [InlineData("EN", WithdrawalFormLanguage.English)]
+    public void WithdrawalForm_FollowsTheBuyersLanguage(string locale, WithdrawalFormLanguage language)
     {
-        // Paid through a payment link days after checkout. 23:15 UTC on the 23rd is the 24th in Oslo.
-        var order = NewOrder(locale);
-        order.AuthorizedAt = new DateTime(2026, 10, 23, 23, 15, 0, DateTimeKind.Utc);
-
-        Assert.Contains(agreed, Text(OrderDocuments.WithdrawalFormHtml(order, Seller)));
-        Assert.Contains(accepted, Text(OrderDocuments.TermsHtml(order, Seller)!));
+        Assert.Equal(language, OrderDocuments.WithdrawalFormRequest(NewOrder(locale), Seller).Language);
     }
 
     [Fact]
-    public void WithdrawalForm_WithoutAConfirmedPayment_DatesTheAgreementByTheTermsAccept()
+    public void WithdrawalForm_DatesTheAgreement_ByWhenVippsConfirmedThePayment_InOslo()
     {
+        // Paid through a payment link days after checkout. 23:15 UTC on the 23rd is the 24th in Oslo.
+        var order = NewOrder();
+        order.AuthorizedAt = new DateTime(2026, 10, 23, 23, 15, 0, DateTimeKind.Utc);
+
+        Assert.Equal(new DateOnly(2026, 10, 24), OrderDocuments.WithdrawalFormRequest(order, Seller).Order.OrderedOn);
+        Assert.Contains("Vilkårene ble godtatt: 19.10.2026", Text(OrderDocuments.TermsHtml(order, Seller)!));
+    }
+
+    [Fact]
+    public void WithdrawalForm_WithoutAConfirmedPayment_DatesTheAgreementByTheTermsAccept_InOslo()
+    {
+        // 22:30 UTC on the 18th is the 19th in Oslo.
         var order = NewOrder();
         order.AuthorizedAt = null;
 
-        Assert.Contains("Avtalen ble inngått den: 19.10.2026", Text(OrderDocuments.WithdrawalFormHtml(order, Seller)));
+        Assert.Equal(new DateOnly(2026, 10, 19), OrderDocuments.WithdrawalFormRequest(order, Seller).Order.OrderedOn);
     }
 
     [Fact]
-    public void WithdrawalForm_InEnglish_UsesTheModelFormWording_FilledIn()
+    public void Terms_LoadNothingFromTheNetwork()
     {
-        var html = OrderDocuments.WithdrawalFormHtml(NewOrder("en"), Seller);
-        var text = Text(html);
+        var html = OrderDocuments.TermsHtml(NewOrder(), Seller)!;
 
-        Assert.Contains("Model withdrawal form", text);
-        Assert.Contains("(Complete and return this form only if you wish to withdraw from the contract.)", text);
-        Assert.Contains("To: Altinnendata Sjølyst, Mårvegen 21a, 4347 Lye, altinnendata@gmail.com", text);
-        Assert.Contains("I hereby give notice that I withdraw from my contract of sale of the following goods: Gaming PC <RTX>", text);
-        Assert.Contains("Order number: AID-000042-1A2B3C4D", text);
-        Assert.Contains("Ordered on: 19.10.2026", text);
-        foreach (var blank in new[] { "Received on:", "Name of consumer:", "Address of consumer:", "Date:", "Signature of consumer (only if this form is notified on paper):" })
-            Assert.Contains(blank, text);
-        Assert.Equal(5, Regex.Count(html, "<span class=\"blank\"></span>"));
-    }
-
-    [Fact]
-    public void Documents_LoadNothingFromTheNetwork()
-    {
-        foreach (var html in new[] { OrderDocuments.TermsHtml(NewOrder(), Seller)!, OrderDocuments.WithdrawalFormHtml(NewOrder(), Seller) })
-        {
-            Assert.DoesNotMatch(@"(src|href)\s*=\s*""?https?:", html);
-            Assert.DoesNotContain("<link", html);
-            Assert.DoesNotContain("<script", html);
-            Assert.DoesNotContain("url(", html);
-        }
+        Assert.DoesNotMatch(@"(src|href)\s*=\s*""?https?:", html);
+        Assert.DoesNotContain("<link", html);
+        Assert.DoesNotContain("<script", html);
+        Assert.DoesNotContain("url(", html);
     }
 
     /// <summary>The text of the HTML, with tags dropped and entities decoded, for comparing the wording.</summary>
