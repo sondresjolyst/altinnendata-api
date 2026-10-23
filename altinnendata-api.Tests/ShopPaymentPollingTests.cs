@@ -62,11 +62,11 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         return (build.Id, order.Id);
     }
 
-    private void VippsShows(int n, string state, int captured = 0, int refunded = 0, int cancelled = 0, DateTimeOffset? guarantee = null) =>
+    private void VippsShows(int n, string state, int captured = 0, int refunded = 0, int cancelled = 0, DateTimeOffset? guarantee = null, int authorized = Total) =>
         _vipps.Setup(v => v.GetPaymentAsync(Ref(n), true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new VippsPayment
             {
-                Reference = Ref(n), State = state,
+                Reference = Ref(n), State = state, AuthorizedAmountInOre = authorized,
                 CapturedAmountInOre = captured, RefundedAmountInOre = refunded, CancelledAmountInOre = cancelled,
                 CaptureGuaranteedUntil = guarantee
             });
@@ -105,6 +105,24 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         _notifier.Verify(n => n.OrderReservedAsync(orderId, CancellationToken.None), Times.Once);
         _notifier.VerifyNoOtherCalls();
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("AUTHORIZED"));
+    }
+
+    [Theory]
+    [InlineData(Total - 100)]
+    [InlineData(0)]
+    public async Task LostAuthorized_ForAnotherAmountThanTheTotal_IsRejected_AndTheOrderStaysPending(int authorized)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsShows(1, "AUTHORIZED", authorized: authorized);
+
+        await RunAsync(db);
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Pending, order.Status);
+        Assert.Null(order.AuthorizedAt);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        _notifier.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -419,7 +437,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     {
         { "CREATED", 0, 0, 0, [] },
         { "AUTHORIZED", 0, 0, 0, ["AUTHORIZED:1899000"] },
-        { "AUTHORIZED", 0, 0, Total, ["CANCELLED:"] },
+        { "AUTHORIZED", 0, 0, Total, ["CANCELLED:1899000"] },
         { "AUTHORIZED", Total, 0, 0, ["CAPTURED:1899000"] },
         { "AUTHORIZED", 500, 0, Total - 500, ["CAPTURED:500"] },
         { "AUTHORIZED", Total, 1000, 0, ["CAPTURED:1899000", "REFUNDED:1000"] },
@@ -440,7 +458,7 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         };
         var payment = new VippsPayment
         {
-            Reference = order.Reference, State = state,
+            Reference = order.Reference, State = state, AuthorizedAmountInOre = Total,
             CapturedAmountInOre = captured, RefundedAmountInOre = refunded, CancelledAmountInOre = cancelled
         };
 

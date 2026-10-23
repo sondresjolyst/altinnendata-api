@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Mail;
 using System.Text;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +34,7 @@ namespace altinnendata_api.Features.Contact
                 .NotEmpty()
                 .EmailAddress()
                 .MaximumLength(200)
-                .Must(IsSingleAddress).WithMessage("'{PropertyName}' is not a valid email address.")
+                .Must(EmailAddress.IsSingle).WithMessage("'{PropertyName}' is not a valid email address.")
                 .WithName("Email")
                 .OverridePropertyName(EmailField);
             RuleFor(x => x.Phone).MaximumLength(30);
@@ -59,30 +58,6 @@ namespace altinnendata_api.Features.Contact
         private static bool HasNoNul(string? value) => value is null || !value.Contains('\0');
 
         public const string EmailField = "email";
-
-        /// <summary>
-        /// List separators and header characters, plus the quoted local parts, backslash escapes and domain
-        /// literals that let one mailbox be spelled many ways.
-        /// </summary>
-        private static readonly char[] Forbidden = [',', ';', '<', '>', '\r', '\n', '"', '\\', '[', ']'];
-
-        /// <summary>
-        /// True when <paramref name="value"/> is one plain address and nothing else, so it cannot add recipients
-        /// or a display name to the emails it is used in.
-        /// </summary>
-        public static bool IsSingleAddress(string? value)
-        {
-            var trimmed = value?.Trim();
-            if (string.IsNullOrEmpty(trimmed) || value!.IndexOfAny(Forbidden) >= 0 || trimmed.EndsWith('.')) return false;
-            try
-            {
-                return new MailAddress(trimmed).Address == trimmed;
-            }
-            catch (FormatException)
-            {
-                return false;
-            }
-        }
     }
 
     /// <summary>Sends a contact / build enquiry to the configured recipient, and a receipt to the sender.</summary>
@@ -90,6 +65,17 @@ namespace altinnendata_api.Features.Contact
     {
         internal const string NoReceiptNote =
             "Ingen kvittering sendt til avsenderen. Bekreft mottak selv hvis meldingen gjelder angrerett.";
+
+        /// <summary>
+        /// The limits on receipts: one per mailbox in 10 minutes, and at most 30 in an hour across all addresses.
+        /// The owner's copy of an enquiry is never held back by them.
+        /// </summary>
+        public static void ReceiptLimits(EmailReceiptGateOptions o)
+        {
+            o.AddressWindow = TimeSpan.FromMinutes(10);
+            o.GlobalWindow = TimeSpan.FromHours(1);
+            o.GlobalLimit = 30;
+        }
 
         private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
         {
@@ -107,7 +93,7 @@ namespace altinnendata_api.Features.Contact
             ApplicationDbContext db,
             IEmailSender email,
             IConfiguration config,
-            ContactReceiptGate receipts,
+            EmailReceiptGate receipts,
             ILogger<ContactRequest> log,
             CancellationToken aborted)
         {
@@ -238,7 +224,7 @@ namespace altinnendata_api.Features.Contact
 
         /// <summary>
         /// The notice to the owner. It holds no name, address, phone or message, only a link to the enquiry in the
-        /// admin. When <see cref="ContactReceiptGate"/> held the receipt back, it says so, since a withdrawal sent
+        /// admin. When <see cref="EmailReceiptGate"/> held the receipt back, it says so, since a withdrawal sent
         /// through the form then has to be confirmed by hand.
         /// </summary>
         internal static EmailMessage BuildNotice(Enquiry enquiry, AppSettings settings, IConfiguration config)

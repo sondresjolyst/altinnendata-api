@@ -29,25 +29,6 @@ namespace altinnendata_api.Features.Shop
 
     public static class ShopVipps
     {
-        /// <summary>How long one Vipps HTTP call may take. Checkout holds the build's row lock while it waits.</summary>
-        public static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(15);
-
-        /// <summary>
-        /// Vipps could not be reached or answered with an error. HttpClient reports its own timeout as a cancellation,
-        /// so a cancellation counts only while <paramref name="ct"/>, the caller's own token, is not cancelled.
-        /// </summary>
-        public static bool IsProviderFailure(Exception ex, CancellationToken ct) =>
-            ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested);
-
-        /// <summary>
-        /// Vipps answered and refused the request with a 4xx status. 408, 409 and 429 are left out, since they can
-        /// follow an earlier try that went through (409 can be an idempotency conflict). A timeout, a 5xx or a
-        /// transport error may also have reached Vipps and is not a rejection either. A rejection does not prove an
-        /// earlier try failed, so a caller that must know reads the payment.
-        /// </summary>
-        public static bool IsRejection(HttpRequestException ex) =>
-            ex.StatusCode is { } status && (int)status is >= 400 and < 500 and not (408 or 409 or 429);
-
         /// <summary>The name of the shop's ePayment webhook.</summary>
         public const string Slot = "shop";
 
@@ -73,7 +54,8 @@ namespace altinnendata_api.Features.Shop
                     o.SystemName = "altinnendata";
                     o.SystemVersion = SystemVersion();
                 })
-                .ConfigureHttpClient(c => c.Timeout = HttpTimeout);
+                // Checkout holds the build's row lock while a Vipps call waits, so the call gets a short timeout.
+                .ConfigureHttpClient(c => c.Timeout = VippsFailures.RecommendedTimeout);
             services.AddAppKitVippsWebhooks<ApplicationDbContext>(o =>
             {
                 o.PublicBaseUrl = config["Api:PublicBaseUrl"] ?? "";
