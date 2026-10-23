@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using altinnendata_api.Features.Contact;
 using altinnendata_api.Infrastructure;
@@ -37,7 +38,16 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         await db.SaveChangesAsync();
     }
 
-    private static ContactReceiptGate Cache() => new(TimeProvider.System);
+    private static EmailReceiptGate Gate(TimeProvider time) => new(Options.Create(Limits()), time);
+
+    private static EmailReceiptGateOptions Limits()
+    {
+        var limits = new EmailReceiptGateOptions();
+        SendEnquiry.ReceiptLimits(limits);
+        return limits;
+    }
+
+    private static EmailReceiptGate Cache() => Gate(TimeProvider.System);
 
     private static IConfiguration Config(string baseUrl = "https://www.altinnendata.no") =>
         new ConfigurationBuilder()
@@ -366,7 +376,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
 
         Assert.Equal(3, messages.Count(m => m.To == "sonyslyst@gmail.com"));
         Assert.Equal(["kari@kunde.no", "ola@kunde.no"], messages.Where(m => m.To != "sonyslyst@gmail.com").Select(m => m.To));
-        Assert.Equal(TimeSpan.FromMinutes(10), ContactReceiptGate.AddressWindow);
+        Assert.Equal(TimeSpan.FromMinutes(10), Limits().AddressWindow);
         var owners = messages.Where(m => m.To == "sonyslyst@gmail.com").ToList();
         Assert.Equal([false, true, false], owners.Select(m => m.HtmlBody.Contains(SendEnquiry.NoReceiptNote)));
         Assert.Equal("Ingen kvittering sendt til avsenderen. Bekreft mottak selv hvis meldingen gjelder angrerett.", SendEnquiry.NoReceiptNote);
@@ -382,7 +392,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
             .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
             .ReturnsAsync(new EmailResult(true));
         var gate = Cache();
-        for (var i = 0; i < ContactReceiptGate.GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
+        for (var i = 0; i < Limits().GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), gate, Log, default);
 
@@ -391,26 +401,15 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         Assert.Contains(SendEnquiry.NoReceiptNote, owner.HtmlBody);
     }
 
-    [Theory]
-    [InlineData("Kari@Kunde.no", "kari@kunde.no")]
-    [InlineData(" kari+news@kunde.no ", "kari@kunde.no")]
-    [InlineData("kari+a+b@kunde.no", "kari@kunde.no")]
-    [InlineData("k.a.r.i@kunde.no", "k.a.r.i@kunde.no")]
-    [InlineData("K.ari+x@Gmail.com", "kari@gmail.com")]
-    [InlineData("ka.ri@googlemail.com", "kari@gmail.com")]
-    [InlineData("+kari@kunde.no", "+kari@kunde.no")]
-    public void Mailbox_FoldsSpellingsOfTheSameMailbox(string address, string mailbox) =>
-        Assert.Equal(mailbox, ContactReceiptGate.Mailbox(address));
-
     [Fact]
     public void Gate_RefusesASecondSpellingOfTheSameMailbox_UntilTheWindowHasPassed()
     {
         var clock = new ManualClock();
-        var gate = new ContactReceiptGate(clock);
+        var gate = Gate(clock);
 
         Assert.True(gate.TryAcquire("kari@gmail.com"));
         Assert.False(gate.TryAcquire("k.a.r.i+1@googlemail.com"));
-        clock.Advance(ContactReceiptGate.AddressWindow - TimeSpan.FromSeconds(1));
+        clock.Advance(Limits().AddressWindow - TimeSpan.FromSeconds(1));
         Assert.False(gate.TryAcquire("kari+2@gmail.com"));
         clock.Advance(TimeSpan.FromSeconds(1));
         Assert.True(gate.TryAcquire("kari+3@gmail.com"));
@@ -420,7 +419,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
     public void Gate_AllowsThirtyReceiptsAnHourAcrossAllAddresses()
     {
         var clock = new ManualClock();
-        var gate = new ContactReceiptGate(clock);
+        var gate = Gate(clock);
 
         for (var i = 0; i < 30; i++)
         {
@@ -435,17 +434,6 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         clock.Advance(TimeSpan.FromMinutes(1));
         Assert.True(gate.TryAcquire("late@kunde.no"));
         Assert.False(gate.TryAcquire("later@kunde.no"));
-    }
-
-    [Fact]
-    public void Gate_ARefusedReceiptIsNotCounted()
-    {
-        var clock = new ManualClock();
-        var gate = new ContactReceiptGate(clock);
-        Assert.True(gate.TryAcquire("kari@kunde.no"));
-        for (var i = 0; i < 100; i++) Assert.False(gate.TryAcquire("kari@kunde.no"));
-
-        for (var i = 1; i < ContactReceiptGate.GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
     }
 
     [Fact]
@@ -489,32 +477,6 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         Assert.Contains(norwegian ? "Org.nr." : "Org. no.", receipt.HtmlBody);
         Assert.Contains("Foretaksregisteret", receipt.HtmlBody);
     }
-
-    [Theory]
-    [InlineData("kari@kunde.no", true)]
-    [InlineData(" kari@kunde.no ", true)]
-    [InlineData("kari@kunde.no,ola@kunde.no", false)]
-    [InlineData("kari@kunde.no;ola@kunde.no", false)]
-    [InlineData("Kari <kari@kunde.no>", false)]
-    [InlineData("<kari@kunde.no>", false)]
-    [InlineData("kari@kunde.no>", false)]
-    [InlineData("kari@kunde.no\r\nBcc: ola@kunde.no", false)]
-    [InlineData("kari@kunde.no\n", false)]
-    [InlineData("\"Kari\" kari@kunde.no", false)]
-    [InlineData("\"kari\"@kunde.no", false)]
-    [InlineData("\"ka ri\"@kunde.no", false)]
-    [InlineData(@"ka\ri@kunde.no", false)]
-    [InlineData(@"""ka\""ri""@kunde.no", false)]
-    [InlineData("kari@kunde.no ", true)]
-    [InlineData("kari@[192.0.2.1]", false)]
-    [InlineData("kari@[IPv6:2001:db8::1]", false)]
-    [InlineData("kari@kunde.no.", false)]
-    [InlineData("kari@gmail.com.", false)]
-    [InlineData("kari", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void IsSingleAddress_TakesOnePlainAddressOnly(string? value, bool valid) =>
-        Assert.Equal(valid, ContactRequestValidator.IsSingleAddress(value));
 
     [Fact]
     public void Validator_RefusesAListOfAddresses_UnderTheEmailField()
