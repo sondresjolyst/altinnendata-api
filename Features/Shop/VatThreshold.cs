@@ -26,11 +26,6 @@ namespace altinnendata_api.Features.Shop
 
         public const int WindowMonths = 12;
 
-        private static readonly Lazy<TimeZoneInfo> Oslo = new(() =>
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Oslo"); }
-            catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
-        });
 
         /// <summary>One shop sale: what was captured and when, and the refunds of it.</summary>
         public sealed record Sale(string Reference, DateTime At, int AmountInOre, IReadOnlyList<Refund>? Refunds = null);
@@ -51,7 +46,7 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>The Norwegian date <paramref name="utc"/> falls on.</summary>
         public static DateOnly DayOf(DateTime utc) =>
-            DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Oslo.Value));
+            DateOnly.FromDateTime(OsloTime.FromUtc(utc));
 
         /// <summary>The first day of the 12 month window that ends on <paramref name="end"/>, both days included.</summary>
         public static DateOnly WindowStart(DateOnly end) => end.AddMonths(-WindowMonths).AddDays(1);
