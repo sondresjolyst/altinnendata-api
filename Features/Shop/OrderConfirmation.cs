@@ -83,8 +83,9 @@ namespace altinnendata_api.Features.Shop
                 attachments.Add(new EmailAttachment(OrderDocuments.FileNameOfTerms(order), await pdf.RenderAsync(terms, ct)));
             else
                 log.LogWarning("Order {OrderId} has no terms snapshot, so the confirmation carries only the withdrawal form", order.Id);
-            attachments.Add(new EmailAttachment(OrderDocuments.FileNameOfWithdrawalForm(order),
-                await pdf.RenderAsync(OrderDocuments.WithdrawalFormHtml(order, settings), ct)));
+            var form = OrderDocuments.WithdrawalFormRequest(order, settings);
+            attachments.Add(new EmailAttachment(WithdrawalForm.FileName(form.Language),
+                await pdf.RenderAsync(WithdrawalForm.Html(form), ct)));
             return attachments;
         }
 

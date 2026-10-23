@@ -117,6 +117,7 @@ public class OrderConfirmationTests(PostgresDatabase postgres) : TestBase
         Assert.Single(ToOwner);
         Assert.Equal(2, _pdf.Html.Count);
         Assert.Contains("Kjøp", _pdf.Html[0]);
+        Assert.Contains(order.Reference, _pdf.Html[1]);
         Assert.NotNull(order.ConfirmationSentAt);
         Assert.Equal(1, order.ConfirmationAttempts);
         Assert.NotNull(order.ConfirmationAttemptedAt);
