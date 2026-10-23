@@ -37,6 +37,7 @@ namespace altinnendata_api.Features.Shop
         {
             var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
             if (order == null) return TypedResults.NotFound();
+            if (order.AnonymisedAt != null) return Anonymised(order);
             if (order.Status != OrderStatus.Reserved) return WrongStatus(order, "Only a reserved order can be captured.");
 
             VippsPayment payment;
@@ -87,6 +88,7 @@ namespace altinnendata_api.Features.Shop
         {
             var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
             if (order == null) return TypedResults.NotFound();
+            if (order.AnonymisedAt != null) return Anonymised(order);
             if (order.Status != OrderStatus.Reserved) return WrongStatus(order, "Only a reserved order can be cancelled.");
             // The same case the cancel webhook leaves alone: the buyer paid part, so a person sorts it out in Vipps.
             if (order.CapturedInOre > 0) return WrongStatus(order, "A partly captured order cannot be cancelled here. Handle it in the Vipps portal.");
@@ -276,6 +278,7 @@ namespace altinnendata_api.Features.Shop
             {
                 var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
                 if (order == null) return (null, TypedResults.NotFound(), 0, "");
+                if (order.AnonymisedAt != null) return (order, Anonymised(order), 0, "");
                 if (order.Status != OrderStatus.Paid || order.RefundedInOre >= order.CapturedInOre)
                     return (order, WrongStatus(order, "Only a paid order with money left to refund can be refunded."), 0, "");
                 if (order.RefundedInOre != expected) return (order, RefundChanged(), 0, "");
@@ -355,6 +358,7 @@ namespace altinnendata_api.Features.Shop
 
             for (var attempt = 1; ; attempt++)
             {
+                if (order.AnonymisedAt != null) return Anonymised(order);
                 if (order.ShippedAt != null) return AlreadyShipped(order);
                 if (order.Status is not (OrderStatus.Reserved or OrderStatus.Paid))
                     return WrongStatus(order, "Only a reserved or paid order can be marked as sent.");
@@ -470,6 +474,10 @@ namespace altinnendata_api.Features.Shop
             return ShopProblems.Code(StatusCodes.Status502BadGateway, "paymentProviderUnavailable",
                 "Vipps did not confirm the change. Check the payment in the Vipps portal before you try again.");
         }
+
+        /// <summary>The buyer's details are removed, so nothing can be sent to the buyer and the sale is left as it is.</summary>
+        private static IResult Anonymised(Order order) =>
+            ShopProblems.Code(StatusCodes.Status409Conflict, "anonymised", $"Order {order.Reference} is anonymised and can no longer be changed.");
 
         private static IResult WrongStatus(Order order, string message) =>
             ShopProblems.Code(StatusCodes.Status409Conflict, "wrongStatus", $"{message} The order is {order.Status}.");

@@ -58,7 +58,7 @@ namespace altinnendata_api.Features.Shop
         /// holds the build. Null when it can.
         /// </summary>
         public static string? BlockedReasonOf(Order o, bool holdsBuild) =>
-            o.ReservationEndedAt == null || o.Status is not (OrderStatus.Failed or OrderStatus.Cancelled) ? "wrongStatus"
+            o.AnonymisedAt != null || o.ReservationEndedAt == null || o.Status is not (OrderStatus.Failed or OrderStatus.Cancelled) ? "wrongStatus"
             : !holdsBuild ? "buildNotHeld"
             : null;
 

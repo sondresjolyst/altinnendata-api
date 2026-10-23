@@ -145,7 +145,7 @@ public class OrderRetentionTests : TestBase
 
         await new OrderRetentionService(services.GetRequiredService<IServiceScopeFactory>(), new FixedTime(Now), log).RunOnceAsync(Ct);
 
-        Assert.Equal(LogLevel.Error, Assert.Single(log.Entries).Level);
+        Assert.Equal([LogLevel.Error, LogLevel.Error], log.Entries.Select(e => e.Level));
     }
 }
 
