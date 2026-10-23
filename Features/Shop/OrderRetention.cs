@@ -41,8 +41,9 @@ namespace altinnendata_api.Features.Shop
 
     /// <summary>
     /// Removes the buyer's name, email, phone and address from a sale five years after the end of the financial
-    /// year it belongs to. The financial year is the calendar year in Oslo time of the capture, or of the creation
-    /// when the order was never captured. A sale in 2026 is anonymised from 1 January 2032. The amounts, dates,
+    /// year it belongs to. The financial year is the calendar year in Oslo time of the latest money date of the
+    /// order: the capture (or the creation when never captured), the last update of a partly captured order,
+    /// and every refund. A sale in 2026 is anonymised from 1 January 2032, and one refunded in 2029 from 1 January 2035. The amounts, dates,
     /// build, references, invoice number, terms, payments and refunds stay for the accounts.
     /// </summary>
     public static class OrderAnonymisation
@@ -69,7 +70,11 @@ namespace altinnendata_api.Features.Shop
             for (var attempt = 1; ; attempt++)
             {
                 var due = await db.Orders
-                    .Where(o => o.AnonymisedAt == null && (o.CapturedAt ?? o.CreatedAt) < cutoff)
+                    .Where(o => o.AnonymisedAt == null
+                        && (o.CapturedAt ?? o.CreatedAt) < cutoff
+                        && (o.CapturedInOre == 0 || o.CapturedAt != null || o.UpdatedAt < cutoff)
+                        && (o.RefundedAt == null || o.RefundedAt < cutoff)
+                        && !o.Refunds.Any(r => r.RefundedAt >= cutoff))
                     .OrderBy(o => o.Id)
                     .Take(BatchSize)
                     .ToListAsync(ct);
@@ -148,6 +153,8 @@ namespace altinnendata_api.Features.Shop
                 var anonymised = await OrderAnonymisation.AnonymiseAsync(db, now, ct);
                 if (anonymised > 0)
                     log.LogInformation("Anonymised the buyer details of {Count} orders from financial years more than {Years} years ago", anonymised, OrderAnonymisation.KeepYears);
+                if (anonymised == OrderAnonymisation.BatchSize)
+                    log.LogWarning("A full batch of {Count} orders was anonymised, so more orders are probably due and follow in the next run", anonymised);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

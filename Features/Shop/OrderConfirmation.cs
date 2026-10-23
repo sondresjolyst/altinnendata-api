@@ -34,6 +34,11 @@ namespace altinnendata_api.Features.Shop
             var order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == orderId, ct);
             var settings = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
             var attempt = attemptsSeen + 1;
+            if (string.IsNullOrWhiteSpace(order.BuyerEmail))
+            {
+                log.LogWarning("Order {OrderId} has no buyer email, so the confirmation is not sent", orderId);
+                return false;
+            }
 
             EmailMessage message;
             try

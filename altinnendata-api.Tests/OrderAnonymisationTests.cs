@@ -95,6 +95,51 @@ public class OrderAnonymisationTests : TestBase
         Assert.True(await IsAnonymisedAsync(db, uncaptured));
     }
 
+    [Fact]
+    public async Task ARefundInALaterYearKeepsTheBuyerFiveYearsAfterThatYear()
+    {
+        await using var db = CreateDbContext();
+        var viaRefund = Sale(March2026, March2026, OrderStatus.Refunded);
+        viaRefund.Refunds.Add(new OrderRefund { AmountInOre = 100, RefundedAt = new DateTime(2029, 6, 1, 12, 0, 0, DateTimeKind.Utc), Source = RefundSource.Admin });
+        var viaRefundedAt = Sale(March2026, March2026, OrderStatus.Refunded);
+        viaRefundedAt.RefundedAt = new DateTime(2029, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        db.Orders.AddRange(viaRefund, viaRefundedAt);
+        await db.SaveChangesAsync(Ct);
+
+        foreach (var year in new[] { 2032, 2033, 2034 })
+            Assert.Equal(0, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(year, 6, 1, 0, 0, 0, DateTimeKind.Utc), Ct));
+        Assert.Equal(0, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2034, 12, 31, 22, 59, 0, DateTimeKind.Utc), Ct));
+        Assert.Equal(2, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2034, 12, 31, 23, 0, 0, DateTimeKind.Utc), Ct));
+    }
+
+    [Fact]
+    public async Task APartlyCapturedOrderIsDatedByItsLastUpdate()
+    {
+        await using var db = CreateDbContext();
+        var partly = Sale(March2026, status: OrderStatus.Cancelled);
+        partly.CapturedInOre = 500;
+        partly.UpdatedAt = new DateTime(2028, 2, 1, 12, 0, 0, DateTimeKind.Utc);
+        db.Orders.Add(partly);
+        await db.SaveChangesAsync(Ct);
+
+        Assert.Equal(0, await OrderAnonymisation.AnonymiseAsync(db, FirstDue.AddYears(1), Ct));
+        Assert.Equal(1, await OrderAnonymisation.AnonymiseAsync(db, FirstDue.AddYears(2), Ct));
+    }
+
+    [Fact]
+    public async Task TheServiceWarns_WhenAFullBatchWasAnonymised()
+    {
+        var db = CreateDbContext();
+        db.Orders.AddRange(Enumerable.Range(0, OrderAnonymisation.BatchSize).Select(_ => Sale(March2026)));
+        await db.SaveChangesAsync(Ct);
+        var services = new ServiceCollection().AddSingleton(db).BuildServiceProvider();
+        var log = new ListLogger<OrderRetentionService>();
+
+        await new OrderRetentionService(services.GetRequiredService<IServiceScopeFactory>(), new FixedTime(FirstDue), log).RunOnceAsync(Ct);
+
+        Assert.Equal([LogLevel.Information, LogLevel.Warning], log.Entries.Select(e => e.Level));
+    }
+
     [Theory]
     [InlineData(OrderStatus.Pending)]
     [InlineData(OrderStatus.Reserved)]
@@ -250,7 +295,7 @@ public class OrderAnonymisationTests : TestBase
 
         order.AnonymisedAt = DateTime.UtcNow;
 
-        Assert.Equal("wrongStatus", PaymentLink.BlockedReasonOf(order, holdsBuild: true));
+        Assert.Equal("anonymised", PaymentLink.BlockedReasonOf(order, holdsBuild: true));
     }
 
     [Fact]
@@ -302,5 +347,26 @@ public class OrderAnonymisationPostgresTests(PostgresDatabase postgres)
         Assert.Null(saved.ShippingNote);
         Assert.Equal(now, saved.AnonymisedAt);
         Assert.Equal(0, await OrderAnonymisation.AnonymiseAsync(db, now, ct));
+    }
+
+    [Fact]
+    public async Task TheDueQueryTranslatesToPostgres_ForRefundsAndPartlyCapturedOrders()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var created = new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc);
+        await using var db = await postgres.NewContextAsync();
+        var plain = OrderRetentionTests.NewOrder(OrderStatus.Paid, created);
+        var refunded = OrderRetentionTests.NewOrder(OrderStatus.Refunded, created);
+        refunded.Refunds.Add(new OrderRefund { AmountInOre = 100, RefundedAt = new DateTime(2029, 6, 1, 12, 0, 0, DateTimeKind.Utc), Source = RefundSource.Admin });
+        var partly = OrderRetentionTests.NewOrder(OrderStatus.Cancelled, created);
+        partly.CapturedInOre = 500;
+        partly.UpdatedAt = new DateTime(2028, 2, 1, 12, 0, 0, DateTimeKind.Utc);
+        db.Orders.AddRange(plain, refunded, partly);
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(1, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2031, 12, 31, 23, 0, 0, DateTimeKind.Utc), ct));
+        Assert.Equal(1, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2033, 12, 31, 23, 0, 0, DateTimeKind.Utc), ct));
+        Assert.Equal(1, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2034, 12, 31, 23, 0, 0, DateTimeKind.Utc), ct));
+        Assert.Equal(0, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2040, 1, 1, 0, 0, 0, DateTimeKind.Utc), ct));
     }
 }

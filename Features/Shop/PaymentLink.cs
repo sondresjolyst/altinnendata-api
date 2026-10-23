@@ -58,7 +58,8 @@ namespace altinnendata_api.Features.Shop
         /// holds the build. Null when it can.
         /// </summary>
         public static string? BlockedReasonOf(Order o, bool holdsBuild) =>
-            o.AnonymisedAt != null || o.ReservationEndedAt == null || o.Status is not (OrderStatus.Failed or OrderStatus.Cancelled) ? "wrongStatus"
+            o.AnonymisedAt != null ? "anonymised"
+            : o.ReservationEndedAt == null || o.Status is not (OrderStatus.Failed or OrderStatus.Cancelled) ? "wrongStatus"
             : !holdsBuild ? "buildNotHeld"
             : null;
 
@@ -99,6 +100,8 @@ namespace altinnendata_api.Features.Shop
             for (var attempt = 1; ; attempt++)
             {
                 var reason = BlockedReasonOf(order, await HoldsBuildAsync(db, order, ct));
+                if (reason == "anonymised")
+                    return ShopProblems.Code(StatusCodes.Status409Conflict, reason, $"Order {order.Reference} is anonymised and can no longer be changed.");
                 if (reason == "wrongStatus")
                     return ShopProblems.Code(StatusCodes.Status409Conflict, reason,
                         $"Only an order whose reservation Vipps ended can get a payment link. The order is {order.Status}.");
