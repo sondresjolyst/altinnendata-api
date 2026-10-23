@@ -47,7 +47,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         return limits;
     }
 
-    private static EmailReceiptGate Cache() => Gate(TimeProvider.System);
+    private static EmailReceiptGate ReceiptGate() => Gate(TimeProvider.System);
 
     private static IConfiguration Config(string baseUrl = "https://www.altinnendata.no") =>
         new ConfigurationBuilder()
@@ -67,7 +67,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         var email = Sender();
 
         var req = new ContactRequest("Ola", " ola@kunde.no ", "12345678", "gaming", "25000+", "lenovo-rtx-3060-3700x-2", "Er den ledig?", "en");
-        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+        var ok = Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default));
         Assert.Equal("Thanks. We will be in touch.", ok.Value!.Message);
 
         var saved = Assert.Single(db.Enquiries.AsNoTracking());
@@ -94,7 +94,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         var email = Sender(m => sent = m);
 
         var req = new ContactRequest("Ola Nordmann", "ola@kunde.no", "98765432", null, null, null, "Hemmelig melding");
-        await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default);
+        await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default);
 
         email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         var id = Assert.Single(db.Enquiries.AsNoTracking()).Id;
@@ -118,7 +118,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
             .ReturnsAsync(new EmailResult(true));
-        var gate = Cache();
+        var gate = ReceiptGate();
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), gate, Log, default);
         messages.Clear();
@@ -139,7 +139,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
             .ReturnsAsync(new EmailResult(true));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default));
 
         var saved = Assert.Single(db.Enquiries.AsNoTracking());
         Assert.Null(saved.NoticeSentAt);
@@ -157,7 +157,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
             .ReturnsAsync(new EmailResult(true));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default));
 
         var saved = Assert.Single(db.Enquiries.AsNoTracking());
         Assert.Null(saved.NoticeSentAt);
@@ -174,7 +174,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
             .ThrowsAsync(new HttpRequestException("down"));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default));
         Assert.NotNull(Assert.Single(db.Enquiries.AsNoTracking()).NoticeSentAt);
     }
 
@@ -189,7 +189,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         var log = new ListLogger<ContactRequest>();
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), log, default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), log, default));
 
         var saved = await db.Enquiries.AsNoTracking().SingleAsync();
         Assert.False(saved.ReceiptSent);
@@ -207,7 +207,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
             .ReturnsAsync(new EmailResult(false));
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, default));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default));
 
         Assert.False((await db.Enquiries.AsNoTracking().SingleAsync()).ReceiptSent);
     }
@@ -222,7 +222,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
             .ReturnsAsync(new EmailResult(true));
         var log = new ListLogger<ContactRequest>();
 
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), log, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), ReceiptGate(), log, default);
 
         Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("notice"));
     }
@@ -236,7 +236,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         await cts.CancelAsync();
 
         var req = new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei");
-        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), Cache(), Log, cts.Token));
+        Assert.IsType<Ok<MessageResponse>>(await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, cts.Token));
 
         Assert.Single(await db.Enquiries.AsNoTracking().ToListAsync());
     }
@@ -247,7 +247,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         await using var db = await postgres.NewContextAsync();
         var email = Sender();
 
-        await SendEnquiry.Handle(new ContactRequest("Ola", "ola@kunde.no", null, null, null, "gone", "Hei"), db, email.Object, Config(), Cache(), Log, default);
+        await SendEnquiry.Handle(new ContactRequest("Ola", "ola@kunde.no", null, null, null, "gone", "Hei"), db, email.Object, Config(), ReceiptGate(), Log, default);
 
         var saved = await db.Enquiries.AsNoTracking().SingleAsync();
         Assert.Equal("gone", saved.BuildSlug);
@@ -328,7 +328,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         EmailMessage? sent = null;
         var email = Sender(m => sent = m);
 
-        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), Cache(), Log, default);
+        await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), ReceiptGate(), Log, default);
 
         email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         Assert.Equal("sonyslyst@gmail.com", sent!.To);
@@ -344,7 +344,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
 
         await SendEnquiry.Handle(
             new ContactRequest("Kari Visit evil.example", " kari@kunde.no ", null, "Win a prize", null, null, "Click https://evil.example now"),
-            db, email.Object, Config(), Cache(), Log, default);
+            db, email.Object, Config(), ReceiptGate(), Log, default);
 
         Assert.Equal("kari@kunde.no", receipt!.To);
         Assert.Equal("post@altinnendata.no", receipt.ReplyTo);
@@ -368,7 +368,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
             .ReturnsAsync(new EmailResult(true));
-        var cache = Cache();
+        var cache = ReceiptGate();
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "1"), db, email.Object, Config(), cache, Log, default);
         await SendEnquiry.Handle(new ContactRequest("Kari", "KARI@kunde.no", null, null, null, null, "2"), db, email.Object, Config(), cache, Log, default);
@@ -391,7 +391,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
             .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
             .ReturnsAsync(new EmailResult(true));
-        var gate = Cache();
+        var gate = ReceiptGate();
         for (var i = 0; i < Limits().GlobalLimit; i++) Assert.True(gate.TryAcquire($"sender{i}@kunde.no"));
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), gate, Log, default);
