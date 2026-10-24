@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.14.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.13.0...v1.14.0) (2026-10-24)
+
+
+### Features
+
+* add Meta Pixel ID setting, consent log and updated legal seed text ([#140](https://github.com/sondresjolyst/altinnendata-api/issues/140)) ([1ee1f13](https://github.com/sondresjolyst/altinnendata-api/commit/1ee1f13762d965711e658b778f835df4576953d8))
+
+
+### Bug Fixes
+
+* use havard@altinnendata.no as the public contact email ([#142](https://github.com/sondresjolyst/altinnendata-api/issues/142)) ([951c00c](https://github.com/sondresjolyst/altinnendata-api/commit/951c00c3b6029ead1f711cc5ffe508f0da5226a7))
+
 ## [1.13.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.12.1...v1.13.0) (2026-10-23)
 
 
