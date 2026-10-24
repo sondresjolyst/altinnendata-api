@@ -207,6 +207,8 @@ public class MarketingSettingsTests : TestBase
 
         var saved = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "1234567890" }), Ct);
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        var config = await client.GetAsync("/api/marketing/config", Ct);
+        Assert.Equal("no-cache", config.Headers.CacheControl?.ToString());
         Assert.Equal("{\"metaPixelId\":\"1234567890\"}", await client.GetStringAsync("/api/marketing/config", Ct));
 
         var refused = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "12ab" }), Ct);

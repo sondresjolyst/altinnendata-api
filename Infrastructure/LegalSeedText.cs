@@ -152,6 +152,8 @@ For Meta Pixel er vi felles behandlingsansvarlige med Meta Platforms Ireland Ltd
   betaling, og verdien og produkt-ID-en når du kjøper. Meta mottar også IP-adressen din, opplysninger
   om nettleseren og enheten din, og informasjonskapsler. Vi sender ikke navn, e-post eller
   telefonnummer til Meta.
+- **Samtykkelogg:** hvert valg du tar i samtykkebanneret, med en tilfeldig samtykke-ID. Se
+  «Meta Pixel» under.
 
 Vi samler ikke inn kort- eller kontoopplysninger. Betalingen skjer hos Vipps MobilePay.
 
@@ -173,7 +175,8 @@ Vi bruker ikke opplysningene til markedsføring uten samtykket ditt, og vi selge
   kjøpet. Kontoopplysninger og e-post om innlogging er nødvendige for å gi tilgang til
   administrasjonssidene.
 - **Rettslig plikt (art. 6 nr. 1 bokstav c):** salg må dokumenteres og oppbevares etter
-  bokføringsloven.
+  bokføringsloven. Vi må også kunne dokumentere samtykker (art. 7 nr. 1), og derfor fører vi en
+  logg over samtykkene.
 - **Berettiget interesse (art. 6 nr. 1 bokstav f):** henvendelser behandles for at vi skal kunne
   svare deg, og tjenerlogger oppbevares for sikkerhet og feilsøking. Interessen vår går ikke foran
   rettighetene dine. Du kan protestere når som helst.
@@ -199,7 +202,7 @@ Behandlingsgrunnlaget er avtalen med deg (art. 6 nr. 1 bokstav b) og bokførings
 **Betaling:** betalingen skjer med Vipps, levert av Vipps MobilePay AS. Vi sender Vipps MobilePay
 telefonnummeret ditt, beløpet, ordrenummeret og varelinjene. Vipps MobilePay er selv
 behandlingsansvarlig for betalingen. Les Vipps MobilePays
-[personvernerklæring](https://vipps.no/personvern-og-vilkar/personvern/).
+[personvernerklæring](https://vipps.no/personvern-og-vilkar/personvern).
 
 **E-post:** ordrebekreftelsen og annen e-post om bestillingen sendes gjennom Brevo.
 
@@ -220,7 +223,14 @@ Privacy Framework, som Meta er sertifisert under.
 
 **Trekk tilbake samtykket:** du kan når som helst trekke tilbake samtykket med lenken «Innstillinger
 for informasjonskapsler» nederst på hver side. Det er like enkelt som å gi det. Tilbaketrekkingen
-gjelder fra da av og påvirker ikke behandlingen før det.
+gjelder fra da av og påvirker ikke behandlingen før det. Vi spør deg på nytt etter 12 måneder.
+
+**Logg over samtykker:** hvert valg lagres på serveren vår for å dokumentere samtykket.
+Loggen inneholder en tilfeldig samtykke-ID, som også ligger i oppføringen `consent` i nettleseren din,
+om du sa ja eller nei til markedsføring, versjonen av teksten i banneret, tidspunktet, og bruker-ID-en
+din bare hvis du er innlogget. Vi lagrer ikke IP-adressen din eller opplysninger om nettleseren.
+Behandlingsgrunnlaget er rettslig plikt (art. 6 nr. 1 bokstav c), fordi vi må kunne dokumentere
+samtykket (art. 7 nr. 1).
 
 ## Deling av opplysninger
 
@@ -244,18 +254,21 @@ Vi kan i tillegg utlevere opplysninger når loven krever det.
   ble trukket, eller som ble laget i testmodus, slettes 90 dager etter at de ble opprettet. Holder
   bestillingen fortsatt av en maskin, slettes den når maskinen er frigitt.
 - **Salg:** navn, e-post, telefonnummer, adresse, notatene og IP-adressen fjernes fem år etter
-  slutten av regnskapsåret salget hører til. Regnskapsåret er kalenderåret, etter norsk tid, for
-  siste pengedato i bestillingen: når betalingen ble trukket, og hver refusjon. Et salg i 2026
+  slutten av regnskapsåret salget hører til. Regnskapsåret er kalenderåret, etter norsk tid, for den
+  siste av disse datoene: når betalingen ble trukket, eller når bestillingen ble opprettet hvis ingenting
+  ble trukket, siste endring av bestillingen hvis bare en del av beløpet ble trukket, og hver refusjon.
+  Et salg i 2026
   anonymiseres fra 1. januar 2032. Beløp, datoer, maskinen, ordrenummer, fakturanummer, vilkårene,
   betalinger og refusjoner beholdes for regnskapet. Vi sjekker dette én gang i døgnet.
 - **Henvendelser:** så lenge det trengs for å håndtere forespørselen og eventuell oppfølging,
-  deretter slettes de.
+  deretter slettes de. De slettes uansett 365 dager etter at de kom inn.
 - **Kontoopplysninger:** til kontoen slettes, hvorpå navn, e-post og passord fjernes.
 - **Tjenerlogger:** 90 dager. **Måledata:** 60 dager.
 - **Sikkerhetskopier av databasen:** kryptert. Etter sletting kan rester ligge i sikkerhetskopier i
   inntil omtrent 6 måneder til rotasjonen er fullført. Sikkerhetskopier brukes ikke til behandling.
 - **Meta Pixel:** informasjonskapslene `_fbp`, `_fbc` og `fr` varer i 90 dager. Hvor lenge Meta lagrer
   opplysningene, står i Metas personvernerklæring.
+- **Samtykkelogg:** 3 år, deretter slettes den.
 
 ## Rettighetene dine
 
@@ -297,6 +310,8 @@ Pixel we are joint controllers with Meta Platforms Ireland Ltd, see below.
 - **Meta Pixel, only with consent:** the pages you visit, the products you view, when you start a
   checkout, and the value and product ID when you buy. Meta also receives your IP address, information
   about your browser and device, and cookies. We do not send your name, email or phone number to Meta.
+- **Consent log:** each choice you make in the consent banner, with a random consent ID. See
+  "Meta Pixel" below.
 
 We do not collect card or account details. The payment takes place at Vipps MobilePay.
 
@@ -317,7 +332,8 @@ We do not use your data for advertising without your consent, and we do not sell
 - **Contract (Art. 6(1)(b)):** the data in an order is necessary to complete the purchase. Account
   data and sign-in emails are necessary to provide access to the admin pages.
 - **Legal obligation (Art. 6(1)(c)):** sales must be documented and kept under the Norwegian
-  Bookkeeping Act (bokføringsloven).
+  Bookkeeping Act (bokføringsloven). We must also be able to document consent (Art. 7(1)),
+  so we keep a log of consent choices.
 - **Legitimate interests (Art. 6(1)(f)):** enquiries are processed so we can respond to you, and
   server logs are retained for security monitoring and debugging. Our interest does not override your
   rights. You can object at any time.
@@ -344,7 +360,7 @@ Bookkeeping Act).
 **Payment:** the payment is made with Vipps, provided by Vipps MobilePay AS. We send Vipps MobilePay
 your phone number, the amount, the order reference and the order lines. Vipps MobilePay is a
 controller in its own right for the payment. Read the Vipps MobilePay
-[Privacy Notice](https://vipps.no/en/privacy-and-terms/privacy/).
+[Privacy Notice](https://vipps.no/en/privacy-and-terms/privacy).
 
 **Email:** the order confirmation and other emails about the order are sent through Brevo.
 
@@ -365,7 +381,14 @@ based on the EU-U.S. Data Privacy Framework, under which Meta is certified.
 
 **Withdrawing consent:** you can withdraw your consent at any time through the "Cookie settings" link
 at the bottom of every page. It is as easy as giving it. Withdrawal applies from then on and does not
-affect processing before it.
+affect processing before it. We ask you again after 12 months.
+
+**Consent log:** each choice is stored on our server to document the consent. The log
+holds a random consent ID, which is also kept in the `consent` record in your browser, whether you
+said yes or no to marketing, the version of the banner text, the time, and your user ID only when you
+are signed in. We do not store your IP address or any browser data. The legal basis is a legal
+obligation (Art. 6(1)(c)), because we must be able to document consent
+(Art. 7(1)).
 
 ## Data sharing
 
@@ -389,17 +412,20 @@ We may also disclose data when required by law.
   holds a computer is deleted once the computer is released.
 - **Sales:** the name, email, phone number, address, notes and IP address are removed five years after
   the end of the financial year the sale belongs to. The financial year is the calendar year, in
-  Norwegian time, of the latest money date of the order: when the payment was captured, and every
-  refund. A sale in 2026 is anonymised from 1 January 2032. Amounts, dates, the computer, the order
+  Norwegian time, of the latest of these dates: when the payment was captured, or when the order was
+  created if nothing was captured, the last change to the order if only part of the amount was
+  captured, and every refund. A sale in 2026 is anonymised from 1 January 2032. Amounts, dates, the computer, the order
   reference, invoice number, terms, payments and refunds are kept for the accounts. This is checked
   once a day.
 - **Enquiries:** kept for as long as needed to handle your request and any follow-up, then deleted.
+  They are always deleted 365 days after they arrive.
 - **Account data:** until the account is deleted, after which name, email and password are scrubbed.
 - **Server logs:** 90 days. **Metrics:** 60 days.
 - **Database backups:** encrypted at rest. After deletion, residual data may persist in backups for
   up to about 6 months until rotation completes. Backups are not used for any processing.
 - **Meta Pixel:** the `_fbp`, `_fbc` and `fr` cookies last 90 days. How long Meta keeps the data is set out in
   Meta's Privacy Policy.
+- **Consent log:** 3 years, then deleted.
 
 ## Your rights
 
@@ -436,14 +462,25 @@ Disse kapslene trengs for at siden skal virke, og de settes uten samtykke. Kapsl
 
 | Navn | Leverandør | Formål | Varighet |
 | --- | --- | --- | --- |
-| `next-auth.session-token` | Altinnendata | Holder deg innlogget | Økt / 30 dager |
+| `next-auth.session-token` | Altinnendata | Holder deg innlogget | 7 dager |
 | `next-auth.csrf-token` | Altinnendata | Sikkerhet. Hindrer forfalskning av forespørsler på tvers av nettsteder | Økt |
 | `next-auth.callback-url` | Altinnendata | Husker hvor du skal sendes etter innlogging | Økt |
-| `consent` (lokal lagring) | Altinnendata | Nødvendig. Husker valget ditt om markedsføring, slik at vi ikke spør på nytt ved hvert besøk | Til du velger på nytt eller sletter nettstedsdata |
+| `consent` (lokal lagring) | Altinnendata | Nødvendig. Husker valget ditt om markedsføring, slik at vi ikke spør på nytt ved hvert besøk | Til du velger på nytt eller sletter nettstedsdata. Vi spør på nytt etter 12 måneder |
+
+Over HTTPS har kapslene for innlogging forstavelsen `__Secure-` (`__Host-` for `next-auth.csrf-token`).
 
 `consent` er ikke en informasjonskapsel, men lagres i nettleserens lokale lagring for denne siden. Den
-inneholder bare valget ditt om markedsføring, versjonen av valget og når du tok det. Den sendes aldri
-til oss eller til andre.
+inneholder valget ditt om markedsføring, versjonen av valget, når du tok det og en tilfeldig
+samtykke-ID. Selve oppføringen sendes ikke til andre.
+
+## Logg over samtykker
+
+Hvert valg lagres også på serveren vår for å dokumentere samtykket. Loggen inneholder den
+tilfeldige samtykke-ID-en fra `consent`, om du sa ja eller nei til markedsføring, versjonen av teksten i
+banneret, tidspunktet, og bruker-ID-en din bare hvis du er innlogget. Vi lagrer ikke IP-adressen din
+eller opplysninger om nettleseren. Loggen slettes etter 3 år. Behandlingsgrunnlaget er rettslig plikt
+(personvernforordningen art. 6 nr. 1 bokstav c), fordi vi må kunne dokumentere
+samtykket (art. 7 nr. 1).
 
 ## Markedsføringskapsler (bare med samtykke)
 
@@ -506,14 +543,25 @@ start with `next-auth` are only set when someone signs in.
 
 | Name | Provider | Purpose | Duration |
 | --- | --- | --- | --- |
-| `next-auth.session-token` | Altinnendata | Keeps you signed in | Session / 30 days |
+| `next-auth.session-token` | Altinnendata | Keeps you signed in | 7 days |
 | `next-auth.csrf-token` | Altinnendata | Security. Prevents cross-site request forgery | Session |
 | `next-auth.callback-url` | Altinnendata | Remembers where to redirect after login | Session |
-| `consent` (local storage) | Altinnendata | Necessary. Remembers your marketing choice so we do not ask again on every visit | Until you choose again or clear site data |
+| `consent` (local storage) | Altinnendata | Necessary. Remembers your marketing choice so we do not ask again on every visit | Until you choose again or clear site data. We ask again after 12 months |
 
-`consent` is not a cookie. It is kept in your browser's local storage for this site. It holds only
-your marketing choice, the version of the choice and when you made it. It is never sent to us or to
-anyone else.
+Over HTTPS the sign-in cookies carry the prefix `__Secure-` (`__Host-` for `next-auth.csrf-token`).
+
+`consent` is not a cookie. It is kept in your browser's local storage for this site. It holds your
+marketing choice, the version of the choice, when you made it and a random consent ID. The record
+itself is not sent to anyone else.
+
+## Consent log
+
+Each choice is also stored on our server to document the consent. The log holds the
+random consent ID from `consent`, whether you said yes or no to marketing, the version of the banner
+text, the time, and your user ID only when you are signed in. We do not store your IP address or any
+browser data. The log is deleted after 3 years. The legal basis is a legal obligation (GDPR
+Art. 6(1)(c)), because we must be able to document consent
+(Art. 7(1)).
 
 ## Marketing cookies (only with consent)
 

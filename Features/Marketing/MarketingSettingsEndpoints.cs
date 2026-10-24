@@ -35,7 +35,14 @@ namespace altinnendata_api.Features.Marketing
         {
             public void Map(IEndpointRouteBuilder app)
             {
-                app.MapGet("/api/marketing/config", GetPublic).AllowAnonymous();
+                app.MapGet("/api/marketing/config",
+                        (HttpContext http, ApplicationDbContext db, CancellationToken ct) =>
+                        {
+                            // The site must see a cleared or changed ID at once, so every read is checked with the API.
+                            http.Response.Headers.CacheControl = "no-cache";
+                            return GetPublic(db, ct);
+                        })
+                    .AllowAnonymous();
 
                 var admin = app.MapGroup("/api/admin/marketing/settings").RequireAuthorization(Policies.Admin);
                 admin.MapGet("", GetAdmin);
