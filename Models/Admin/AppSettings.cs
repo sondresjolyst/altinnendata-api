@@ -45,7 +45,7 @@ namespace altinnendata_api.Models.Admin
         public string FormattedAddress => PostalAddress.Format(StreetAddress, PostalCode, AddressLocality);
 
         [MaxLength(200)]
-        public string PublicEmail { get; set; } = "altinnendata@gmail.com";
+        public string PublicEmail { get; set; } = "havard@altinnendata.no";
 
         [MaxLength(40)]
         public string PublicPhone { get; set; } = "+47 473 88 759";

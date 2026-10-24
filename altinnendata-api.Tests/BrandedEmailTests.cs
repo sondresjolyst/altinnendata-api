@@ -15,7 +15,7 @@ public class BrandedEmailTests
         StreetAddress = "Mårvegen 21a",
         PostalCode = "4347",
         AddressLocality = "Lye",
-        PublicEmail = "altinnendata@gmail.com",
+        PublicEmail = "havard@altinnendata.no",
     };
 
     private static string Html(AppSettings s, bool norwegian, EmailButton? button = null) =>
@@ -27,7 +27,7 @@ public class BrandedEmailTests
         var html = Html(Registered(), norwegian: true);
 
         Assert.Contains(">Altinnendata</div>", html);
-        Assert.Contains(">ALTINNENDATA AS<br>Org.nr. 938 433 240 Foretaksregisteret<br>M&#229;rvegen 21a, 4347 Lye<br>altinnendata@gmail.com</div>", html);
+        Assert.Contains(">ALTINNENDATA AS<br>Org.nr. 938 433 240 Foretaksregisteret<br>M&#229;rvegen 21a, 4347 Lye<br>havard@altinnendata.no</div>", html);
         Assert.DoesNotContain("MVA", html);
         Assert.DoesNotContain("Merverdiavgiftsregisteret", html);
     }

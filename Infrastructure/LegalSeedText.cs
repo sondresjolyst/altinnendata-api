@@ -22,7 +22,7 @@ namespace altinnendata_api.Infrastructure
 ## 1. Om oss
 
 Denne nettsiden drives av Altinnendata, Mårvegen 21a, 4347 Lye.
-E-post: altinnendata@gmail.com. Telefon: +47 473 88 759.
+E-post: havard@altinnendata.no. Telefon: +47 473 88 759.
 
 ## 2. Aksept av vilkårene
 
@@ -79,7 +79,7 @@ Spørsmål om vilkårene? [Ta kontakt](/no/contact).
 ## 1. About us
 
 This website is operated by Altinnendata, Mårvegen 21a, 4347 Lye, Norway.
-Email: altinnendata@gmail.com. Phone: +47 473 88 759.
+Email: havard@altinnendata.no. Phone: +47 473 88 759.
 
 ## 2. Acceptance of terms
 
@@ -201,7 +201,7 @@ Etter personvernforordningen har du rett til:
 
 Opplysninger vi må ta vare på etter bokføringsloven, kan vi ikke slette før lagringstiden er ute.
 
-Send henvendelser til altinnendata@gmail.com. Du kan også klage til Datatilsynet.
+Send henvendelser til havard@altinnendata.no. Du kan også klage til Datatilsynet.
 
 ## Informasjonskapsler
 
@@ -277,7 +277,7 @@ Under the GDPR you have the right to:
 
 Data we must keep under the Bookkeeping Act cannot be deleted until the retention period has ended.
 
-Send requests to altinnendata@gmail.com. You can also complain to the Norwegian Data Protection Authority (Datatilsynet).
+Send requests to havard@altinnendata.no. You can also complain to the Norwegian Data Protection Authority (Datatilsynet).
 
 ## Cookies
 

@@ -16,7 +16,7 @@ public class OrderDocumentsTests
         StreetAddress = "Mårvegen 21a",
         PostalCode = "4347",
         AddressLocality = "Lye",
-        PublicEmail = "altinnendata@gmail.com",
+        PublicEmail = "havard@altinnendata.no",
     };
 
     private static Order NewOrder(string locale = "no", string? markdown = "## 1. Kjøp\n\nDu kjøper **én** maskin.") => new()
@@ -131,7 +131,7 @@ public class OrderDocumentsTests
             StreetAddress = "Mårvegen 21a",
             PostalCode = "4347",
             AddressLocality = "Lye",
-            PublicEmail = "altinnendata@gmail.com",
+            PublicEmail = "havard@altinnendata.no",
         };
 
         var form = OrderDocuments.WithdrawalFormRequest(NewOrder(), seller);
@@ -140,7 +140,7 @@ public class OrderDocumentsTests
         Assert.Equal("Altinnendata Sjølyst", form.Seller.LegalName);
         Assert.Equal("123 456 789", form.Seller.OrganizationNumber);
         Assert.Equal(["Mårvegen 21a, 4347 Lye"], form.Seller.AddressLines);
-        Assert.Equal("altinnendata@gmail.com", form.Seller.Email);
+        Assert.Equal("havard@altinnendata.no", form.Seller.Email);
         Assert.Equal("AID-000042-1A2B3C4D", form.Order.Reference);
         Assert.Equal(["Gaming PC <RTX>"], form.Order.Items);
         Assert.Null(form.Order.ReceivedOn);

@@ -83,7 +83,7 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("Vi tar kontakt med deg om levering.", msg.HtmlBody);
         Assert.DoesNotContain("Selger", msg.HtmlBody);
         Assert.Contains("https://www.altinnendata.no/no/terms", msg.HtmlBody);
-        Assert.Contains("altinnendata@gmail.com", msg.HtmlBody);
+        Assert.Contains("havard@altinnendata.no", msg.HtmlBody);
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public class OrderEmailsTests : TestBase
         Assert.Contains("background:#0f3d3a;color:#fff", html);
         Assert.DoesNotContain("<h2>", html);
         Assert.DoesNotContain("<hr/>", html);
-        Assert.DoesNotContain("<a href=\"mailto:altinnendata@gmail.com\">", html);
+        Assert.DoesNotContain("<a href=\"mailto:havard@altinnendata.no\">", html);
     }
 
     [Theory]
