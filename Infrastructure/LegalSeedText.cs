@@ -457,17 +457,17 @@ eller lagrer informasjon i enheten din.
 
 ## Nødvendige kapsler
 
-Disse kapslene trengs for at siden skal virke, og de settes uten samtykke. Kapslene som begynner med
-`next-auth` settes bare når noen logger inn.
+Disse kapslene trengs for at siden skal virke, og de settes uten samtykke. Innloggingssystemet setter
+`__Host-next-auth.csrf-token` og `__Secure-next-auth.callback-url` ved hvert besøk for å beskytte
+innloggingen mot forfalskede forespørsler. De er nødvendige og inneholder ingen personopplysninger.
+`__Secure-next-auth.session-token` settes bare når noen logger inn.
 
 | Navn | Leverandør | Formål | Varighet |
 | --- | --- | --- | --- |
-| `next-auth.session-token` | Altinnendata | Holder deg innlogget | 7 dager |
-| `next-auth.csrf-token` | Altinnendata | Sikkerhet. Hindrer forfalskning av forespørsler på tvers av nettsteder | Økt |
-| `next-auth.callback-url` | Altinnendata | Husker hvor du skal sendes etter innlogging | Økt |
+| `__Secure-next-auth.session-token` | Altinnendata | Holder deg innlogget. Settes bare ved innlogging | 7 dager |
+| `__Host-next-auth.csrf-token` | Altinnendata | Sikkerhet. Beskytter innloggingen mot forfalskede forespørsler. Settes ved hvert besøk | Økt |
+| `__Secure-next-auth.callback-url` | Altinnendata | Husker hvor du skal sendes etter innlogging. Settes ved hvert besøk | Økt |
 | `consent` (lokal lagring) | Altinnendata | Nødvendig. Husker valget ditt om markedsføring, slik at vi ikke spør på nytt ved hvert besøk | Til du velger på nytt eller sletter nettstedsdata. Vi spør på nytt etter 12 måneder |
-
-Over HTTPS har kapslene for innlogging forstavelsen `__Secure-` (`__Host-` for `next-auth.csrf-token`).
 
 `consent` er ikke en informasjonskapsel, men lagres i nettleserens lokale lagring for denne siden. Den
 inneholder valget ditt om markedsføring, versjonen av valget, når du tok det og en tilfeldig
@@ -538,17 +538,17 @@ information on your device.
 
 ## Necessary cookies
 
-These cookies are needed for the site to work, and they are set without consent. The cookies that
-start with `next-auth` are only set when someone signs in.
+These cookies are needed for the site to work, and they are set without consent. The sign-in system
+sets `__Host-next-auth.csrf-token` and `__Secure-next-auth.callback-url` on every visit to protect
+sign-in against forged requests. They are necessary and hold no personal data.
+`__Secure-next-auth.session-token` is set only when someone signs in.
 
 | Name | Provider | Purpose | Duration |
 | --- | --- | --- | --- |
-| `next-auth.session-token` | Altinnendata | Keeps you signed in | 7 days |
-| `next-auth.csrf-token` | Altinnendata | Security. Prevents cross-site request forgery | Session |
-| `next-auth.callback-url` | Altinnendata | Remembers where to redirect after login | Session |
+| `__Secure-next-auth.session-token` | Altinnendata | Keeps you signed in. Set only on sign-in | 7 days |
+| `__Host-next-auth.csrf-token` | Altinnendata | Security. Protects sign-in against forged requests. Set on every visit | Session |
+| `__Secure-next-auth.callback-url` | Altinnendata | Remembers where to redirect after login. Set on every visit | Session |
 | `consent` (local storage) | Altinnendata | Necessary. Remembers your marketing choice so we do not ask again on every visit | Until you choose again or clear site data. We ask again after 12 months |
-
-Over HTTPS the sign-in cookies carry the prefix `__Secure-` (`__Host-` for `next-auth.csrf-token`).
 
 `consent` is not a cookie. It is kept in your browser's local storage for this site. It holds your
 marketing choice, the version of the choice, when you made it and a random consent ID. The record

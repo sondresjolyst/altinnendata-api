@@ -143,10 +143,25 @@ public class SeedDataTests : TestBase
     [Theory]
     [InlineData("no", "privacy", "**Samtykkelogg:** 3 år")]
     [InlineData("en", "privacy", "**Consent log:** 3 years")]
-    [InlineData("no", "cookies", "| `next-auth.session-token` | Altinnendata | Holder deg innlogget | 7 dager |")]
-    [InlineData("en", "cookies", "| `next-auth.session-token` | Altinnendata | Keeps you signed in | 7 days |")]
+    [InlineData("no", "cookies", "| `__Secure-next-auth.session-token` | Altinnendata | Holder deg innlogget. Settes bare ved innlogging | 7 dager |")]
+    [InlineData("en", "cookies", "| `__Secure-next-auth.session-token` | Altinnendata | Keeps you signed in. Set only on sign-in | 7 days |")]
     public void LegalSeedText_StatesTheDurations(string locale, string key, string phrase)
     {
         Assert.Contains(phrase, OneLine(LegalSeedText.All.Single(p => p.Key == key && p.Locale == locale).BodyMarkdown));
+    }
+
+    [Theory]
+    [InlineData("no", "ved hvert besøk", "ingen personopplysninger", "bare når noen logger inn.")]
+    [InlineData("en", "on every visit", "hold no personal data", "set only when someone signs in.")]
+    public void LegalSeedText_NamesTheSignInCookiesAsProductionSetsThem(string locale, string everyVisit, string noData, string signInOnly)
+    {
+        var body = OneLine(LegalSeedText.All.Single(p => p.Key == "cookies" && p.Locale == locale).BodyMarkdown);
+
+        Assert.Matches($@"\| `__Host-next-auth\.csrf-token` \| Altinnendata \| [^|]+{everyVisit} \| ", body);
+        Assert.Matches($@"\| `__Secure-next-auth\.callback-url` \| Altinnendata \| [^|]+{everyVisit} \| ", body);
+        Assert.Contains(noData, body);
+        Assert.Contains($"`__Secure-next-auth.session-token` {(locale == "no" ? "settes " : "is ")}{signInOnly}", body);
+        Assert.DoesNotMatch(@"(?<![_-])next-auth\.(session-token|csrf-token|callback-url)", body.Replace("__Secure-next-auth", "").Replace("__Host-next-auth", ""));
+        Assert.DoesNotContain(locale == "no" ? "Kapslene som begynner med" : "The cookies that start with", body);
     }
 }
