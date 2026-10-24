@@ -56,7 +56,7 @@ public class ConsentLogTests(PostgresDatabase postgres)
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseAppKitRateLimiting();
-        app.MapAppKitConsent<ApplicationDbContext>("/api", o => o.Policy = Policies.Admin);
+        app.MapAppKitConsent<ApplicationDbContext>("/api", o => { o.Policy = Policies.Admin; o.RateLimitedExternally = true; });
         await app.StartAsync(Ct);
         return (app, app.GetTestClient(), db);
     }

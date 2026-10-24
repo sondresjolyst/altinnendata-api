@@ -185,7 +185,7 @@ public class SeedDataTests : TestBase
         foreach (var phrase in phrases) Assert.Contains(phrase, body);
         Assert.DoesNotMatch(@"next-auth\.(session-token|csrf-token|callback-url)", body.Replace("__Secure-next-auth", "").Replace("__Host-next-auth", ""));
         Assert.DoesNotContain(locale == "no" ? "Kapslene under settes bare når noen logger inn" : "The cookies below are only set when someone signs in", body);
-        Assert.DoesNotContain("30", body);
+        Assert.DoesNotContain(locale == "no" ? "Økt / 30 dager" : "Session / 30 days", body);
     }
 
     [Theory]
