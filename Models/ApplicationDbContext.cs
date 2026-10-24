@@ -6,6 +6,7 @@ using SjolystInnovation.AppKit.SiteSettings;
 using altinnendata_api.Models.Admin;
 using altinnendata_api.Models.Shop;
 using SjolystInnovation.AppKit.Auth;
+using SjolystInnovation.AppKit.Consent;
 using SjolystInnovation.AppKit.Storage.Images;
 using SjolystInnovation.AppKit.Vipps;
 
@@ -54,6 +55,7 @@ namespace altinnendata_api.Models
                 .IsUnique();
 
             modelBuilder.AddAppKitLegalPages();
+            modelBuilder.AddAppKitConsent();
             modelBuilder.AddAppKitVippsProcessedWebhookEvents();
             modelBuilder.AddAppKitVippsWebhookRegistrations();
 
@@ -64,6 +66,10 @@ namespace altinnendata_api.Models
             modelBuilder.Entity<ShopSettings>()
                 .Property(s => s.BuyButton)
                 .HasConversion<string>()
+                .HasMaxLength(20);
+
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.MetaPixelId)
                 .HasMaxLength(20);
 
             modelBuilder.Entity<DeliveryOption>()
