@@ -181,7 +181,7 @@ Vi kan også utlevere opplysninger når loven krever det.
 
 ## Lagringstid
 
-- Bestillinger: fem år etter slutten av regnskapsåret da du kjøpte, fordi bokføringsloven krever det. Deretter sletter vi dem. Hvis betalingen feilet eller bestillingen ble kansellert før vi trakk beløpet, sletter vi bestillingen etter 90 dager. Hvis bestillingen fortsatt holder av en datamaskin, sletter vi den først når datamaskinen er frigitt.
+- Bestillinger: fem år etter slutten av regnskapsåret da du kjøpte, fordi bokføringsloven krever det. Deretter fjerner vi navn, e-postadresse, mobilnummer, adresse, merknader og IP-adressen. Selve salget beholdes uten opplysninger om deg. Hvis betalingen feilet, bestillingen ble kansellert før vi trakk beløpet, eller bestillingen ble laget i testmodus, sletter vi bestillingen etter 90 dager. Hvis bestillingen fortsatt holder av en datamaskin, sletter vi den først når datamaskinen er frigitt.
 - Henvendelser: 12 måneder etter at vi mottok dem. Deretter sletter vi dem automatisk.
 - Kontoopplysninger: til kontoen slettes. Da fjerner vi navn, e-postadresse og passord.
 - Tjenerlogger: 90 dager. Måledata: 60 dager.
@@ -257,7 +257,7 @@ We may also disclose data when the law requires it.
 
 ## Data retention
 
-- Orders: five years after the end of the financial year of the purchase, as the Bookkeeping Act requires. Then we delete them. If the payment failed or the order was cancelled before we took the payment, we delete the order after 90 days. If an order still holds a PC, we delete it only once the PC has been released.
+- Orders: five years after the end of the financial year of the purchase, as the Bookkeeping Act requires. Then we remove the name, email address, mobile number, address, notes and IP address. The sale itself is kept without details about you. If the payment failed, the order was cancelled before we took the payment, or the order was made in test mode, we delete the order after 90 days. If an order still holds a PC, we delete it only once the PC has been released.
 - Enquiries: 12 months after we receive them. Then we delete them automatically.
 - Account data: until the account is deleted. We then remove the name, email address and password.
 - Server logs: 90 days. Metrics: 60 days.

@@ -131,12 +131,16 @@ public class SeedDataTests : TestBase
 
         var no = Privacy("no");
         Assert.Contains($"Bestillinger: {years.No} år etter slutten av regnskapsåret", no);
-        Assert.Contains($"sletter vi bestillingen etter {orders} dager.", no);
+        Assert.Contains($"eller bestillingen ble laget i testmodus, sletter vi bestillingen etter {orders} dager.", no);
+        Assert.Contains("Deretter fjerner vi navn, e-postadresse, mobilnummer, adresse, merknader og IP-adressen. Selve salget beholdes uten opplysninger om deg.", no);
+        Assert.DoesNotContain("Deretter sletter vi dem.", no);
         Assert.Contains($"Henvendelser: {months} måneder etter at vi mottok dem.", no);
 
         var en = Privacy("en");
         Assert.Contains($"Orders: {years.En} years after the end of the financial year", en);
-        Assert.Contains($"we delete the order after {orders} days.", en);
+        Assert.Contains($"or the order was made in test mode, we delete the order after {orders} days.", en);
+        Assert.Contains("Then we remove the name, email address, mobile number, address, notes and IP address. The sale itself is kept without details about you.", en);
+        Assert.DoesNotContain("Then we delete them.", en);
         Assert.Contains($"Enquiries: {months} months after we receive them.", en);
     }
 
