@@ -38,11 +38,30 @@ public class OrderStatusTests : TestBase
 
         var ok = Assert.IsType<Ok<OrderStatusDto>>(await OrderStatusEndpoint.Get(Token, db, Ct));
 
-        Assert.Equal(new OrderStatusDto("Paid", "AID-000001-ABCDEF12", "Gaming-PC", 1_299_000, "Pickup"), ok.Value);
+        Assert.Equal(new OrderStatusDto("Paid", "AID-000001-ABCDEF12", "Gaming-PC", 1_299_000, "Pickup", "gaming-pc", null), ok.Value);
         var json = JsonSerializer.Serialize(ok.Value);
         Assert.DoesNotContain("BuyerEmail", json);
         Assert.DoesNotContain("BuyerName", json);
         Assert.DoesNotContain("BuyerPhone", json);
+    }
+
+    [Fact]
+    public async Task Get_NamesTheBoughtBuild_BySlugAndId()
+    {
+        await using var db = CreateDbContext();
+        var order = NewOrder();
+        order.PcBuildId = 42;
+        order.BuildSlug = "stille-gaming-pc";
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        var ok = Assert.IsType<Ok<OrderStatusDto>>(await OrderStatusEndpoint.Get(Token, db, Ct));
+
+        Assert.Equal("stille-gaming-pc", ok.Value!.BuildSlug);
+        Assert.Equal(42, ok.Value.BuildId);
+        var json = JsonSerializer.Serialize(ok.Value, JsonSerializerOptions.Web);
+        Assert.Contains("\"buildSlug\":\"stille-gaming-pc\"", json);
+        Assert.Contains("\"buildId\":42", json);
     }
 
     [Theory]

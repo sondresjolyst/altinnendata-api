@@ -66,6 +66,10 @@ namespace altinnendata_api.Models
                 .HasConversion<string>()
                 .HasMaxLength(20);
 
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.MetaPixelId)
+                .HasMaxLength(20);
+
             modelBuilder.Entity<DeliveryOption>()
                 .Property(o => o.Method)
                 .HasConversion<string>()

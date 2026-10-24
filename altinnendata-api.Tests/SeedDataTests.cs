@@ -40,4 +40,38 @@ public class SeedDataTests : TestBase
         }
     }
 
+    private static string OneLine(string markdown) => System.Text.RegularExpressions.Regex.Replace(markdown, @"\s+", " ");
+
+    [Theory]
+    [InlineData("no", "personvernforordningen art. 26", "Data Privacy Framework", "Innstillinger for", "ekomloven § 3-15", "Datatilsynet")]
+    [InlineData("en", "GDPR Art. 26", "Data Privacy Framework", "\"Cookie settings\"", "section 3-15", "Datatilsynet")]
+    public void LegalSeedText_CookiesDescribeTheMetaPixel(string locale, params string[] phrases)
+    {
+        var body = OneLine(LegalSeedText.All.Single(p => p.Key == "cookies" && p.Locale == locale).BodyMarkdown);
+
+        foreach (var phrase in phrases) Assert.Contains(phrase, body);
+        Assert.Contains("Meta Platforms Ireland Ltd", body);
+        Assert.Contains("https://www.facebook.com/privacy/policy", body);
+        Assert.Contains("https://www.facebook.com/policies/cookies/", body);
+        Assert.Matches(@"\| `_fbp` \| Meta \| [^|]+ \| 90 ", body);
+        Assert.Matches(@"\| `fr` \| Meta \| [^|]+ \| 90 ", body);
+        Assert.DoesNotContain("ingen kapsler fra tredjeparter", body);
+        Assert.DoesNotContain("do not use any third-party", body);
+    }
+
+    [Theory]
+    [InlineData("no", "art. 6 nr. 1 bokstav a", "ekomloven § 3-15", "art. 26", "Data Privacy Framework", "Innstillinger for")]
+    [InlineData("en", "Art. 6(1)(a)", "section 3-15", "Art. 26", "Data Privacy Framework", "\"Cookie settings\"")]
+    public void LegalSeedText_PrivacyDescribesTheMetaPixel(string locale, params string[] phrases)
+    {
+        var body = OneLine(LegalSeedText.All.Single(p => p.Key == "privacy" && p.Locale == locale).BodyMarkdown);
+
+        foreach (var phrase in phrases) Assert.Contains(phrase, body);
+        Assert.Contains("Meta Platforms Ireland Ltd", body);
+        Assert.Contains("https://www.facebook.com/privacy/policy", body);
+        Assert.Contains("https://www.facebook.com/policies/cookies/", body);
+        Assert.Contains("Datatilsynet", body);
+        Assert.DoesNotContain("Vi bruker ikke opplysningene til markedsføring, og", body);
+        Assert.DoesNotContain("We do not use your data for advertising and", body);
+    }
 }

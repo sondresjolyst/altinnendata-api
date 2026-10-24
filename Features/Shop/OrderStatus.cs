@@ -5,8 +5,11 @@ using altinnendata_api.Models;
 
 namespace altinnendata_api.Features.Shop
 {
-    /// <summary>What the return page may show about an order. No buyer data.</summary>
-    public record OrderStatusDto(string Status, string Reference, string BuildTitle, int TotalInOre, string DeliveryMethod);
+    /// <summary>
+    /// What the return page may show about an order. No buyer data. <c>BuildSlug</c> and <c>BuildId</c> name the build
+    /// that was bought. <c>BuildId</c> is null once the build is deleted.
+    /// </summary>
+    public record OrderStatusDto(string Status, string Reference, string BuildTitle, int TotalInOre, string DeliveryMethod, string BuildSlug, int? BuildId);
 
     /// <summary>Public order status, found by the buyer's secret token.</summary>
     public static partial class OrderStatusEndpoint
@@ -21,7 +24,7 @@ namespace altinnendata_api.Features.Shop
             var order = await db.Orders
                 .AsNoTracking()
                 .Where(o => o.PublicToken == token)
-                .Select(o => new OrderStatusDto(o.Status.ToString(), o.Reference, o.BuildTitle, o.TotalInOre, o.DeliveryMethod.ToString()))
+                .Select(o => new OrderStatusDto(o.Status.ToString(), o.Reference, o.BuildTitle, o.TotalInOre, o.DeliveryMethod.ToString(), o.BuildSlug, o.PcBuildId))
                 .FirstOrDefaultAsync(ct);
 
             return order == null ? TypedResults.NotFound() : TypedResults.Ok(order);
