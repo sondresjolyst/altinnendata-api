@@ -19,6 +19,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using SjolystInnovation.AppKit.Auth;
+using SjolystInnovation.AppKit.Consent;
 using SjolystInnovation.AppKit.SiteSettings;
 using SjolystInnovation.AppKit.Hosting;
 using SjolystInnovation.AppKit.Email;
@@ -64,6 +65,7 @@ namespace altinnendata_api
             builder.Services.TryAddSingleton(TimeProvider.System);
             builder.Services.AddAppKitEmailReceiptGate(altinnendata_api.Features.Contact.SendEnquiry.ReceiptLimits);
             builder.Services.AddHostedService<OrderRetentionService>();
+            builder.Services.AddAppKitConsent<ApplicationDbContext>();
             builder.Services.AddHostedService<altinnendata_api.Features.Contact.EnquiryNoticeRetryService>();
             builder.Services.AddHostedService<altinnendata_api.Features.Contact.EnquiryRetentionService>();
             builder.Services.AddAppKitIdentity<User, ApplicationDbContext>();
@@ -212,6 +214,7 @@ namespace altinnendata_api
             });
             app.MapAppKitContentImages<ApplicationDbContext>("/api/content-images", o => o.Policy = Policies.Admin);
             app.MapAppKitEmailStats(configure: o => o.Policy = Policies.Admin);
+            app.MapAppKitConsent<ApplicationDbContext>("/api", o => { o.Policy = Policies.Admin; o.RateLimitedExternally = true; });
             app.MapAppKitVippsWebhook<ApplicationDbContext>(ShopVipps.Slot);
             app.MapAppKitHealthChecks();
             app.Run();

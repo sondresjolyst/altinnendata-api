@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SjolystInnovation.AppKit.Consent;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Contact;
 using altinnendata_api.Features.Shop;
@@ -119,6 +120,20 @@ public class SeedDataTests : TestBase
         foreach (var phrase in phrases) Assert.Contains(phrase, body);
         var legitimate = body[body.IndexOf(locale == "no" ? "Berettiget interesse (art. 6 nr. 1 bokstav f)." : "Legitimate interests (Art. 6(1)(f)).")..];
         Assert.Contains(locale == "no" ? "Vi fører en logg over samtykkene" : "We keep a log of consent choices", legitimate[..legitimate.IndexOf(locale == "no" ? "- Samtykke" : "- Consent")]);
+    }
+
+    /// <summary>The consent log text says the package's default keep time in whole years.</summary>
+    [Fact]
+    public void LegalSeedText_ConsentLogYears_MatchTheDefaultKeepTime()
+    {
+        var days = AppKitConsentOptions.DefaultKeepForDays;
+        var years = days / 365;
+        Assert.InRange(days - years * 365, 0, 1);
+
+        Assert.Contains($"- Samtykkelogg: {years} år.", Privacy("no"));
+        Assert.Contains($"- Consent log: {years} years.", Privacy("en"));
+        Assert.Contains($"Loggen slettes etter {years} år.", Cookies("no"));
+        Assert.Contains($"The log is deleted after {years} years.", Cookies("en"));
     }
 
     /// <summary>The retention numbers in the privacy text follow the constants, so a change to either fails here.</summary>
