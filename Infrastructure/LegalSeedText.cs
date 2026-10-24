@@ -140,6 +140,8 @@ For Meta Pixel er vi felles behandlingsansvarlige med Meta Platforms Ireland Ltd
 
 ## Hvilke opplysninger vi samler inn
 
+- **Kjøp i nettbutikken:** navn, e-post, telefonnummer, leveringsadresse og notater til bestillingen,
+  og når og fra hvilken IP-adresse du godtok vilkårene. Se «Kjøp i nettbutikken» under.
 - **Henvendelser:** navn, e-post, telefonnummer, bruksområde, budsjett og meldingen du sender inn i
   kontaktskjemaet.
 - **Brukerkontoer:** navn, e-postadresse og passord (lagret som hash). Kontoer opprettes kun for oss
@@ -151,10 +153,12 @@ For Meta Pixel er vi felles behandlingsansvarlige med Meta Platforms Ireland Ltd
   om nettleseren og enheten din, og informasjonskapsler. Vi sender ikke navn, e-post eller
   telefonnummer til Meta.
 
-Vi samler ikke inn betalingsopplysninger gjennom denne siden.
+Vi samler ikke inn kort- eller kontoopplysninger. Betalingen skjer hos Vipps MobilePay.
 
 ## Hva vi bruker opplysningene til
 
+- Å gjennomføre kjøpet ditt: ta imot betalingen, levere maskinen og sende deg e-post om bestillingen.
+- Å oppfylle bokføringsplikten for salg.
 - Å svare på henvendelsen din og avtale arbeidet du spør om.
 - Å sende e-post knyttet til innlogging (invitasjon, tilbakestilling av passord).
 - Å forbedre tjenesten og finne tekniske feil.
@@ -165,13 +169,39 @@ Vi bruker ikke opplysningene til markedsføring uten samtykket ditt, og vi selge
 
 ## Behandlingsgrunnlag
 
-- **Avtale (art. 6 nr. 1 bokstav b):** kontoopplysninger og e-post om innlogging er nødvendige for å
-  gi tilgang til administrasjonssidene.
+- **Avtale (art. 6 nr. 1 bokstav b):** opplysningene i en bestilling er nødvendige for å gjennomføre
+  kjøpet. Kontoopplysninger og e-post om innlogging er nødvendige for å gi tilgang til
+  administrasjonssidene.
+- **Rettslig plikt (art. 6 nr. 1 bokstav c):** salg må dokumenteres og oppbevares etter
+  bokføringsloven.
 - **Berettiget interesse (art. 6 nr. 1 bokstav f):** henvendelser behandles for at vi skal kunne
   svare deg, og tjenerlogger oppbevares for sikkerhet og feilsøking. Interessen vår går ikke foran
   rettighetene dine. Du kan protestere når som helst.
 - **Samtykke (art. 6 nr. 1 bokstav a og ekomloven § 3-15):** Meta Pixel lastes og setter
   informasjonskapsler bare etter at du har sagt ja til markedsføring.
+
+## Kjøp i nettbutikken
+
+Når du kjøper en maskin, lagrer vi dette i bestillingen:
+
+- navn, e-post og telefonnummer
+- leveringsmåte, og adresse, postnummer og poststed når maskinen sendes eller leveres hjem
+- at du har bekreftet at adressen er innenfor leveringsavstanden, når du velger levering hjem
+- notatet ditt til hentingen, og notatet vi sender deg når maskinen er sendt eller klar for henting
+- språket du handlet på, maskinen du kjøpte, priser og betalingsstatus
+- når du godtok vilkårene, hvilken versjon og teksten slik den var da, og IP-adressen din forkortet
+  (de siste delene fjernes, /24 for IPv4 og /48 for IPv6)
+
+Vi bruker opplysningene til å gjennomføre kjøpet og levere maskinen, og til regnskapet.
+Behandlingsgrunnlaget er avtalen med deg (art. 6 nr. 1 bokstav b) og bokføringsplikten
+(art. 6 nr. 1 bokstav c og bokføringsloven).
+
+**Betaling:** betalingen skjer med Vipps, levert av Vipps MobilePay AS. Vi sender Vipps MobilePay
+telefonnummeret ditt, beløpet, ordrenummeret og varelinjene. Vipps MobilePay er selv
+behandlingsansvarlig for betalingen. Les Vipps MobilePays
+[personvernerklæring](https://vipps.no/personvern-og-vilkar/personvern/).
+
+**E-post:** ordrebekreftelsen og annen e-post om bestillingen sendes gjennom Brevo.
 
 ## Meta Pixel
 
@@ -198,23 +228,33 @@ Vi selger ikke personopplysninger. Plattformen driftes på infrastruktur vi styr
 skyleverandør bak. Vi bruker én databehandler:
 
 - [Brevo](https://www.brevo.com/legal/termsofuse/) (Frankrike, EØS) for utsending av e-post
-  (invitasjon, tilbakestilling av passord) og videresending av henvendelser fra kontaktskjemaet.
+  (ordrebekreftelser og annen e-post om bestillinger, invitasjon, tilbakestilling av passord) og
+  videresending av henvendelser fra kontaktskjemaet.
   E-postadressen din og innholdet i e-posten deles med Brevo kun til dette formålet.
 
-Med samtykket ditt deles opplysningene fra Meta Pixel med Meta Platforms Ireland Ltd, som beskrevet
+Når du betaler, deles opplysningene som trengs til betalingen med Vipps MobilePay AS, som beskrevet
+over. Med samtykket ditt deles opplysningene fra Meta Pixel med Meta Platforms Ireland Ltd, som beskrevet
 over.
 
 Vi kan i tillegg utlevere opplysninger når loven krever det.
 
 ## Lagringstid
 
+- **Bestillinger som ikke ble et salg:** bestillinger som feilet, som ble kansellert før betalingen
+  ble trukket, eller som ble laget i testmodus, slettes 90 dager etter at de ble opprettet. Holder
+  bestillingen fortsatt av en maskin, slettes den når maskinen er frigitt.
+- **Salg:** navn, e-post, telefonnummer, adresse, notatene og IP-adressen fjernes fem år etter
+  slutten av regnskapsåret salget hører til. Regnskapsåret er kalenderåret, etter norsk tid, for
+  siste pengedato i bestillingen: når betalingen ble trukket, og hver refusjon. Et salg i 2026
+  anonymiseres fra 1. januar 2032. Beløp, datoer, maskinen, ordrenummer, fakturanummer, vilkårene,
+  betalinger og refusjoner beholdes for regnskapet. Vi sjekker dette én gang i døgnet.
 - **Henvendelser:** så lenge det trengs for å håndtere forespørselen og eventuell oppfølging,
   deretter slettes de.
 - **Kontoopplysninger:** til kontoen slettes, hvorpå navn, e-post og passord fjernes.
 - **Tjenerlogger:** 90 dager. **Måledata:** 60 dager.
 - **Sikkerhetskopier av databasen:** kryptert. Etter sletting kan rester ligge i sikkerhetskopier i
   inntil omtrent 6 måneder til rotasjonen er fullført. Sikkerhetskopier brukes ikke til behandling.
-- **Meta Pixel:** informasjonskapslene `_fbp` og `fr` varer i 90 dager. Hvor lenge Meta lagrer
+- **Meta Pixel:** informasjonskapslene `_fbp`, `_fbc` og `fr` varer i 90 dager. Hvor lenge Meta lagrer
   opplysningene, står i Metas personvernerklæring.
 
 ## Rettighetene dine
@@ -224,6 +264,7 @@ Etter personvernforordningen har du rett til:
 - **Innsyn og dataportabilitet:** [ta kontakt](/no/contact) for en kopi av opplysningene vi har om
   deg.
 - **Sletting:** [ta kontakt](/no/contact) for å få slettet henvendelsen din og opplysningene i den.
+  Opplysninger om et salg må vi oppbevare for regnskapet til tidspunktet under «Lagringstid».
 - **Retting:** [ta kontakt](/no/contact) hvis noe er feil.
 - **Protest:** du kan protestere mot behandling som bygger på berettiget interesse.
 - **Trekke tilbake samtykke:** med lenken «Innstillinger for informasjonskapsler» nederst på hver
@@ -246,6 +287,8 @@ Pixel we are joint controllers with Meta Platforms Ireland Ltd, see below.
 
 ## What data we collect
 
+- **Shop purchases:** name, email, phone number, delivery address and notes on the order, and when
+  and from which IP address you accepted the terms. See "Shop purchases" below.
 - **Enquiries:** the name, email, phone number, use case, budget and message you submit through the
   contact form.
 - **User accounts:** name, email address and password (stored hashed). Accounts exist only for the
@@ -255,10 +298,12 @@ Pixel we are joint controllers with Meta Platforms Ireland Ltd, see below.
   checkout, and the value and product ID when you buy. Meta also receives your IP address, information
   about your browser and device, and cookies. We do not send your name, email or phone number to Meta.
 
-We do not collect payment data through this site.
+We do not collect card or account details. The payment takes place at Vipps MobilePay.
 
 ## How we use your data
 
+- To complete your purchase: take the payment, deliver the computer and send you emails about the order.
+- To meet the bookkeeping duty for sales.
 - To answer your enquiry and arrange the work you ask about.
 - To send sign-in related emails (invitation, password reset).
 - To improve the service and diagnose technical issues.
@@ -269,13 +314,39 @@ We do not use your data for advertising without your consent, and we do not sell
 
 ## Legal basis for processing
 
-- **Contract (Art. 6(1)(b)):** account data and sign-in emails are necessary to provide access to
-  the admin pages.
+- **Contract (Art. 6(1)(b)):** the data in an order is necessary to complete the purchase. Account
+  data and sign-in emails are necessary to provide access to the admin pages.
+- **Legal obligation (Art. 6(1)(c)):** sales must be documented and kept under the Norwegian
+  Bookkeeping Act (bokføringsloven).
 - **Legitimate interests (Art. 6(1)(f)):** enquiries are processed so we can respond to you, and
   server logs are retained for security monitoring and debugging. Our interest does not override your
   rights. You can object at any time.
 - **Consent (Art. 6(1)(a) and section 3-15 of the Norwegian Electronic Communications Act):** the Meta
   Pixel loads and sets cookies only after you have accepted marketing.
+
+## Shop purchases
+
+When you buy a computer, the order holds:
+
+- your name, email and phone number
+- the delivery method, and the address, postal code and city when the computer is shipped or
+  delivered to your home
+- that you confirmed the address is within the delivery distance, when you choose home delivery
+- your note for the pickup, and the note we send you when the computer is shipped or ready for pickup
+- the language you shopped in, the computer you bought, prices and payment status
+- when you accepted the terms, which version and the text as it read then, and your IP address
+  shortened (the last parts removed, /24 for IPv4 and /48 for IPv6)
+
+We use the data to complete the purchase, deliver the computer and keep the accounts. The legal basis
+is the contract with you (Art. 6(1)(b)) and the bookkeeping duty (Art. 6(1)(c) and the Norwegian
+Bookkeeping Act).
+
+**Payment:** the payment is made with Vipps, provided by Vipps MobilePay AS. We send Vipps MobilePay
+your phone number, the amount, the order reference and the order lines. Vipps MobilePay is a
+controller in its own right for the payment. Read the Vipps MobilePay
+[Privacy Notice](https://vipps.no/en/privacy-and-terms/privacy/).
+
+**Email:** the order confirmation and other emails about the order are sent through Brevo.
 
 ## Meta Pixel
 
@@ -302,21 +373,32 @@ We do not sell or trade your personal data. The platform is self-hosted on infra
 direct control. There is no upstream cloud or hosting provider. We use one third-party data processor:
 
 - [Brevo](https://www.brevo.com/legal/termsofuse/) (France, EEA) for transactional email delivery
-  (invitation, password reset) and delivery of contact-form enquiries. Your email address and the
+  (order confirmations and other order emails, invitation, password reset) and delivery of
+  contact-form enquiries. Your email address and the
   email body are shared with Brevo solely for this purpose.
 
-With your consent, the Meta Pixel data is shared with Meta Platforms Ireland Ltd as described above.
+When you pay, the data the payment needs is shared with Vipps MobilePay AS as described above. With
+your consent, the Meta Pixel data is shared with Meta Platforms Ireland Ltd as described above.
 
 We may also disclose data when required by law.
 
 ## Data retention
 
+- **Orders that did not become a sale:** orders that failed, were cancelled before the payment was
+  captured, or were made in test mode are deleted 90 days after they were created. An order that still
+  holds a computer is deleted once the computer is released.
+- **Sales:** the name, email, phone number, address, notes and IP address are removed five years after
+  the end of the financial year the sale belongs to. The financial year is the calendar year, in
+  Norwegian time, of the latest money date of the order: when the payment was captured, and every
+  refund. A sale in 2026 is anonymised from 1 January 2032. Amounts, dates, the computer, the order
+  reference, invoice number, terms, payments and refunds are kept for the accounts. This is checked
+  once a day.
 - **Enquiries:** kept for as long as needed to handle your request and any follow-up, then deleted.
 - **Account data:** until the account is deleted, after which name, email and password are scrubbed.
 - **Server logs:** 90 days. **Metrics:** 60 days.
 - **Database backups:** encrypted at rest. After deletion, residual data may persist in backups for
   up to about 6 months until rotation completes. Backups are not used for any processing.
-- **Meta Pixel:** the `_fbp` and `fr` cookies last 90 days. How long Meta keeps the data is set out in
+- **Meta Pixel:** the `_fbp`, `_fbc` and `fr` cookies last 90 days. How long Meta keeps the data is set out in
   Meta's Privacy Policy.
 
 ## Your rights
@@ -324,7 +406,8 @@ We may also disclose data when required by law.
 Under GDPR you have the right to:
 
 - **Access & portability:** [contact us](/en/contact) for a copy of the data we hold about you.
-- **Erasure:** [contact us](/en/contact) to have your enquiry and its data deleted.
+- **Erasure:** [contact us](/en/contact) to have your enquiry and its data deleted. We must keep the
+  data of a sale for the accounts until the time set out under "Data retention".
 - **Correction:** [contact us](/en/contact) if something is wrong.
 - **Object:** object to processing carried out on the basis of our legitimate interests.
 - **Withdraw consent:** through the "Cookie settings" link at the bottom of every page.
@@ -348,17 +431,19 @@ eller lagrer informasjon i enheten din.
 
 ## Nødvendige kapsler
 
-Disse kapslene trengs for at siden skal virke, og de settes uten samtykke. Kapslene under settes bare
-når noen logger inn.
+Disse kapslene trengs for at siden skal virke, og de settes uten samtykke. Kapslene som begynner med
+`next-auth` settes bare når noen logger inn.
 
 | Navn | Leverandør | Formål | Varighet |
 | --- | --- | --- | --- |
 | `next-auth.session-token` | Altinnendata | Holder deg innlogget | Økt / 30 dager |
 | `next-auth.csrf-token` | Altinnendata | Sikkerhet. Hindrer forfalskning av forespørsler på tvers av nettsteder | Økt |
 | `next-auth.callback-url` | Altinnendata | Husker hvor du skal sendes etter innlogging | Økt |
+| `consent` (lokal lagring) | Altinnendata | Nødvendig. Husker valget ditt om markedsføring, slik at vi ikke spør på nytt ved hvert besøk | Til du velger på nytt eller sletter nettstedsdata |
 
-Valget du tar om informasjonskapsler lagres i nettleseren din, slik at vi ikke spør på nytt ved hvert
-besøk. Det lagrer bare valget og når du tok det.
+`consent` er ikke en informasjonskapsel, men lagres i nettleserens lokale lagring for denne siden. Den
+inneholder bare valget ditt om markedsføring, versjonen av valget og når du tok det. Den sendes aldri
+til oss eller til andre.
 
 ## Markedsføringskapsler (bare med samtykke)
 
@@ -370,6 +455,7 @@ ikke. Er Meta Pixel slått av, settes de heller ikke.
 | Navn | Leverandør | Formål | Varighet |
 | --- | --- | --- | --- |
 | `_fbp` | Meta | Markedsføring. Kjenner igjen nettleseren din for å måle og målrette annonser. Settes bare etter samtykke | 90 dager |
+| `_fbc` | Meta | Markedsføring. Husker at du kom fra en annonse, så Meta kan måle den. Settes bare etter samtykke, og bare når du kommer fra en annonse | 90 dager |
 | `fr` | Meta | Markedsføring. Leverer og måler annonser på Facebook og Instagram. Settes bare etter samtykke | 90 dager |
 
 Meta Pixel registrerer hvilke sider du besøker, hvilke produkter du ser på, når du starter en
@@ -392,8 +478,8 @@ i [personvernerklæringen](/no/privacy).
 
 Du kan når som helst endre eller trekke tilbake samtykket med lenken «Innstillinger for
 informasjonskapsler» nederst på hver side. Det er like enkelt som å gi samtykket. Etter at du har
-trukket det tilbake, lastes ikke Meta Pixel lenger. Kapsler som allerede er satt, kan du slette i
-nettleseren.
+trukket det tilbake, lastes ikke Meta Pixel lenger, og vi sletter kapslene `_fbp` og `_fbc`. Kapselen
+`fr` ligger på Metas eget domene, og den kan du slette i nettleseren.
 
 ## Hvordan styre kapsler
 
@@ -415,17 +501,19 @@ information on your device.
 
 ## Necessary cookies
 
-These cookies are needed for the site to work, and they are set without consent. The cookies below
-are only set when someone signs in.
+These cookies are needed for the site to work, and they are set without consent. The cookies that
+start with `next-auth` are only set when someone signs in.
 
 | Name | Provider | Purpose | Duration |
 | --- | --- | --- | --- |
 | `next-auth.session-token` | Altinnendata | Keeps you signed in | Session / 30 days |
 | `next-auth.csrf-token` | Altinnendata | Security. Prevents cross-site request forgery | Session |
 | `next-auth.callback-url` | Altinnendata | Remembers where to redirect after login | Session |
+| `consent` (local storage) | Altinnendata | Necessary. Remembers your marketing choice so we do not ask again on every visit | Until you choose again or clear site data |
 
-Your cookie choice is stored in your browser so we do not ask again on every visit. It holds only the
-choice and when you made it.
+`consent` is not a cookie. It is kept in your browser's local storage for this site. It holds only
+your marketing choice, the version of the choice and when you made it. It is never sent to us or to
+anyone else.
 
 ## Marketing cookies (only with consent)
 
@@ -437,6 +525,7 @@ set. They are not set either while the Meta Pixel is turned off.
 | Name | Provider | Purpose | Duration |
 | --- | --- | --- | --- |
 | `_fbp` | Meta | Marketing. Recognises your browser to measure and target ads. Set only after consent | 90 days |
+| `_fbc` | Meta | Marketing. Remembers that you came from an ad so Meta can measure it. Set only after consent, and only when you arrive from an ad | 90 days |
 | `fr` | Meta | Marketing. Delivers and measures ads on Facebook and Instagram. Set only after consent | 90 days |
 
 The Meta Pixel records the pages you visit, the products you view, when you start a checkout, and the
@@ -457,8 +546,9 @@ Framework. Read more in our [Privacy Policy](/en/privacy).
 ## Withdrawing consent
 
 You can change or withdraw your consent at any time through the "Cookie settings" link at the bottom
-of every page. It is as easy as giving consent. Once you withdraw it, the Meta Pixel no longer loads.
-You can delete cookies that were already set in your browser.
+of every page. It is as easy as giving consent. Once you withdraw it, the Meta Pixel no longer loads
+and we delete the `_fbp` and `_fbc` cookies. The `fr` cookie sits on Meta's own domain, and you can
+delete it in your browser.
 
 ## Managing cookies
 
