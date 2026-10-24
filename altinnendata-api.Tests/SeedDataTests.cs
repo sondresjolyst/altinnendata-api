@@ -59,9 +59,9 @@ public class SeedDataTests : TestBase
 
     [Theory]
     [InlineData("no", "## Behandlingsansvarlig Altinnendata AS er behandlingsansvarlig for personopplysningene vi samler inn gjennom denne nettsiden. Organisasjonsnummeret er 938 433 240, og adressen er Mårvegen 21a, 4347 Lye.",
-        "Send henvendelser til altinnendata@gmail.com.")]
+        "Send henvendelser til havard@altinnendata.no.")]
     [InlineData("en", "## Who is responsible Altinnendata AS is the data controller for the personal data we collect through this website. Our organisation number is 938 433 240, and our address is Mårvegen 21a, 4347 Lye, Norway.",
-        "Send requests to altinnendata@gmail.com.")]
+        "Send requests to havard@altinnendata.no.")]
     public void LegalSeedText_PrivacyNamesTheController(string locale, string identity, string contact)
     {
         var body = Privacy(locale);
