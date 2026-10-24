@@ -58,7 +58,7 @@ public class SeedDataTests : TestBase
         Assert.Matches(@"\| `_fbp` \| Meta \| [^|]+ \| 90 ", body);
         Assert.Matches(@"\| `fr` \| Meta \| [^|]+ \| 90 ", body);
         Assert.Matches(@"\| `_fbc` \| Meta \| [^|]+ \| 90 ", body);
-        Assert.Matches(@"\| `consent` \([^)]+\) \| Altinnendata \| (Nødvendig|Necessary)\. [^|]+ \| [^|]+(site data|nettstedsdata)[^|]*\|", body);
+        Assert.Matches(@"\| `consent` \([^)]+\) \| Altinnendata \| (Nødvendig|Necessary)\. [^|]+ \| (Til du velger på nytt eller sletter nettstedsdata\. Vi spør på nytt etter 12 måneder|Until you choose again or clear site data\. We ask again after 12 months) \|", body);
         Assert.Matches("`_fbp` (og|and) `_fbc`", body);
         Assert.DoesNotContain("ingen kapsler fra tredjeparter", body);
         Assert.DoesNotContain("do not use any third-party", body);
@@ -125,10 +125,10 @@ public class SeedDataTests : TestBase
     }
 
     [Theory]
-    [InlineData("no", "privacy", "tilfeldig samtykke-ID", "Vi lagrer ikke IP-adressen din eller opplysninger om nettleseren", "art. 7 nr. 1", "art. 6 nr. 1 bokstav c")]
-    [InlineData("no", "cookies", "tilfeldig samtykke-ID", "Vi lagrer ikke IP-adressen din eller opplysninger om nettleseren", "art. 7 nr. 1", "Loggen slettes etter 3 år")]
-    [InlineData("en", "privacy", "random consent ID", "We do not store your IP address or any browser data", "Art. 7(1)", "Art. 6(1)(c)")]
-    [InlineData("en", "cookies", "random consent ID", "We do not store your IP address or any browser data", "Art. 7(1)", "The log is deleted after 3 years")]
+    [InlineData("no", "privacy", "tilfeldig samtykke-ID", "Oppføringen i loggen inneholder ikke IP-adressen din eller opplysninger om nettleseren", "berettigede interesse i å kunne dokumentere samtykket, slik art. 7 nr. 1 krever (art. 6 nr. 1 bokstav f)", "dokumentere samtykker, slik art. 7 nr. 1 krever")]
+    [InlineData("no", "cookies", "tilfeldig samtykke-ID", "Oppføringen i loggen inneholder ikke IP-adressen din eller opplysninger om nettleseren", "berettigede interesse i å kunne dokumentere samtykket, slik personvernforordningen art. 7 nr. 1 krever (art. 6 nr. 1 bokstav f)", "Loggen slettes etter 3 år")]
+    [InlineData("en", "privacy", "random consent ID", "The log entry holds no IP address or browser data", "legitimate interest in being able to document consent, as Art. 7(1) requires (Art. 6(1)(f))", "document consent, as Art. 7(1) requires, so we keep a log")]
+    [InlineData("en", "cookies", "random consent ID", "The log entry holds no IP address or browser data", "legitimate interest in being able to document consent, as GDPR Art. 7(1) requires (Art. 6(1)(f))", "The log is deleted after 3 years")]
     public void LegalSeedText_DescribesTheConsentLog(string locale, string key, params string[] phrases)
     {
         var body = OneLine(LegalSeedText.All.Single(p => p.Key == key && p.Locale == locale).BodyMarkdown);
@@ -137,7 +137,7 @@ public class SeedDataTests : TestBase
         Assert.Matches(locale == "no" ? "bruker-ID-en ?(din)? bare hvis du er innlogget" : "user ID only when you are signed in", body);
         Assert.Matches(locale == "no" ? "på nytt etter 12 måneder" : "again after 12 months", body);
         Assert.Contains(locale == "no" ? "for å dokumentere samtykket" : "to document the consent", body);
-        Assert.DoesNotContain(locale == "no" ? "vise at du" : "show that you", body);
+        Assert.DoesNotContain(locale == "no" ? "bokstav c), fordi vi må kunne dokumentere" : "legal obligation (Art. 6(1)(c)), because", body);
     }
 
     [Theory]
@@ -153,7 +153,7 @@ public class SeedDataTests : TestBase
     [Theory]
     [InlineData("no", "ved hvert besøk", "ingen personopplysninger", "bare når noen logger inn.")]
     [InlineData("en", "on every visit", "hold no personal data", "set only when someone signs in.")]
-    public void LegalSeedText_NamesTheSignInCookiesAsProductionSetsThem(string locale, string everyVisit, string noData, string signInOnly)
+    public void LegalSeedText_NamesTheSignInCookiesWithTheirPrefixes(string locale, string everyVisit, string noData, string signInOnly)
     {
         var body = OneLine(LegalSeedText.All.Single(p => p.Key == "cookies" && p.Locale == locale).BodyMarkdown);
 

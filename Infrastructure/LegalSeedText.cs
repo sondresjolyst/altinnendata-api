@@ -175,11 +175,11 @@ Vi bruker ikke opplysningene til markedsføring uten samtykket ditt, og vi selge
   kjøpet. Kontoopplysninger og e-post om innlogging er nødvendige for å gi tilgang til
   administrasjonssidene.
 - **Rettslig plikt (art. 6 nr. 1 bokstav c):** salg må dokumenteres og oppbevares etter
-  bokføringsloven. Vi må også kunne dokumentere samtykker (art. 7 nr. 1), og derfor fører vi en
-  logg over samtykkene.
+  bokføringsloven.
 - **Berettiget interesse (art. 6 nr. 1 bokstav f):** henvendelser behandles for at vi skal kunne
   svare deg, og tjenerlogger oppbevares for sikkerhet og feilsøking. Interessen vår går ikke foran
-  rettighetene dine. Du kan protestere når som helst.
+  rettighetene dine. Du kan protestere når som helst. Vi har også en berettiget interesse i å kunne
+  dokumentere samtykker, slik art. 7 nr. 1 krever, og derfor fører vi en logg over samtykkene.
 - **Samtykke (art. 6 nr. 1 bokstav a og ekomloven § 3-15):** Meta Pixel lastes og setter
   informasjonskapsler bare etter at du har sagt ja til markedsføring.
 
@@ -228,9 +228,9 @@ gjelder fra da av og påvirker ikke behandlingen før det. Vi spør deg på nytt
 **Logg over samtykker:** hvert valg lagres på serveren vår for å dokumentere samtykket.
 Loggen inneholder en tilfeldig samtykke-ID, som også ligger i oppføringen `consent` i nettleseren din,
 om du sa ja eller nei til markedsføring, versjonen av teksten i banneret, tidspunktet, og bruker-ID-en
-din bare hvis du er innlogget. Vi lagrer ikke IP-adressen din eller opplysninger om nettleseren.
-Behandlingsgrunnlaget er rettslig plikt (art. 6 nr. 1 bokstav c), fordi vi må kunne dokumentere
-samtykket (art. 7 nr. 1).
+din bare hvis du er innlogget. Oppføringen i loggen inneholder ikke IP-adressen din eller
+opplysninger om nettleseren. Behandlingsgrunnlaget er vår berettigede interesse i å kunne dokumentere
+samtykket, slik art. 7 nr. 1 krever (art. 6 nr. 1 bokstav f).
 
 ## Deling av opplysninger
 
@@ -332,11 +332,11 @@ We do not use your data for advertising without your consent, and we do not sell
 - **Contract (Art. 6(1)(b)):** the data in an order is necessary to complete the purchase. Account
   data and sign-in emails are necessary to provide access to the admin pages.
 - **Legal obligation (Art. 6(1)(c)):** sales must be documented and kept under the Norwegian
-  Bookkeeping Act (bokføringsloven). We must also be able to document consent (Art. 7(1)),
-  so we keep a log of consent choices.
+  Bookkeeping Act (bokføringsloven).
 - **Legitimate interests (Art. 6(1)(f)):** enquiries are processed so we can respond to you, and
   server logs are retained for security monitoring and debugging. Our interest does not override your
-  rights. You can object at any time.
+  rights. You can object at any time. We also have a legitimate interest in being able to document
+  consent, as Art. 7(1) requires, so we keep a log of consent choices.
 - **Consent (Art. 6(1)(a) and section 3-15 of the Norwegian Electronic Communications Act):** the Meta
   Pixel loads and sets cookies only after you have accepted marketing.
 
@@ -386,9 +386,8 @@ affect processing before it. We ask you again after 12 months.
 **Consent log:** each choice is stored on our server to document the consent. The log
 holds a random consent ID, which is also kept in the `consent` record in your browser, whether you
 said yes or no to marketing, the version of the banner text, the time, and your user ID only when you
-are signed in. We do not store your IP address or any browser data. The legal basis is a legal
-obligation (Art. 6(1)(c)), because we must be able to document consent
-(Art. 7(1)).
+are signed in. The log entry holds no IP address or browser data. The legal basis is our legitimate
+interest in being able to document consent, as Art. 7(1) requires (Art. 6(1)(f)).
 
 ## Data sharing
 
@@ -477,10 +476,10 @@ samtykke-ID. Selve oppføringen sendes ikke til andre.
 
 Hvert valg lagres også på serveren vår for å dokumentere samtykket. Loggen inneholder den
 tilfeldige samtykke-ID-en fra `consent`, om du sa ja eller nei til markedsføring, versjonen av teksten i
-banneret, tidspunktet, og bruker-ID-en din bare hvis du er innlogget. Vi lagrer ikke IP-adressen din
-eller opplysninger om nettleseren. Loggen slettes etter 3 år. Behandlingsgrunnlaget er rettslig plikt
-(personvernforordningen art. 6 nr. 1 bokstav c), fordi vi må kunne dokumentere
-samtykket (art. 7 nr. 1).
+banneret, tidspunktet, og bruker-ID-en din bare hvis du er innlogget. Oppføringen i loggen inneholder
+ikke IP-adressen din eller opplysninger om nettleseren. Loggen slettes etter 3 år.
+Behandlingsgrunnlaget er vår berettigede interesse i å kunne dokumentere samtykket, slik
+personvernforordningen art. 7 nr. 1 krever (art. 6 nr. 1 bokstav f).
 
 ## Markedsføringskapsler (bare med samtykke)
 
@@ -558,10 +557,9 @@ itself is not sent to anyone else.
 
 Each choice is also stored on our server to document the consent. The log holds the
 random consent ID from `consent`, whether you said yes or no to marketing, the version of the banner
-text, the time, and your user ID only when you are signed in. We do not store your IP address or any
-browser data. The log is deleted after 3 years. The legal basis is a legal obligation (GDPR
-Art. 6(1)(c)), because we must be able to document consent
-(Art. 7(1)).
+text, the time, and your user ID only when you are signed in. The log entry holds no IP address or
+browser data. The log is deleted after 3 years. The legal basis is our legitimate interest in being
+able to document consent, as GDPR Art. 7(1) requires (Art. 6(1)(f)).
 
 ## Marketing cookies (only with consent)
 

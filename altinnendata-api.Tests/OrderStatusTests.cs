@@ -60,8 +60,9 @@ public class OrderStatusTests : TestBase
         Assert.Equal("stille-gaming-pc", ok.Value!.BuildSlug);
         var json = JsonSerializer.Serialize(ok.Value, JsonSerializerOptions.Web);
         Assert.Contains("\"buildSlug\":\"stille-gaming-pc\"", json);
-        Assert.DoesNotContain("42", json);
-        Assert.DoesNotContain("buildId", json, StringComparison.OrdinalIgnoreCase);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(["status", "reference", "buildTitle", "totalInOre", "deliveryMethod", "buildSlug"],
+            doc.RootElement.EnumerateObject().Select(p => p.Name));
     }
 
     [Theory]

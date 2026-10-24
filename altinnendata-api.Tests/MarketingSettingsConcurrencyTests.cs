@@ -9,7 +9,7 @@ using Xunit;
 
 namespace altinnendata_api.Tests;
 
-/// <summary>The marketing and shop settings share one row. A save of one must not undo a save of the other.</summary>
+/// <summary>The marketing and shop settings share one row. After two saves in turn, both settings keep their saved values.</summary>
 [Collection("postgres")]
 public class MarketingSettingsConcurrencyTests(PostgresDatabase postgres)
 {
@@ -51,7 +51,7 @@ public class MarketingSettingsConcurrencyTests(PostgresDatabase postgres)
     };
 
     [Fact]
-    public async Task AShopSave_BetweenTheLoadAndTheMarketingSave_IsKept()
+    public async Task BothSettingsKeepTheirValues_WhenTheShopSavesDuringAMarketingSave()
     {
         await using var seed = await postgres.NewContextAsync();
         await ShopSeed.EnsureAsync(seed, Ct);
@@ -73,7 +73,7 @@ public class MarketingSettingsConcurrencyTests(PostgresDatabase postgres)
     }
 
     [Fact]
-    public async Task AMarketingSave_BetweenTheLoadAndTheShopSave_IsKept()
+    public async Task BothSettingsKeepTheirValues_WhenTheMarketingSavesDuringAShopSave()
     {
         await using var seed = await postgres.NewContextAsync();
         await ShopSeed.EnsureAsync(seed, Ct);
