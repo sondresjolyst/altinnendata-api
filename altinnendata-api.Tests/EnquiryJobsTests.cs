@@ -112,14 +112,15 @@ public class EnquiryJobsTests(PostgresDatabase postgres)
         await using var db = await postgres.NewContextAsync();
         var enquiry = await AddUnsentAsync(db, 2, Now.AddHours(-1));
         var email = new Mock<IEmailSender>();
-        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>())).ReturnsAsync(new EmailResult(false, "refused"));
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>())).ReturnsAsync(new EmailResult(false, Error: "refused"));
         var log = new ListLogger<EnquiryJobsTests>();
 
         Assert.Equal(0, await EnquiryNoticeRetry.ResendMissingAsync(db, email.Object, Config(), Now, Ct, log));
 
-        var entry = Assert.Single(log.Entries);
-        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, entry.Level);
-        Assert.Equal($"The notice of enquiry {enquiry.Id} was not sent on retry 3", entry.Message);
+        Assert.All(log.Entries, e => Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, e.Level));
+        Assert.Equal(
+            [$"The notice of enquiry {enquiry.Id} was refused", $"The notice of enquiry {enquiry.Id} was not sent on retry 3"],
+            log.Entries.Select(e => e.Message));
     }
 
     [Fact]
