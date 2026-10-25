@@ -231,7 +231,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), ReceiptGate(), log, default);
 
-        Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("notice") && e.Message.Contains("blocked"));
+        Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("notice") && e.Message.Contains("refused"));
     }
 
     [Fact]
@@ -339,12 +339,12 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
 
     private static void AssertNoPersonalData(ListLogger<ContactRequest> log)
     {
-        foreach (var entry in log.Entries)
+        foreach (var text in log.Entries.Select(e => e.Message + e.Exception?.ToString()))
         {
-            Assert.DoesNotContain("Ola", entry.Message);
-            Assert.DoesNotContain("ola@kunde.no", entry.Message);
-            Assert.DoesNotContain("98765432", entry.Message);
-            Assert.DoesNotContain("Hemmelig", entry.Message);
+            Assert.DoesNotContain("Ola", text);
+            Assert.DoesNotContain("ola@kunde.no", text);
+            Assert.DoesNotContain("98765432", text);
+            Assert.DoesNotContain("Hemmelig", text);
         }
     }
 
@@ -368,7 +368,7 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
-    public async Task TrySendNotice_LogsTheError_WhenTheSendIsRefused()
+    public async Task TrySendNotice_LogsAWarning_WhenTheSendIsRefused()
     {
         await using var db = await postgres.NewContextAsync();
         var id = await SeedPersonalEnquiryAsync(db);
@@ -380,14 +380,14 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
 
         var entry = Assert.Single(log.Entries);
         Assert.Equal(LogLevel.Warning, entry.Level);
-        Assert.Equal($"The notice of enquiry {id} was refused: blocked", entry.Message);
+        Assert.Equal($"The notice of enquiry {id} was refused", entry.Message);
         AssertNoPersonalData(log);
     }
 
     [Fact]
     public async Task TrySendNotice_LogsARecordThatFailed_AndStillReportsTheNoticeSent()
     {
-        var db = await postgres.NewContextAsync();
+        await using var db = await postgres.NewContextAsync();
         var id = await SeedPersonalEnquiryAsync(db);
         var email = new Mock<IEmailSender>();
         // Disposing the context once the email is out makes recording it fail.

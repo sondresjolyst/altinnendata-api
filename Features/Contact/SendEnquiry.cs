@@ -201,7 +201,7 @@ namespace altinnendata_api.Features.Contact
                 var result = await email.SendAsync(BuildNotice(enquiry, settings, config), ct);
                 if (!result.Sent)
                 {
-                    log?.LogWarning("The notice of enquiry {EnquiryId} was refused: {Error}", enquiryId, result.Error);
+                    log?.LogWarning("The notice of enquiry {EnquiryId} was refused", enquiryId);
                     return false;
                 }
             }

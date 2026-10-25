@@ -119,7 +119,7 @@ public class EnquiryJobsTests(PostgresDatabase postgres)
 
         Assert.All(log.Entries, e => Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, e.Level));
         Assert.Equal(
-            [$"The notice of enquiry {enquiry.Id} was refused: refused", $"The notice of enquiry {enquiry.Id} was not sent on retry 3"],
+            [$"The notice of enquiry {enquiry.Id} was refused", $"The notice of enquiry {enquiry.Id} was not sent on retry 3"],
             log.Entries.Select(e => e.Message));
     }
 
