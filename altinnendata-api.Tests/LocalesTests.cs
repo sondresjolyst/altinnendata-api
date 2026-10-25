@@ -19,6 +19,10 @@ public class LocalesTests
     public void Normalize_MapsToSupportedLocale(string? input, string expected) =>
         Assert.Equal(expected, Locales.Normalize(input));
 
+    [Fact]
+    public void Default_IsTheFirstSupportedLocale_SoPagesFallBackToNorwegian() =>
+        Assert.Equal(Locales.Default, Locales.Supported[0]);
+
     [Theory]
     [InlineData("no", true)]
     [InlineData("en", true)]

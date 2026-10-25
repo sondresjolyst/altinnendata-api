@@ -191,6 +191,7 @@ public class VatThresholdTests : TestBase
         Assert.Equal("2026-03-10", status.CrossedOn);
         Assert.Equal("2026-03", status.CrossedMonth);
         Assert.Equal(new DateTime(2026, 3, 10, 12, 0, 0, DateTimeKind.Utc), status.CrossedAt);
+        Assert.Equal(DateTimeKind.Utc, status.CrossedAt?.Kind);
     }
 
     [Theory]
@@ -321,6 +322,20 @@ public class VatThresholdTests : TestBase
             [Sale("a", Utc(2026, 9, 10), 1_000_000, new VatThreshold.Refund(Utc(2026, 10, 20), 400_000))], NoOutside(), Now);
 
         Assert.Equal(1_000_000, status.TurnoverInOre);
+    }
+
+    [Theory]
+    [InlineData(3_999_999, false)]
+    [InlineData(4_000_000, true)]
+    [InlineData(4_000_001, true)]
+    public async Task Warning_AroundTheBoundary_IsTheSameFromComputeAndFromTheStoredOrders(int amountInOre, bool warning)
+    {
+        Assert.Equal(warning, VatThreshold.Compute([Sale("a", Now.AddDays(-1), amountInOre)], NoOutside(), Now).Warning);
+
+        await using var db = CreateDbContext();
+        db.Orders.Add(NewOrder(Now.AddDays(-1), amountInOre));
+        await db.SaveChangesAsync(Ct);
+        Assert.Equal(warning, (await VatThreshold.StatusAsync(db, Now, Ct)).Warning);
     }
 
     [Fact]
