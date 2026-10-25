@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.1...v1.14.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **contact:** log why an enquiry notice failed ([#150](https://github.com/sondresjolyst/altinnendata-api/issues/150)) ([3abd067](https://github.com/sondresjolyst/altinnendata-api/commit/3abd067acb2d423cdcff582ef3c58fd47409b9b0))
+
 ## [1.14.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.0...v1.14.1) (2026-10-25)
 
 
