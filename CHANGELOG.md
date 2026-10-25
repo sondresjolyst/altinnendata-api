@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.0...v1.14.1) (2026-10-25)
+
+
+### Dependencies
+
+* **nuget:** bump `Markdig` from 1.4.0 to 1.4.1 ([#146](https://github.com/sondresjolyst/altinnendata-api/issues/146)) ([cb0e933](https://github.com/sondresjolyst/altinnendata-api/commit/cb0e933be3817277d92647be189566fb6ec77ebc))
+* **nuget:** Bump the aspnetcore group with 8 updates ([#145](https://github.com/sondresjolyst/altinnendata-api/issues/145)) ([cb9155b](https://github.com/sondresjolyst/altinnendata-api/commit/cb9155b50206c373290e54ce943f560c5bf57a63))
+
 ## [1.14.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.13.0...v1.14.0) (2026-10-24)
 
 
