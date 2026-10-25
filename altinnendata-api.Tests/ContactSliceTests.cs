@@ -90,15 +90,22 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
     {
         await using var db = await postgres.NewContextAsync();
         await SetSettingsAsync(db, new AppSettings { ContactRecipientEmail = "shop@altinnendata.no" });
-        EmailMessage? sent = null;
-        var email = Sender(m => sent = m);
+        var messages = new List<EmailMessage>();
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<EmailMessage, CancellationToken>((m, _) => messages.Add(m))
+            .ReturnsAsync(new EmailResult(true));
+        var log = new ListLogger<ContactRequest>();
 
         var req = new ContactRequest("Ola Nordmann", "ola@kunde.no", "98765432", null, null, null, "Hemmelig melding");
-        await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), Log, default);
+        await SendEnquiry.Handle(req, db, email.Object, Config(), ReceiptGate(), log, default);
 
-        email.Verify(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        // Handle logs a notice that did not go out instead of throwing, so the log names the cause when it is missing.
+        var problems = log.Entries.Where(e => e.Level >= LogLevel.Warning).ToList();
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems.Select(e => $"{e.Level}: {e.Message} {e.Exception}")));
         var id = Assert.Single(db.Enquiries.AsNoTracking()).Id;
-        Assert.Equal("shop@altinnendata.no", sent!.To);
+        var sent = Assert.Single(messages, m => m.To == "shop@altinnendata.no");
+        Assert.Contains(messages, m => m.To == "ola@kunde.no");
         Assert.Equal("Ny henvendelse", sent.Subject);
         Assert.Null(sent.ReplyTo);
         Assert.Contains($"https://www.altinnendata.no/no/admin/enquiries/{id}", sent.HtmlBody);
