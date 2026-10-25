@@ -10,7 +10,8 @@ namespace altinnendata_api.Features.Shop
     /// Turnover over the 12 months up to today against the VAT registration threshold, with the months that period
     /// overlaps. <c>CrossedOn</c> is the first day, as yyyy-MM-dd, where the 12 months up to it passed the threshold, and
     /// <c>CrossedMonth</c> is its month as yyyy-MM. <c>CrossingOrderReference</c> names the shop sale that passed it, and
-    /// is empty when sales outside the shop did.
+    /// is empty when sales outside the shop did. <c>CrossedAt</c> is when that sale was made, the first of when it was sent
+    /// and when it was captured.
     /// </summary>
     public record VatThresholdDto(
         long TurnoverInOre,

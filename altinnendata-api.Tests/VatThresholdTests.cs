@@ -109,6 +109,96 @@ public class VatThresholdTests : TestBase
     }
 
     [Fact]
+    public async Task AnOrderSentBeforeItWasCaptured_CountsFromWhenItWasSent()
+    {
+        await using var db = CreateDbContext();
+        var order = NewOrder(Utc(2026, 10, 5), 300_000);
+        order.ShippedAt = Utc(2026, 9, 20);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        var status = await VatThreshold.StatusAsync(db, Now, Ct);
+
+        Assert.Equal(300_000, status.Months.Single(m => m.Month == "2026-09").ShopInOre);
+        Assert.Equal(0, status.Months.Single(m => m.Month == "2026-10").ShopInOre);
+    }
+
+    [Fact]
+    public async Task AnOrderCapturedBeforeItWasSent_CountsFromWhenItWasCaptured()
+    {
+        await using var db = CreateDbContext();
+        var order = NewOrder(Utc(2026, 9, 20), 300_000);
+        order.ShippedAt = Utc(2026, 10, 5);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        var status = await VatThreshold.StatusAsync(db, Now, Ct);
+
+        Assert.Equal(300_000, status.Months.Single(m => m.Month == "2026-09").ShopInOre);
+        Assert.Equal(0, status.Months.Single(m => m.Month == "2026-10").ShopInOre);
+    }
+
+    [Fact]
+    public async Task AnOrderSentButNotCaptured_DoesNotCount()
+    {
+        await using var db = CreateDbContext();
+        var order = NewOrder(Utc(2026, 10, 5), 0, status: OrderStatus.Reserved);
+        order.CapturedAt = null;
+        order.ShippedAt = Utc(2026, 10, 1);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        Assert.Equal(0, (await VatThreshold.StatusAsync(db, Now, Ct)).TurnoverInOre);
+    }
+
+    [Theory]
+    [InlineData(null, null, "2026-08-01")]
+    [InlineData(null, "2026-09-10", "2026-09-10")]
+    [InlineData("2026-09-05", null, "2026-09-05")]
+    [InlineData("2026-09-05", "2026-09-10", "2026-09-05")]
+    [InlineData("2026-09-15", "2026-09-10", "2026-09-10")]
+    public void ASale_IsDatedByTheFirstOfSentAndCaptured_ElseByWhenItWasCreated(string? shipped, string? captured, string expected)
+    {
+        static DateTime? At(string? day) => day == null ? null : DateTime.SpecifyKind(DateTime.Parse(day, System.Globalization.CultureInfo.InvariantCulture), DateTimeKind.Utc);
+
+        Assert.Equal(At(expected), VatThreshold.SaleDate(At(shipped), At(captured), At("2026-08-01")!.Value));
+    }
+
+    [Fact]
+    public async Task ASaleSentBeforeItWasCaptured_MovesTheCrossingToTheDayItWasSent()
+    {
+        await using var db = CreateDbContext();
+        var first = NewOrder(Utc(2026, 9, 1), 4_000_000);
+        var crossing = NewOrder(Utc(2026, 9, 20), 1_100_000);
+        crossing.ShippedAt = Utc(2026, 9, 10);
+        db.Orders.AddRange(first, crossing);
+        await db.SaveChangesAsync(Ct);
+
+        var status = await VatThreshold.StatusAsync(db, Now, Ct);
+
+        Assert.Equal("2026-09-10", status.CrossedOn);
+        Assert.Equal(crossing.Reference, status.CrossingOrderReference);
+        Assert.Equal(Utc(2026, 9, 10), status.CrossedAt);
+    }
+
+    [Theory]
+    [InlineData(21, "2026-09")]
+    [InlineData(22, "2026-10")]
+    public async Task TheDayASaleWasSent_FollowsNorwegianTime(int shippedHourUtc, string month)
+    {
+        // 22:30 UTC on 30 September is 00:30 on 1 October in Oslo, 21:30 UTC is still 30 September.
+        await using var db = CreateDbContext();
+        var order = NewOrder(Utc(2026, 10, 5), 300_000);
+        order.ShippedAt = new DateTime(2026, 9, 30, shippedHourUtc, 30, 0, DateTimeKind.Utc);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        var status = await VatThreshold.StatusAsync(db, Now, Ct);
+
+        Assert.Equal(300_000, status.Months.Single(m => m.Month == month).ShopInOre);
+    }
+
+    [Fact]
     public void Months_AreTheMonthsTheWindowEndingTodayOverlaps_OldestFirst()
     {
         // The window ending 19 October 2026 starts 20 October 2025, so it overlaps 13 months.

@@ -12,8 +12,10 @@ namespace altinnendata_api.Features.Shop
     /// Tracks turnover against the 50 000 kr VAT registration threshold (merverdiavgiftsloven § 2-1). Registration is
     /// required once turnover over 12 months passes the threshold, and VAT is owed from the sale that passes it.
     /// Turnover is what the shop captured less what it refunded, test orders left out, plus the sales outside the shop
-    /// the admin enters per month. The rule itself, with every 12 month window and the sale that passed the threshold,
-    /// comes from SjolystInnovation.AppKit.VatThreshold. Days are counted in Norwegian time.
+    /// the admin enters per month. A sale counts from when it was made. Merverdiavgiftshåndboken 2-1.3 says the time of
+    /// delivery decides this, not invoicing, so a sale is dated by when it was sent or captured, whichever came first,
+    /// and by when the order was created when it has neither. The rule itself, with every 12 month window and the sale
+    /// that passed the threshold, comes from SjolystInnovation.AppKit.VatThreshold. Days are counted in Norwegian time.
     /// </summary>
     public static class VatThreshold
     {
@@ -25,7 +27,7 @@ namespace altinnendata_api.Features.Shop
         /// <summary>The admin is warned from 40 000 kr, 80 % of the threshold.</summary>
         public const long WarnFromInOre = ThresholdInOre * WarnFromPercent / 100;
 
-        /// <summary>One shop sale: what was captured and when, and the refunds of it.</summary>
+        /// <summary>One shop sale: what was captured, when the sale was made, and the refunds of it.</summary>
         public sealed record Sale(string Reference, DateTime At, int AmountInOre, IReadOnlyList<Refund>? Refunds = null);
 
         /// <summary>One refund of a shop sale and when it was made.</summary>
@@ -39,11 +41,21 @@ namespace altinnendata_api.Features.Shop
 
         private static DateOnly FirstOfMonth(DateOnly day) => new(day.Year, day.Month, 1);
 
+        /// <summary>When a sale was made: the first of when it was sent and when it was captured, else when it was created.</summary>
+        public static DateTime SaleDate(DateTime? shippedAt, DateTime? capturedAt, DateTime createdAt) =>
+            (shippedAt, capturedAt) switch
+            {
+                ({ } shipped, { } captured) => shipped < captured ? shipped : captured,
+                ({ } shipped, null) => shipped,
+                (null, { } captured) => captured,
+                _ => createdAt,
+            };
+
         public static async Task<VatThresholdDto> StatusAsync(ApplicationDbContext db, DateTime now, CancellationToken ct)
         {
             var orders = await db.Orders.AsNoTracking()
                 .Where(o => !o.IsTest && o.CapturedInOre > 0)
-                .Select(o => new { o.Id, o.Reference, o.CapturedAt, o.CreatedAt, o.CapturedInOre })
+                .Select(o => new { o.Id, o.Reference, o.ShippedAt, o.CapturedAt, o.CreatedAt, o.CapturedInOre })
                 .ToListAsync(ct);
             var ids = orders.Select(o => o.Id).ToList();
             var refunds = (await db.OrderRefunds.AsNoTracking()
@@ -52,7 +64,7 @@ namespace altinnendata_api.Features.Shop
                     .ToListAsync(ct))
                 .ToLookup(r => r.OrderId, r => new Refund(r.RefundedAt, r.AmountInOre));
             var sales = orders
-                .Select(o => new Sale(o.Reference, o.CapturedAt ?? o.CreatedAt, o.CapturedInOre, refunds[o.Id].ToList()))
+                .Select(o => new Sale(o.Reference, SaleDate(o.ShippedAt, o.CapturedAt, o.CreatedAt), o.CapturedInOre, refunds[o.Id].ToList()))
                 .ToList();
             var outside = await db.OutsideSalesMonths.AsNoTracking()
                 .ToDictionaryAsync(m => m.Month, m => (long)m.AmountInOre, ct);
