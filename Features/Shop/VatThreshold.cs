@@ -12,10 +12,15 @@ namespace altinnendata_api.Features.Shop
     /// Tracks turnover against the 50 000 kr VAT registration threshold (merverdiavgiftsloven § 2-1). Registration is
     /// required once turnover over 12 months passes the threshold, and VAT is owed from the sale that passes it.
     /// Turnover is what the shop captured less what it refunded, test orders left out, plus the sales outside the shop
-    /// the admin enters per month. A sale counts from when it was made. Merverdiavgiftshåndboken 2-1.3 says the time of
-    /// delivery decides this, not invoicing, so a sale is dated by when it was sent or captured, whichever came first,
-    /// and by when the order was created when it has neither. The rule itself, with every 12 month window and the sale
-    /// that passed the threshold, comes from SjolystInnovation.AppKit.VatThreshold. Days are counted in Norwegian time.
+    /// the admin enters per month. The rule itself, with every 12 month window and the sale that passed the threshold,
+    /// comes from SjolystInnovation.AppKit.VatThreshold. Days are counted in Norwegian time.
+    /// <para>
+    /// A sale counts from when it was delivered, not when it was invoiced. Merverdiavgiftshåndboken 2-1.3, citing
+    /// SKNS1-2023-30: "Det avgjørende må være tidspunktet for leveringen av den aktuelle varen/tjenesten." Delivery is
+    /// <c>ShippedAt</c>, when the admin marked the order as sent or ready for pickup and the goods were placed at the
+    /// buyer's disposal. A sale is dated by the earlier of that and the capture, so it is never dated later than its
+    /// delivery, and by when the order was created when it has neither.
+    /// </para>
     /// </summary>
     public static class VatThreshold
     {

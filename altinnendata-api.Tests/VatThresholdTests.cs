@@ -161,7 +161,10 @@ public class VatThresholdTests : TestBase
     {
         static DateTime? At(string? day) => day == null ? null : DateTime.SpecifyKind(DateTime.Parse(day, System.Globalization.CultureInfo.InvariantCulture), DateTimeKind.Utc);
 
-        Assert.Equal(At(expected), VatThreshold.SaleDate(At(shipped), At(captured), At("2026-08-01")!.Value));
+        var date = VatThreshold.SaleDate(At(shipped), At(captured), At("2026-08-01")!.Value);
+
+        Assert.Equal(At(expected), date);
+        Assert.Equal(DateTimeKind.Utc, date.Kind);
     }
 
     [Fact]
@@ -645,5 +648,22 @@ public class VatThresholdPostgresTests(PostgresDatabase postgres)
         Assert.Equal(5_100_000, ok.Value!.TurnoverInOre);
         Assert.Equal("2026-10", ok.Value.CrossedMonth);
         Assert.Equal("ae-000001-vatpg", ok.Value.CrossingOrderReference);
+
+        // A sale sent in September and captured after the first one counts from September, so it passes the threshold first.
+        var shippedAt = new DateTime(2026, 9, 25, 12, 0, 0, DateTimeKind.Utc);
+        db.Orders.Add(new Order
+        {
+            Reference = "ae-000002-vatpg", VippsReference = "ae-000002-vatpg", PublicToken = Guid.NewGuid().ToString("N"), Status = OrderStatus.Paid, Locale = "no",
+            BuyerName = "Kari", BuyerEmail = "kari@example.com", BuyerPhone = "4791234568", DeliveryLabel = "Henting",
+            BuildTitle = "PC", BuildSlug = "pc", TotalInOre = 5_100_000, CapturedInOre = 5_100_000, RefundedInOre = 0,
+            ShippedAt = shippedAt, CapturedAt = now.AddDays(-1),
+        });
+        await db.SaveChangesAsync(ct);
+
+        var status = await VatThreshold.StatusAsync(db, now, ct);
+
+        Assert.Equal("2026-09", status.CrossedMonth);
+        Assert.Equal("ae-000002-vatpg", status.CrossingOrderReference);
+        Assert.Equal(shippedAt, status.CrossedAt);
     }
 }
