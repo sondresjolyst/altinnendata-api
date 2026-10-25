@@ -31,7 +31,7 @@ namespace altinnendata_api.Features.Contact
                 if (!due) continue;
                 try
                 {
-                    if (await SendEnquiry.TrySendNoticeAsync(db, email, config, e.Id, now, ct)) sent++;
+                    if (await SendEnquiry.TrySendNoticeAsync(db, email, config, e.Id, now, ct, log)) sent++;
                     else log?.LogWarning("The notice of enquiry {EnquiryId} was not sent on retry {Attempt}", e.Id, e.NoticeAttempts + 1);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)

@@ -225,13 +225,13 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         await using var db = await postgres.NewContextAsync();
         var email = new Mock<IEmailSender>();
         email.SetupSequence(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EmailResult(false))
+            .ReturnsAsync(new EmailResult(false, Error: "blocked"))
             .ReturnsAsync(new EmailResult(true));
         var log = new ListLogger<ContactRequest>();
 
         await SendEnquiry.Handle(new ContactRequest("Kari", "kari@kunde.no", null, null, null, null, "Hei"), db, email.Object, Config(), ReceiptGate(), log, default);
 
-        Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("notice"));
+        Assert.Contains(log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("notice") && e.Message.Contains("blocked"));
     }
 
     [Fact]
@@ -326,6 +326,83 @@ public class ContactSliceTests(PostgresDatabase postgres) : TestBase
         var saved = await db.Enquiries.AsNoTracking().SingleAsync();
         Assert.Equal(2, saved.NoticeAttempts);
         Assert.NotNull(saved.NoticeSentAt);
+    }
+
+    private static Task<int> SeedPersonalEnquiryAsync(ApplicationDbContext db) =>
+        SeedEnquiryAsync(db, e =>
+        {
+            e.Name = "Ola Nordmann";
+            e.Email = "ola@kunde.no";
+            e.Phone = "98765432";
+            e.Message = "Hemmelig melding";
+        });
+
+    private static void AssertNoPersonalData(ListLogger<ContactRequest> log)
+    {
+        foreach (var entry in log.Entries)
+        {
+            Assert.DoesNotContain("Ola", entry.Message);
+            Assert.DoesNotContain("ola@kunde.no", entry.Message);
+            Assert.DoesNotContain("98765432", entry.Message);
+            Assert.DoesNotContain("Hemmelig", entry.Message);
+        }
+    }
+
+    [Fact]
+    public async Task TrySendNotice_LogsTheCause_WhenTheSendThrows()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var id = await SeedPersonalEnquiryAsync(db);
+        var email = new Mock<IEmailSender>();
+        var cause = new ArgumentException("The recipient address is empty");
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>())).ThrowsAsync(cause);
+        var log = new ListLogger<ContactRequest>();
+
+        Assert.False(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, DateTime.UtcNow, TestContext.Current.CancellationToken, log));
+
+        var entry = Assert.Single(log.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Equal($"The notice of enquiry {id} could not be sent", entry.Message);
+        Assert.Same(cause, entry.Exception);
+        AssertNoPersonalData(log);
+    }
+
+    [Fact]
+    public async Task TrySendNotice_LogsTheError_WhenTheSendIsRefused()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var id = await SeedPersonalEnquiryAsync(db);
+        var email = new Mock<IEmailSender>();
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>())).ReturnsAsync(new EmailResult(false, Error: "blocked"));
+        var log = new ListLogger<ContactRequest>();
+
+        Assert.False(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, DateTime.UtcNow, TestContext.Current.CancellationToken, log));
+
+        var entry = Assert.Single(log.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Equal($"The notice of enquiry {id} was refused: blocked", entry.Message);
+        AssertNoPersonalData(log);
+    }
+
+    [Fact]
+    public async Task TrySendNotice_LogsARecordThatFailed_AndStillReportsTheNoticeSent()
+    {
+        var db = await postgres.NewContextAsync();
+        var id = await SeedPersonalEnquiryAsync(db);
+        var email = new Mock<IEmailSender>();
+        // Disposing the context once the email is out makes recording it fail.
+        email.Setup(e => e.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .Callback(() => db.Dispose())
+            .ReturnsAsync(new EmailResult(true));
+        var log = new ListLogger<ContactRequest>();
+
+        Assert.True(await SendEnquiry.TrySendNoticeAsync(db, email.Object, Config(), id, DateTime.UtcNow, TestContext.Current.CancellationToken, log));
+
+        var entry = Assert.Single(log.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Equal($"The notice of enquiry {id} was sent but not recorded", entry.Message);
+        Assert.NotNull(entry.Exception);
+        AssertNoPersonalData(log);
     }
 
     [Fact]

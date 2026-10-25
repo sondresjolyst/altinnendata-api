@@ -125,7 +125,7 @@ namespace altinnendata_api.Features.Contact
 
             try
             {
-                if (!await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct))
+                if (!await TrySendNoticeAsync(db, email, config, enquiry.Id, now, ct, log))
                     log.LogWarning("The notice of enquiry {EnquiryId} was not sent. The retry job will try again", enquiry.Id);
             }
             catch (Exception ex)
@@ -172,10 +172,12 @@ namespace altinnendata_api.Features.Contact
         /// Sends the notice of enquiry <paramref name="enquiryId"/> if it is still unsent and no attempt was claimed
         /// within <see cref="NoticeLease"/>. The attempt is claimed on the row first, so two instances or a retry
         /// never send the same try twice. Returns true when the email was
-        /// accepted. A failed or throwing send gives false. A database error or cancellation reaches the caller, who logs it. Logs nothing itself.
+        /// accepted. A failed or throwing send gives false and is logged to <paramref name="log"/> with its cause. A
+        /// database error while claiming the attempt, or a cancellation, reaches the caller, who logs it.
         /// </summary>
         public static async Task<bool> TrySendNoticeAsync(
-            ApplicationDbContext db, IEmailSender email, IConfiguration config, int enquiryId, DateTime now, CancellationToken ct)
+            ApplicationDbContext db, IEmailSender email, IConfiguration config, int enquiryId, DateTime now, CancellationToken ct,
+            ILogger? log = null)
         {
             var leaseEnded = now - NoticeLease;
             var seen = await db.Enquiries.AsNoTracking()
@@ -196,22 +198,29 @@ namespace altinnendata_api.Features.Contact
             {
                 var enquiry = await db.Enquiries.AsNoTracking().FirstAsync(e => e.Id == enquiryId, ct);
                 var settings = await db.AppSettings.AsNoTracking().FirstOrDefaultAsync(a => a.Id == 1, ct) ?? new AppSettings();
-                if (!(await email.SendAsync(BuildNotice(enquiry, settings, config), ct)).Sent) return false;
+                var result = await email.SendAsync(BuildNotice(enquiry, settings, config), ct);
+                if (!result.Sent)
+                {
+                    log?.LogWarning("The notice of enquiry {EnquiryId} was refused: {Error}", enquiryId, result.Error);
+                    return false;
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
+                log?.LogWarning(ex, "The notice of enquiry {EnquiryId} could not be sent", enquiryId);
                 return false;
             }
 
-            // The email is out, so a failed record of it must not fail the caller. It is swallowed here because this
-            // method has no logger and its signature is fixed, and the retry job would resend the notice.
+            // The email is out, so a failed record of it must not fail the caller. It is logged and swallowed here,
+            // and the retry job would resend the notice.
             try
             {
                 await db.Enquiries.Where(e => e.Id == enquiryId)
                     .ExecuteUpdateAsync(s => s.SetProperty(e => e.NoticeSentAt, now), CancellationToken.None);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log?.LogWarning(ex, "The notice of enquiry {EnquiryId} was sent but not recorded", enquiryId);
                 return true;
             }
             return true;
