@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.2...v1.14.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* **shop:** date a sale for the VAT threshold by delivery or capture, whichever is first ([#153](https://github.com/sondresjolyst/altinnendata-api/issues/153)) ([b41d4ff](https://github.com/sondresjolyst/altinnendata-api/commit/b41d4fff499e6dd299084cb9b14d5e6950e31ece))
+
 ## [1.14.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.1...v1.14.2) (2026-10-25)
 
 
