@@ -49,7 +49,7 @@ public class ShopTermsTests : TestBase
     [InlineData("nn")]
     [InlineData("no")]
     [InlineData(null)]
-    public async Task FindAsync_FallsBackToTheNorwegianPage_WhenTheLocaleHasNone(string? asked)
+    public async Task FindAsync_ReturnsTheNorwegianPage_WhenThereIsNoEnglishPage(string? asked)
     {
         await using var db = await DbWith(Page("terms", "no", new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc).AddTicks(1234560)));
 
