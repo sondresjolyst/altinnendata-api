@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.3...v1.14.4) (2026-11-06)
+
+
+### Dependencies
+
+* **nuget:** update SjolystInnovation.AppKit.Vipps from 1.3.1 to 1.4.0 ([415c594](https://github.com/sondresjolyst/altinnendata-api/commit/415c594c6e660fe65743dee8886bc33f7c8bb0b9))
+
 ## [1.14.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.2...v1.14.3) (2026-10-25)
 
 
