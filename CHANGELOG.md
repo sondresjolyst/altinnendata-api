@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.14.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.3...v1.14.4) (2026-11-08)
+
+
+### Dependencies
+
+* **docker:** update mcr.microsoft.com/dotnet/aspnet to 1a48394 ([41bd61a](https://github.com/sondresjolyst/altinnendata-api/commit/41bd61ae443152963df4f941837e93e9667778c0))
+* **docker:** update mcr.microsoft.com/dotnet/sdk to 212fe4c ([41bd61a](https://github.com/sondresjolyst/altinnendata-api/commit/41bd61ae443152963df4f941837e93e9667778c0))
+* **nuget:** update Markdig from 1.4.1 to 1.5.1 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.AspNetCore.DataProtection.EntityFrameworkCore from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.AspNetCore.Identity.EntityFrameworkCore from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.AspNetCore.Mvc.Testing from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.AspNetCore.OpenApi from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.EntityFrameworkCore from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.EntityFrameworkCore.Design from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.EntityFrameworkCore.InMemory from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Microsoft.EntityFrameworkCore.Tools from 10.0.13 to 10.0.14 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update SjolystInnovation.AppKit.Vipps from 1.3.1 to 1.4.0 ([415c594](https://github.com/sondresjolyst/altinnendata-api/commit/415c594c6e660fe65743dee8886bc33f7c8bb0b9))
+* **nuget:** update Swashbuckle.AspNetCore from 10.3.0 to 10.3.1 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+* **nuget:** update Swashbuckle.AspNetCore.Annotations from 10.3.0 to 10.3.1 ([dfa1428](https://github.com/sondresjolyst/altinnendata-api/commit/dfa14280ad8f2b6d6a6170afae87838e2c37f0dd))
+
 ## [1.14.3](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.2...v1.14.3) (2026-10-25)
 
 
