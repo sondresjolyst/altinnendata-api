@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.4...v1.15.0) (2026-11-11)
+
+
+### Features
+
+* raise content image upload limit to 10 MB ([#167](https://github.com/sondresjolyst/altinnendata-api/issues/167)) ([ee633f8](https://github.com/sondresjolyst/altinnendata-api/commit/ee633f8ba7f9a723f79cb556be2451b9023000a1))
+
 ## [1.14.4](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.3...v1.14.4) (2026-11-08)
 
 
