@@ -28,7 +28,8 @@ public class CheckoutMarketingTests(PostgresDatabase postgres) : TestBase
         .Build();
 
     private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Test/1.0";
-    private const string PageUrl = "https://www.altinnendata.no/no/shop/checkout/gaming-pc?utm_source=tiktok";
+    private const string PageUrl = "https://www.altinnendata.no/no/shop/checkout/gaming-pc?utm_source=tiktok&ttclid=abc#top";
+    private const string StoredPageUrl = "https://www.altinnendata.no/no/shop/checkout/gaming-pc";
     private static readonly Guid ConsentId = Guid.Parse("3f2a6c1e-0b7d-4e8a-9c55-1d2e3f4a5b6c");
 
     private static CheckoutMarketing Marketing(string? consentId = null, string? fbp = "fb.1.1558571054389.1098115397",
@@ -134,7 +135,7 @@ public class CheckoutMarketingTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(ttclid, order.Ttclid);
         Assert.Equal("203.0.113.7", order.ClientIp);
         Assert.Equal(UserAgent, order.ClientUserAgent);
-        Assert.Equal(PageUrl, order.EventSourceUrl);
+        Assert.Equal(StoredPageUrl, order.EventSourceUrl);
         Assert.InRange(order.MarketingEventsDueBy!.Value, DateTime.UtcNow.AddDays(7).AddMinutes(-1), DateTime.UtcNow.AddDays(7));
         Assert.Equal(0, order.MetaEventAttempts);
         Assert.Null(order.MetaEventSentAt);
@@ -168,6 +169,7 @@ public class CheckoutMarketingTests(PostgresDatabase postgres) : TestBase
         { "page on http", Marketing(pageUrl: "http://www.altinnendata.no/no/shop") },
         { "relative page", Marketing(pageUrl: "/no/shop") },
         { "page with user info", Marketing(pageUrl: "https://user@www.altinnendata.no/no/shop") },
+        { "page on another port", Marketing(pageUrl: "https://www.altinnendata.no:8443/no/shop") },
         { "page too long", Marketing(pageUrl: "https://www.altinnendata.no/" + new string('a', 2048)) },
         { "fbp too long", Marketing(fbp: new string('f', 257)) },
         { "fbc too long", Marketing(fbc: new string('f', 257)) },

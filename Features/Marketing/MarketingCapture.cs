@@ -156,7 +156,7 @@ namespace altinnendata_api.Features.Marketing
             return true;
         }
 
-        /// <summary>An optional page URL: empty is absent, otherwise an absolute https URL on the site's own host.</summary>
+        /// <summary>An optional page URL: empty is absent, otherwise an absolute https URL on the site's own host and default port.</summary>
         private static bool TryPageUrl(string? value, IConfiguration config, out string? url)
         {
             url = null;
@@ -169,7 +169,8 @@ namespace altinnendata_api.Features.Marketing
                 || !Uri.TryCreate(SiteLinks.BaseUrl(config), UriKind.Absolute, out var site)
                 || !string.Equals(uri.Host, site.Host, StringComparison.OrdinalIgnoreCase))
                 return false;
-            url = uri.AbsoluteUri;
+            // Only the page, without its query or fragment, which can carry click ids and other personal data.
+            url = uri.GetLeftPart(UriPartial.Path);
             return true;
         }
     }
