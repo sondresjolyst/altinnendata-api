@@ -109,35 +109,43 @@ namespace altinnendata_api.Features.Marketing
             return true;
         }
 
+        /// <summary>The address ranges that are never a buyer's own public address.</summary>
+        private static readonly IPNetwork[] NotPublic =
+        [
+            // IPv4: this network, private, shared, loopback, link-local, IETF protocol assignments, benchmarking,
+            // multicast and reserved (with broadcast).
+            IPNetwork.Parse("0.0.0.0/8"),
+            IPNetwork.Parse("10.0.0.0/8"),
+            IPNetwork.Parse("100.64.0.0/10"),
+            IPNetwork.Parse("127.0.0.0/8"),
+            IPNetwork.Parse("169.254.0.0/16"),
+            IPNetwork.Parse("172.16.0.0/12"),
+            IPNetwork.Parse("192.0.0.0/24"),
+            IPNetwork.Parse("192.168.0.0/16"),
+            IPNetwork.Parse("198.18.0.0/15"),
+            IPNetwork.Parse("224.0.0.0/4"),
+            IPNetwork.Parse("240.0.0.0/4"),
+            // IPv6: unspecified and loopback, NAT64, 6to4, unique local, link-local, site-local and multicast.
+            IPNetwork.Parse("::/127"),
+            IPNetwork.Parse("64:ff9b::/96"),
+            IPNetwork.Parse("2002::/16"),
+            IPNetwork.Parse("fc00::/7"),
+            IPNetwork.Parse("fe80::/10"),
+            IPNetwork.Parse("fec0::/10"),
+            IPNetwork.Parse("ff00::/8"),
+        ];
+
         /// <summary>
         /// The caller's address when it is a public one. Behind the ingress the forwarded headers middleware sets the
-        /// client's own address. A private or loopback address means it did not, so it is not the buyer's.
+        /// client's own address. A private, loopback, multicast or reserved address means it did not, so it is not the
+        /// buyer's.
         /// </summary>
         public static string? PublicIp(IPAddress? address)
         {
             if (address == null) return null;
             if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
-            if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any)) return null;
-
-            if (address.AddressFamily == AddressFamily.InterNetwork)
-            {
-                var b = address.GetAddressBytes();
-                var isPrivate = b[0] == 10
-                    || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
-                    || (b[0] == 192 && b[1] == 168)
-                    || (b[0] == 169 && b[1] == 254)
-                    || (b[0] == 100 && b[1] >= 64 && b[1] <= 127)
-                    || b[0] == 0;
-                return isPrivate ? null : address.ToString();
-            }
-
-            if (address.AddressFamily == AddressFamily.InterNetworkV6)
-            {
-                if (address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6UniqueLocal) return null;
-                return address.ToString();
-            }
-
-            return null;
+            if (address.AddressFamily is not (AddressFamily.InterNetwork or AddressFamily.InterNetworkV6)) return null;
+            return NotPublic.Any(n => n.Contains(address)) ? null : address.ToString();
         }
 
         private static string? UserAgent(HttpContext http)
