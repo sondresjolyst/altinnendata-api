@@ -177,6 +177,22 @@ public class MarketingSettingsTests : TestBase
     }
 
     [Theory]
+    [InlineData("BRU69P41M9ALI4R4B2QG\n")]
+    [InlineData(" BRU69P41M9ALI4R4B2QG ")]
+    [InlineData("　BRU69P41M9ALI4R4B2QG　")]
+    [InlineData(" 　BRU69P41M9ALI4R4B2QG　 ")]
+    public async Task Update_TrimsSurroundingWhitespace_FromTheTikTokId(string padded)
+    {
+        Assert.True(new UpdateMarketingSettingsValidator().Validate(Dto(null, padded)).IsValid);
+        await using var db = await SeededDb();
+
+        var ok = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.Update(Dto(null, padded), db, Ct));
+
+        Assert.Equal(TikTokId, ok.Value!.TikTokPixelId);
+        Assert.Equal(TikTokId, (await db.ShopSettings.AsNoTracking().SingleAsync(Ct)).TikTokPixelId);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("  ")]
