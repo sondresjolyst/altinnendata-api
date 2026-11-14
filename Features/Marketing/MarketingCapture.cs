@@ -22,7 +22,8 @@ namespace altinnendata_api.Features.Marketing
 
     /// <summary>
     /// Copies the marketing ids of a checkout onto its order, only when the consent log shows the buyer allowed
-    /// marketing. Anything invalid drops all of it, and the checkout goes on without it.
+    /// marketing. Invalid string values drop all of it, and the checkout goes on without it. A value of the wrong
+    /// JSON type fails the binding of the whole checkout request instead.
     /// </summary>
     public static class MarketingCapture
     {
