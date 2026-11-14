@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.17.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.16.0...v1.17.0) (2026-11-14)
+
+
+### Features
+
+* **marketing:** send Purchase to the Meta Conversions API and TikTok Events API ([#174](https://github.com/sondresjolyst/altinnendata-api/issues/174)) ([b6f51c1](https://github.com/sondresjolyst/altinnendata-api/commit/b6f51c1b9122cff17e669c2280bea39d846c7e10))
+* **shop:** return the build price in the order status ([#172](https://github.com/sondresjolyst/altinnendata-api/issues/172)) ([a7c5f87](https://github.com/sondresjolyst/altinnendata-api/commit/a7c5f877606bf68f6451d433660cdce8acc17a86))
+
 ## [1.16.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.15.0...v1.16.0) (2026-11-14)
 
 
