@@ -11,10 +11,11 @@ namespace altinnendata_api.Features.Marketing
     /// Sends the server-side Purchase event of each reserved or paid order whose buyer consented to marketing, to Meta
     /// and to TikTok, each on its own. A platform without its pixel ID or token is skipped and tried again on a later
     /// run. No event is sent later than <see cref="MarketingCapture.SendDeadline"/> after the reservation, inside the
-    /// platforms' deduplication window, nor after <see cref="Order.MarketingEventsDueBy"/>. Each try is claimed on the order first, so two instances
-    /// never send the same try. The consent log is read again before each send, and a withdrawn consent clears the
-    /// stored ids. Once both platforms are done, or either deadline has passed, the ids, IP address, user agent and page
-    /// are cleared.
+    /// platforms' deduplication window, nor after <see cref="Order.MarketingEventsDueBy"/>. Each try is claimed on the
+    /// order first, so two instances never send the same try. Each run reads the consent log again for every order
+    /// that can still send, and once more right before each call. A withdrawn or expired consent clears the stored
+    /// ids. Once both platforms are done, or either deadline has passed, the ids, IP address, user agent and page are
+    /// cleared.
     /// </summary>
     public class OrderMarketingEvents(
         ApplicationDbContext db,
@@ -39,6 +40,8 @@ namespace altinnendata_api.Features.Marketing
             var metaReady = !string.IsNullOrEmpty(settings?.MetaPixelId) && !string.IsNullOrEmpty(settings.MetaCapiToken);
             var tikTokReady = !string.IsNullOrEmpty(settings?.TikTokPixelId) && !string.IsNullOrEmpty(settings.TikTokEventsToken);
 
+            await WithdrawRevokedAsync(now, ct);
+
             var reservedAfter = now - MarketingCapture.SendDeadline;
             var ids = await db.Orders.AsNoTracking()
                 .Where(o => (o.Status == OrderStatus.Reserved || o.Status == OrderStatus.Paid)
@@ -61,14 +64,6 @@ namespace altinnendata_api.Features.Marketing
                 var sendMeta = metaReady && IsDue(order.MetaEventSentAt, order.MetaEventAttempts, order.MetaEventAttemptedAt, now);
                 var sendTikTok = tikTokReady && IsDue(order.TikTokEventSentAt, order.TikTokEventAttempts, order.TikTokEventAttemptedAt, now);
                 if (!sendMeta && !sendTikTok) continue;
-
-                var consent = await MarketingCapture.LatestAsync(db, order.MarketingConsentId!, ct);
-                if (consent is not { Marketing: true })
-                {
-                    await WithdrawAsync(id, ct);
-                    log.LogInformation("Marketing: the consent of order {OrderId} no longer allows marketing, no Purchase event is sent", id);
-                    continue;
-                }
 
                 if (sendMeta && await TrySendAsync(MarketingPlatform.Meta, order, settings!, now, ct)) accepted++;
                 if (sendTikTok && await TrySendAsync(MarketingPlatform.TikTok, order, settings!, now, ct)) accepted++;
@@ -96,6 +91,9 @@ namespace altinnendata_api.Features.Marketing
                     .ExecuteUpdateAsync(s => s.SetProperty(o => o.TikTokEventAttempts, seen + 1).SetProperty(o => o.TikTokEventAttemptedAt, now), ct);
             if (claimed == 0) return false;
             var attempt = seen + 1;
+
+            // The buyer can withdraw the consent at any time, so it is read again right before the call.
+            if (!await ConsentHoldsAsync(order.Id, order.MarketingConsentId!, now, ct)) return false;
 
             PlatformResult result;
             try
@@ -131,6 +129,33 @@ namespace altinnendata_api.Features.Marketing
                     .ExecuteUpdateAsync(s => s.SetProperty(o => o.TikTokEventSentAt, sent), CancellationToken.None);
             log.LogInformation("Marketing: {Platform} accepted the Purchase event of order {OrderId} on try {Attempt}", platform, order.Id, attempt);
             return true;
+        }
+
+        /// <summary>The most orders one run checks for a withdrawn consent.</summary>
+        public const int ConsentBatchSize = 500;
+
+        /// <summary>
+        /// Reads the consent log for every order that can still send, due or not, and clears the ids of each order
+        /// whose consent no longer allows marketing or is older than <see cref="MarketingCapture.ConsentMaxAge"/>.
+        /// </summary>
+        private async Task WithdrawRevokedAsync(DateTime now, CancellationToken ct)
+        {
+            var open = await db.Orders.AsNoTracking()
+                .Where(o => o.MarketingConsentId != null && o.MarketingEventsDueBy != null)
+                .OrderBy(o => o.Id)
+                .Select(o => new { o.Id, o.MarketingConsentId })
+                .Take(ConsentBatchSize)
+                .ToListAsync(ct);
+            foreach (var o in open) await ConsentHoldsAsync(o.Id, o.MarketingConsentId!, now, ct);
+        }
+
+        /// <summary>True when consent <paramref name="consentId"/> of order <paramref name="orderId"/> still allows marketing. Otherwise clears the order's ids.</summary>
+        private async Task<bool> ConsentHoldsAsync(int orderId, string consentId, DateTime now, CancellationToken ct)
+        {
+            if (await MarketingCapture.ValidConsentAsync(db, consentId, now, ct) != null) return true;
+            await WithdrawAsync(orderId, ct);
+            log.LogInformation("Marketing: the consent of order {OrderId} no longer allows marketing, no Purchase event is sent", orderId);
+            return false;
         }
 
         /// <summary>Clears the stored ids and the send window of an order whose consent was withdrawn, so nothing is sent.</summary>

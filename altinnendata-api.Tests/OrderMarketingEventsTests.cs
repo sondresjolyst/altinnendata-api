@@ -132,10 +132,11 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         await db.SaveChangesAsync(Ct);
     }
 
-    private static async Task<int> SeedAsync(ApplicationDbContext db, Action<Order>? edit = null, bool meta = true, bool tikTok = true)
+    private static async Task<int> SeedAsync(ApplicationDbContext db, Action<Order>? edit = null, bool meta = true, bool tikTok = true,
+        DateTime? consentAt = null)
     {
         await SettingsAsync(db, meta, tikTok);
-        await ConsentAsync(db, true, AuthorizedAt.AddDays(-3));
+        await ConsentAsync(db, true, consentAt ?? AuthorizedAt.AddDays(-3));
         var order = new Order
         {
             Reference = Reference,
@@ -501,6 +502,74 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         await ConsentAsync(db, true, AuthorizedAt.AddMinutes(40));
         Assert.Equal(0, await RunAsync(services, Now.AddHours(1)));
         Assert.Empty(_fake.Requests);
+    }
+
+    [Fact]
+    public async Task AConsentThatExpiresBeforeTheSend_SendsNothing_AndClearsTheIds()
+    {
+        await using var db = await postgres.NewContextAsync();
+        // Valid at checkout, 365 days old and one minute by the time of the run.
+        await SeedAsync(db, consentAt: Now.AddDays(-365).AddMinutes(-1));
+        await using var services = Services(db);
+
+        Assert.Equal(0, await RunAsync(services, Now));
+
+        Assert.Empty(_fake.Requests);
+        var o = await ReadAsync(db);
+        AssertPersonalColumnsCleared(o);
+        Assert.Null(o.MarketingEventsDueBy);
+    }
+
+    [Fact]
+    public async Task AWithdrawal_WhileNoPlatformIsDue_ClearsTheIdsAtOnce()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        await using var services = Services(db);
+        _fake.Meta = () => FakePlatforms.Json(HttpStatusCode.InternalServerError, "oops");
+        _fake.TikTok = () => FakePlatforms.Json(HttpStatusCode.InternalServerError, "oops");
+        await RunAsync(services, Now);
+        Assert.Equal(2, _fake.Requests.Count);
+
+        await ConsentAsync(db, false, Now.AddMinutes(1));
+        await RunAsync(services, Now.AddMinutes(2));
+
+        Assert.Equal(2, _fake.Requests.Count);
+        var o = await ReadAsync(db);
+        AssertPersonalColumnsCleared(o);
+        Assert.Null(o.MarketingEventsDueBy);
+        Assert.Equal(1, o.MetaEventAttempts);
+        Assert.Equal(ConsentId, o.MarketingConsentId);
+    }
+
+    [Fact]
+    public async Task AWithdrawal_AfterTheMetaSend_StopsTheTikTokSend()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        await using var services = Services(db);
+        _fake.Meta = () =>
+        {
+            // The buyer withdraws while the Meta call is in flight.
+            using var other = postgres.NewContextOn(db);
+            other.Set<ConsentRecord>().Add(new ConsentRecord
+            {
+                ConsentId = Guid.Parse(ConsentId), Marketing = false, NoticeVersion = "2026-10-24", SchemaVersion = 1,
+                DecidedAt = Now.AddMinutes(-1), Source = ConsentSources.Settings
+            });
+            other.SaveChanges();
+            return FakePlatforms.Json(HttpStatusCode.OK, """{"events_received":1}""");
+        };
+
+        Assert.Equal(1, await RunAsync(services, Now));
+
+        Assert.Single(_fake.To("meta.test"));
+        Assert.Empty(_fake.To("tiktok.test"));
+        var o = await ReadAsync(db);
+        Assert.NotNull(o.MetaEventSentAt);
+        Assert.Null(o.TikTokEventSentAt);
+        AssertPersonalColumnsCleared(o);
+        Assert.Null(o.MarketingEventsDueBy);
     }
 
     [Fact]
