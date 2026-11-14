@@ -11,6 +11,9 @@ namespace altinnendata_api.Models.Shop
 
         /// <summary>The Meta Pixel ID, 5 to 20 digits. Null while the Pixel is off.</summary>
         public string? MetaPixelId { get; set; }
+
+        /// <summary>The TikTok Pixel ID, 10 to 32 capital letters and digits. Null while the Pixel is off.</summary>
+        public string? TikTokPixelId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }

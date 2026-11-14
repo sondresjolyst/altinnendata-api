@@ -72,6 +72,10 @@ namespace altinnendata_api.Models
                 .Property(s => s.MetaPixelId)
                 .HasMaxLength(20);
 
+            modelBuilder.Entity<ShopSettings>()
+                .Property(s => s.TikTokPixelId)
+                .HasMaxLength(32);
+
             modelBuilder.Entity<DeliveryOption>()
                 .Property(o => o.Method)
                 .HasConversion<string>()
