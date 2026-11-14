@@ -10,9 +10,10 @@ namespace altinnendata_api.Features.Marketing
     /// <summary>
     /// Sends the server-side Purchase event of each reserved or paid order whose buyer consented to marketing, to Meta
     /// and to TikTok, each on its own. A platform without its pixel ID or token is skipped and tried again on a later
-    /// run, until <see cref="Order.MarketingEventsDueBy"/>. Each try is claimed on the order first, so two instances
+    /// run. No event is sent later than <see cref="MarketingCapture.SendDeadline"/> after the reservation, inside the
+    /// platforms' deduplication window, nor after <see cref="Order.MarketingEventsDueBy"/>. Each try is claimed on the order first, so two instances
     /// never send the same try. The consent log is read again before each send, and a withdrawn consent clears the
-    /// stored ids. Once both platforms are done, or the window has passed, the ids, IP address, user agent and page
+    /// stored ids. Once both platforms are done, or either deadline has passed, the ids, IP address, user agent and page
     /// are cleared.
     /// </summary>
     public class OrderMarketingEvents(
@@ -38,14 +39,14 @@ namespace altinnendata_api.Features.Marketing
             var metaReady = !string.IsNullOrEmpty(settings?.MetaPixelId) && !string.IsNullOrEmpty(settings.MetaCapiToken);
             var tikTokReady = !string.IsNullOrEmpty(settings?.TikTokPixelId) && !string.IsNullOrEmpty(settings.TikTokEventsToken);
 
-            var oldestEvent = now - MarketingCapture.SendWindow;
+            var reservedAfter = now - MarketingCapture.SendDeadline;
             var ids = await db.Orders.AsNoTracking()
                 .Where(o => (o.Status == OrderStatus.Reserved || o.Status == OrderStatus.Paid)
                     && !o.IsTest
                     && o.AnonymisedAt == null
                     && o.MarketingConsentId != null
                     && o.MarketingEventsDueBy > now
-                    && o.AuthorizedAt > oldestEvent
+                    && o.AuthorizedAt > reservedAfter
                     && ((o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts)
                         || (o.TikTokEventSentAt == null && o.TikTokEventAttempts < MaxAttempts)))
                 .OrderBy(o => o.Id)
@@ -85,7 +86,9 @@ namespace altinnendata_api.Features.Marketing
         private async Task<bool> TrySendAsync(MarketingPlatform platform, Order order, ShopSettings settings, DateTime now, CancellationToken ct)
         {
             var seen = platform == MarketingPlatform.Meta ? order.MetaEventAttempts : order.TikTokEventAttempts;
-            var claim = db.Orders.Where(o => o.Id == order.Id && o.AnonymisedAt == null && o.MarketingConsentId != null && o.MarketingEventsDueBy > now);
+            var reservedAfter = now - MarketingCapture.SendDeadline;
+            var claim = db.Orders.Where(o => o.Id == order.Id && o.AnonymisedAt == null && o.MarketingConsentId != null
+                && o.MarketingEventsDueBy > now && o.AuthorizedAt > reservedAfter);
             var claimed = platform == MarketingPlatform.Meta
                 ? await claim.Where(o => o.MetaEventSentAt == null && o.MetaEventAttempts == seen)
                     .ExecuteUpdateAsync(s => s.SetProperty(o => o.MetaEventAttempts, seen + 1).SetProperty(o => o.MetaEventAttemptedAt, now), ct)
@@ -144,14 +147,18 @@ namespace altinnendata_api.Features.Marketing
                     .SetProperty(o => o.MarketingEventsDueBy, (DateTime?)null), ct);
 
         /// <summary>
-        /// Clears the ids, IP address, user agent and page of every order whose send window has passed, or whose events
-        /// are sent or out of tries on both platforms. The consent id, notice version and sent times stay as the record.
+        /// Clears the ids, IP address, user agent and page of every order whose send window has passed, whose send
+        /// deadline after the reservation has passed, or whose events are sent or out of tries on both platforms.
+        /// The consent id, notice version and sent times stay as the record.
         /// </summary>
-        public Task<int> CleanUpAsync(DateTime now, CancellationToken ct) =>
-            db.Orders
+        public Task<int> CleanUpAsync(DateTime now, CancellationToken ct)
+        {
+            var reservedAfter = now - MarketingCapture.SendDeadline;
+            return db.Orders
                 .Where(o => (o.Fbp != null || o.Fbc != null || o.Ttp != null || o.Ttclid != null
                         || o.ClientIp != null || o.ClientUserAgent != null || o.EventSourceUrl != null)
                     && (o.MarketingEventsDueBy == null || o.MarketingEventsDueBy <= now
+                        || o.AuthorizedAt <= reservedAfter
                         || ((o.MetaEventSentAt != null || o.MetaEventAttempts >= MaxAttempts)
                             && (o.TikTokEventSentAt != null || o.TikTokEventAttempts >= MaxAttempts))))
                 .ExecuteUpdateAsync(s => s
@@ -162,6 +169,7 @@ namespace altinnendata_api.Features.Marketing
                     .SetProperty(o => o.ClientIp, (string?)null)
                     .SetProperty(o => o.ClientUserAgent, (string?)null)
                     .SetProperty(o => o.EventSourceUrl, (string?)null), ct);
+        }
 
         private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }

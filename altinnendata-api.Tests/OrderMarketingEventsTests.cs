@@ -520,6 +520,67 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(ConsentId, o.MarketingConsentId);
     }
 
+    [Fact]
+    public async Task AReservation48HoursOld_IsNotSent_AndItsIdsAreClearedAtOnce()
+    {
+        await using var db = await postgres.NewContextAsync();
+        // Still inside the 7-day window after checkout, but past the platforms' 48-hour deduplication window.
+        await SeedAsync(db, o => o.AuthorizedAt = Now.AddHours(-48));
+        await using var services = Services(db);
+
+        Assert.Equal(0, await RunAsync(services, Now));
+
+        Assert.Empty(_fake.Requests);
+        var o = await ReadAsync(db);
+        Assert.True(o.MarketingEventsDueBy > Now);
+        Assert.Equal(0, o.MetaEventAttempts);
+        Assert.Equal(0, o.TikTokEventAttempts);
+        Assert.Null(o.MetaEventSentAt);
+        Assert.Null(o.TikTokEventSentAt);
+        AssertPersonalColumnsCleared(o);
+        Assert.Equal(ConsentId, o.MarketingConsentId);
+    }
+
+    [Fact]
+    public async Task AReservation46HoursOld_IsStillSent()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db, o => o.AuthorizedAt = Now.AddHours(-46));
+        await using var services = Services(db);
+
+        Assert.Equal(2, await RunAsync(services, Now));
+    }
+
+    [Fact]
+    public async Task AllTries_FitInsideTheSendDeadline()
+    {
+        var waits = Enumerable.Range(1, OrderMarketingEvents.MaxAttempts - 1).Select(OrderMarketingEvents.Backoff).ToList();
+        Assert.Equal([5, 10, 20, 40, 80], waits.Select(w => w.TotalMinutes));
+        Assert.True(waits.Aggregate(TimeSpan.Zero, (a, b) => a + b) < MarketingCapture.SendDeadline);
+        Assert.Equal(TimeSpan.FromHours(47), MarketingCapture.SendDeadline);
+
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        await using var services = Services(db);
+        _fake.Meta = () => FakePlatforms.Json(HttpStatusCode.InternalServerError, "oops");
+        _fake.TikTok = () => FakePlatforms.Json(HttpStatusCode.InternalServerError, "oops");
+
+        // Each run at the earliest moment the next try is due.
+        var at = AuthorizedAt;
+        for (var attempt = 1; attempt <= OrderMarketingEvents.MaxAttempts; attempt++)
+        {
+            await RunAsync(services, at);
+            at += OrderMarketingEvents.Backoff(attempt);
+        }
+
+        Assert.Equal(OrderMarketingEvents.MaxAttempts * 2, _fake.Requests.Count);
+        var o = await ReadAsync(db);
+        Assert.Equal(OrderMarketingEvents.MaxAttempts, o.MetaEventAttempts);
+        Assert.Equal(OrderMarketingEvents.MaxAttempts, o.TikTokEventAttempts);
+        Assert.True(o.MetaEventAttemptedAt < AuthorizedAt + MarketingCapture.SendDeadline);
+        Assert.True(o.TikTokEventAttemptedAt < AuthorizedAt + MarketingCapture.SendDeadline);
+    }
+
     [Theory]
     [InlineData(OrderStatus.Pending)]
     [InlineData(OrderStatus.Failed)]

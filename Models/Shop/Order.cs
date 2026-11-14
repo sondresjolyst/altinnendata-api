@@ -141,7 +141,10 @@ namespace altinnendata_api.Models.Shop
         /// <summary>The site page the checkout started from. Cleared once the events are done.</summary>
         public string? EventSourceUrl { get; set; }
 
-        /// <summary>The last moment a Purchase event may be sent. Meta refuses events older than 7 days.</summary>
+        /// <summary>
+        /// When the stored ids are cleared at the latest, 7 days after checkout. A Purchase event is also never sent
+        /// later than 47 hours after <see cref="AuthorizedAt"/>, inside the platforms' 48-hour deduplication window.
+        /// </summary>
         public DateTime? MarketingEventsDueBy { get; set; }
 
         /// <summary>When the Purchase event was accepted by Meta, and how many times and when last it was tried.</summary>

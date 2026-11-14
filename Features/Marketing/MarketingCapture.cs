@@ -35,8 +35,14 @@ namespace altinnendata_api.Features.Marketing
         /// <summary>How long a marketing consent counts, the same as the consent banner's max age.</summary>
         public static readonly TimeSpan ConsentMaxAge = TimeSpan.FromDays(365);
 
-        /// <summary>How long after checkout the Purchase events may be sent. Meta refuses events older than 7 days.</summary>
+        /// <summary>How long after checkout the stored ids are kept at most. Meta refuses events older than 7 days.</summary>
         public static readonly TimeSpan SendWindow = TimeSpan.FromDays(7);
+
+        /// <summary>
+        /// How long after the reservation a Purchase event may be sent. Both platforms deduplicate the browser and
+        /// server events only within 48 hours, so a later server event would count the purchase twice.
+        /// </summary>
+        public static readonly TimeSpan SendDeadline = TimeSpan.FromHours(47);
 
         /// <summary>The accepted ids, or null when any of them is invalid.</summary>
         public static CheckoutMarketing? Accept(CheckoutMarketing? input, IConfiguration config)
