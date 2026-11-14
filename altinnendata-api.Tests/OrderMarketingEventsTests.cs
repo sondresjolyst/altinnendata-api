@@ -609,8 +609,12 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
             using var other = postgres.NewContextOn(db);
             other.Set<ConsentRecord>().Add(new ConsentRecord
             {
-                ConsentId = Guid.Parse(ConsentId), Marketing = false, NoticeVersion = "2026-10-24", SchemaVersion = 1,
-                DecidedAt = Now.AddMinutes(-1), Source = ConsentSources.Settings
+                ConsentId = Guid.Parse(ConsentId),
+                Marketing = false,
+                NoticeVersion = "2026-10-24",
+                SchemaVersion = 1,
+                DecidedAt = Now.AddMinutes(-1),
+                Source = ConsentSources.Settings
             });
             other.SaveChanges();
             return FakePlatforms.Json(HttpStatusCode.OK, """{"events_received":1}""");
@@ -836,12 +840,20 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
             var reference = $"AID-{100 + i:D6}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
             var order = new Order
             {
-                Reference = reference, VippsReference = reference,
+                Reference = reference,
+                VippsReference = reference,
                 PublicToken = Guid.NewGuid().ToString("N"),
-                Status = OrderStatus.Reserved, Locale = "no",
-                BuyerName = "Kari", BuyerEmail = "kari@example.no", BuyerPhone = "4798765432",
-                DeliveryLabel = "Henting", BuildTitle = "PC", BuildSlug = "pc",
-                AuthorizedAt = AuthorizedAt, MarketingConsentId = ConsentId, ClientUserAgent = UserAgent,
+                Status = OrderStatus.Reserved,
+                Locale = "no",
+                BuyerName = "Kari",
+                BuyerEmail = "kari@example.no",
+                BuyerPhone = "4798765432",
+                DeliveryLabel = "Henting",
+                BuildTitle = "PC",
+                BuildSlug = "pc",
+                AuthorizedAt = AuthorizedAt,
+                MarketingConsentId = ConsentId,
+                ClientUserAgent = UserAgent,
                 MarketingEventsDueBy = AuthorizedAt.AddDays(7),
             };
             edit(order);
@@ -963,12 +975,20 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
 
     private static Order DueOrder() => new()
     {
-        Reference = Reference, VippsReference = Reference,
+        Reference = Reference,
+        VippsReference = Reference,
         PublicToken = Guid.NewGuid().ToString("N"),
-        Status = OrderStatus.Reserved, Locale = "no",
-        BuyerName = "Ola", BuyerEmail = Email, BuyerPhone = "4791234567",
-        DeliveryLabel = "Henting", BuildTitle = "PC", BuildSlug = "pc",
-        AuthorizedAt = AuthorizedAt, MarketingConsentId = ConsentId, ClientUserAgent = UserAgent,
+        Status = OrderStatus.Reserved,
+        Locale = "no",
+        BuyerName = "Ola",
+        BuyerEmail = Email,
+        BuyerPhone = "4791234567",
+        DeliveryLabel = "Henting",
+        BuildTitle = "PC",
+        BuildSlug = "pc",
+        AuthorizedAt = AuthorizedAt,
+        MarketingConsentId = ConsentId,
+        ClientUserAgent = UserAgent,
         MarketingEventsDueBy = AuthorizedAt.AddDays(7),
     };
 
