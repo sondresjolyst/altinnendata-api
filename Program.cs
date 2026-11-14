@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.OpenApi;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Admin;
+using altinnendata_api.Features.Marketing;
 using altinnendata_api.Features.Shop;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
@@ -62,6 +63,7 @@ namespace altinnendata_api
             builder.Services.AddScoped<OrderConfirmation>();
             builder.Services.AddScoped<OrderConfirmationRetry>();
             builder.Services.AddHostedService<OrderConfirmationRetryService>();
+            builder.Services.AddOrderMarketingEvents(builder.Configuration);
             builder.Services.TryAddSingleton(TimeProvider.System);
             builder.Services.AddAppKitEmailReceiptGate(altinnendata_api.Features.Contact.SendEnquiry.ReceiptLimits);
             builder.Services.AddHostedService<OrderRetentionService>();

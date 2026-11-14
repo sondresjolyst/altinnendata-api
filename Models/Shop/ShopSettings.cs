@@ -14,6 +14,12 @@ namespace altinnendata_api.Models.Shop
 
         /// <summary>The TikTok Pixel ID, 10 to 32 capital letters and digits. Null while the Pixel is off.</summary>
         public string? TikTokPixelId { get; set; }
+
+        /// <summary>The access token for the Meta Conversions API. Write-only: no endpoint returns it.</summary>
+        public string? MetaCapiToken { get; set; }
+
+        /// <summary>The access token for the TikTok Events API. Write-only: no endpoint returns it.</summary>
+        public string? TikTokEventsToken { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }

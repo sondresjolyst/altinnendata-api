@@ -121,6 +121,39 @@ namespace altinnendata_api.Models.Shop
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        /// <summary>
+        /// The browser's consent id and the notice version of the consent log entry that allowed marketing at checkout.
+        /// Null when the buyer did not consent. Kept after the events are sent, as the record of the consent.
+        /// </summary>
+        public string? MarketingConsentId { get; set; }
+        public string? MarketingNoticeVersion { get; set; }
+
+        /// <summary>The Meta and TikTok browser and click ids from checkout. Cleared once the Purchase events are done.</summary>
+        public string? Fbp { get; set; }
+        public string? Fbc { get; set; }
+        public string? Ttp { get; set; }
+        public string? Ttclid { get; set; }
+
+        /// <summary>The buyer's IP address and user agent at checkout, for the Purchase events. Cleared once the events are done.</summary>
+        public string? ClientIp { get; set; }
+        public string? ClientUserAgent { get; set; }
+
+        /// <summary>The site page the checkout started from. Cleared once the events are done.</summary>
+        public string? EventSourceUrl { get; set; }
+
+        /// <summary>The last moment a Purchase event may be sent. Meta refuses events older than 7 days.</summary>
+        public DateTime? MarketingEventsDueBy { get; set; }
+
+        /// <summary>When the Purchase event was accepted by Meta, and how many times and when last it was tried.</summary>
+        public DateTime? MetaEventSentAt { get; set; }
+        public int MetaEventAttempts { get; set; }
+        public DateTime? MetaEventAttemptedAt { get; set; }
+
+        /// <summary>When the Purchase event was accepted by TikTok, and how many times and when last it was tried.</summary>
+        public DateTime? TikTokEventSentAt { get; set; }
+        public int TikTokEventAttempts { get; set; }
+        public DateTime? TikTokEventAttemptedAt { get; set; }
+
         /// <summary>When the buyer's name, email, phone and address were removed, five years after the financial year of the sale.</summary>
         public DateTime? AnonymisedAt { get; set; }
 

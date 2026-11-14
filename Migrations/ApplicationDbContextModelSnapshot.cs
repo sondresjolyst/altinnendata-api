@@ -1194,6 +1194,14 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("ClientIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<string>("ClientUserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<DateTime?>("ConfirmationAttemptedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1219,6 +1227,18 @@ namespace altinnendata_api.Migrations
                     b.Property<int>("DeliveryPriceInOre")
                         .HasColumnType("integer");
 
+                    b.Property<string>("EventSourceUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("Fbc")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Fbp")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<string>("InvoiceNumber")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -1230,6 +1250,26 @@ namespace altinnendata_api.Migrations
                         .IsRequired()
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
+
+                    b.Property<string>("MarketingConsentId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("MarketingEventsDueBy")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MarketingNoticeVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("MetaEventAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MetaEventAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("MetaEventSentAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("PaymentLinkExpiresAt")
                         .HasColumnType("timestamp with time zone");
@@ -1319,8 +1359,25 @@ namespace altinnendata_api.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
+                    b.Property<DateTime?>("TikTokEventAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TikTokEventAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TikTokEventSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("TotalInOre")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Ttclid")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Ttp")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1456,9 +1513,17 @@ namespace altinnendata_api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("MetaCapiToken")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<string>("MetaPixelId")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TikTokEventsToken")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<string>("TikTokPixelId")
                         .HasMaxLength(32)

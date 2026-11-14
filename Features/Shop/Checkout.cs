@@ -5,6 +5,7 @@ using SjolystInnovation.AppKit.Hosting;
 using SjolystInnovation.AppKit.Vipps;
 using altinnendata_api.Constants;
 using altinnendata_api.Features.Builds;
+using altinnendata_api.Features.Marketing;
 using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Shop;
@@ -60,6 +61,8 @@ namespace altinnendata_api.Features.Shop
             order.TermsTitle = terms?.Title;
             order.TermsMarkdown = terms?.BodyMarkdown;
             order.TermsLocale = terms?.Locale;
+            // Only with a marketing consent in the consent log. Invalid ids are dropped and the checkout goes on.
+            await MarketingCapture.ApplyAsync(order, req.Marketing, http, db, config, DateTime.UtcNow, ct);
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             // A second checkout of the same build waits on this hold's row lock, so bound the wait.
