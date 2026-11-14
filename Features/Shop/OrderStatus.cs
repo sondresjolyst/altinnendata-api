@@ -5,8 +5,11 @@ using altinnendata_api.Models;
 
 namespace altinnendata_api.Features.Shop
 {
-    /// <summary>What the return page may show about an order. No buyer data. <c>BuildSlug</c> names the build that was bought.</summary>
-    public record OrderStatusDto(string Status, string Reference, string BuildTitle, int TotalInOre, string DeliveryMethod, string BuildSlug);
+    /// <summary>
+    /// What the return page may show about an order. No buyer data. <c>BuildSlug</c> names the build that was bought.
+    /// <c>BuildPriceInOre</c> is the build's price as stored on the order at checkout, without delivery. Null means unknown.
+    /// </summary>
+    public record OrderStatusDto(string Status, string Reference, string BuildTitle, int TotalInOre, string DeliveryMethod, string BuildSlug, int? BuildPriceInOre);
 
     /// <summary>Public order status, found by the buyer's secret token.</summary>
     public static partial class OrderStatusEndpoint
@@ -21,7 +24,7 @@ namespace altinnendata_api.Features.Shop
             var order = await db.Orders
                 .AsNoTracking()
                 .Where(o => o.PublicToken == token)
-                .Select(o => new OrderStatusDto(o.Status.ToString(), o.Reference, o.BuildTitle, o.TotalInOre, o.DeliveryMethod.ToString(), o.BuildSlug))
+                .Select(o => new OrderStatusDto(o.Status.ToString(), o.Reference, o.BuildTitle, o.TotalInOre, o.DeliveryMethod.ToString(), o.BuildSlug, (int?)o.BuildPriceInOre))
                 .FirstOrDefaultAsync(ct);
 
             return order == null ? TypedResults.NotFound() : TypedResults.Ok(order);
