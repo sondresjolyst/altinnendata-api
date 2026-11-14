@@ -1001,6 +1001,24 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task TheService_LogsATimeout_WhenItIsNotStopping_AndStopsQuietlyWhenItIs()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddProvider(_logs));
+        services.AddSingleton(TimeProvider.System);
+        services.AddScoped<OrderMarketingEvents>(_ => throw new TaskCanceledException("timed out"));
+        await using var provider = services.BuildServiceProvider();
+        var service = ActivatorUtilities.CreateInstance<OrderMarketingEventsService>(provider);
+
+        await service.RunOnceAsync(CancellationToken.None);
+        Assert.Contains(_logs.Lines, l => l.Message.Contains("the Purchase event run failed with TaskCanceledException"));
+
+        using var stopping = new CancellationTokenSource();
+        await stopping.CancelAsync();
+        await Assert.ThrowsAsync<TaskCanceledException>(() => service.RunOnceAsync(stopping.Token));
+    }
+
+    [Fact]
     public void TheService_IsRegistered_WithClientsThatLogNothing()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();

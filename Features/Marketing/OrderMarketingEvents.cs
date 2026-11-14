@@ -254,7 +254,7 @@ namespace altinnendata_api.Features.Marketing
                 using var scope = scopes.CreateScope();
                 await scope.ServiceProvider.GetRequiredService<OrderMarketingEvents>().RunAsync(time.GetUtcNow().UtcDateTime, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 log.LogError("Marketing: the Purchase event run failed with {Error}, it is tried again in {Minutes} minutes",
                     ex.GetType().Name, Interval.TotalMinutes);
