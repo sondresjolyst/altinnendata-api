@@ -386,9 +386,9 @@ public class MarketingSettingsTests : TestBase
     [InlineData("abcdefghij012345678")]
     [InlineData("   ")]
     [InlineData("abcdefghij 0123456789")]
-    [InlineData("abcdefghij	0123456789")]
+    [InlineData("abcdefghij\t0123456789")]
     [InlineData("abcdefghijæ0123456789")]
-    [InlineData("abcdefghij 0123456789")]
+    [InlineData("abcdefghij\00123456789")]
     public void Validator_RefusesAnInvalidToken_UnderItsField_WithoutEchoingIt(string token)
     {
         var result = new UpdateMarketingSettingsValidator().Validate(new UpdateMarketingSettingsDto { MetaCapiToken = token, TikTokEventsToken = token });
