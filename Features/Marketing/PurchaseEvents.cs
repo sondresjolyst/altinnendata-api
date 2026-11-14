@@ -45,6 +45,17 @@ namespace altinnendata_api.Features.Marketing
             return c.Length == 0 ? null : c;
         }
 
+        /// <summary>
+        /// The city for TikTok, which asks for it without special characters: lowercase, with æ, ø and å folded to
+        /// ae, o and a, and only the ASCII letters and digits kept. Null when nothing is left.
+        /// </summary>
+        public static string? NormalizeTikTokCity(string? city)
+        {
+            var folded = (city ?? "").ToLowerInvariant().Replace("æ", "ae").Replace("ø", "o").Replace("å", "a");
+            var c = new string(folded.Where(char.IsAsciiLetterOrDigit).ToArray());
+            return c.Length == 0 ? null : c;
+        }
+
         /// <summary>Øre as kroner.</summary>
         public static decimal Kroner(int ore) => ore / 100m;
 
@@ -114,7 +125,7 @@ namespace altinnendata_api.Features.Marketing
             AddIf(user, "email", Hashed(NormalizeEmail(order.BuyerEmail)));
             AddIf(user, "phone", Hashed(phone == null ? null : "+" + phone));
             AddIf(user, "zip_code", Hashed(NormalizeZip(order.PostalCode)));
-            AddIf(user, "city", Plain(NormalizeCity(order.City)));
+            AddIf(user, "city", Plain(NormalizeTikTokCity(order.City)));
             user["country"] = Country;
             AddIf(user, "ip", Plain(order.ClientIp));
             AddIf(user, "user_agent", Plain(order.ClientUserAgent));

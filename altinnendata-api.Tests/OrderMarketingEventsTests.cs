@@ -242,6 +242,34 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(expected, PurchaseEvents.NormalizeCity(raw));
     }
 
+    [Theory]
+    [InlineData("Ålesund", "alesund")]
+    [InlineData("Tromsø", "tromso")]
+    [InlineData("Bærum", "baerum")]
+    [InlineData("St. Hanshaugen", "sthanshaugen")]
+    [InlineData("Čačak", "aak")]
+    [InlineData("ÆØÅ", "aeoa")]
+    [InlineData("  ", null)]
+    public void NormalizeTikTokCity_FoldsNorwegianLetters_AndKeepsOnlyAscii(string raw, string? expected)
+    {
+        Assert.Equal(expected, PurchaseEvents.NormalizeTikTokCity(raw));
+    }
+
+    [Fact]
+    public async Task ACityWithNorwegianLetters_IsFoldedForTikTok_AndKeptAsUtf8ForMeta()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db, o => o.City = "Ålesund");
+        await using var services = Services(db);
+
+        await RunAsync(services, Now);
+
+        var meta = JsonNode.Parse(Assert.Single(_fake.To("meta.test")).Body)!;
+        Assert.Equal(PurchaseEvents.Sha256("ålesund"), (string?)meta["data"]![0]!["user_data"]!["ct"]![0]);
+        var tikTok = JsonNode.Parse(Assert.Single(_fake.To("tiktok.test")).Body)!;
+        Assert.Equal("alesund", (string?)tikTok["data"]![0]!["user"]!["city"]);
+    }
+
     [Fact]
     public async Task SendsTheExactPayloads_ToBothPlatforms_ThenClearsTheIds()
     {
