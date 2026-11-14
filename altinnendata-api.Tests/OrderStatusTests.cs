@@ -38,7 +38,7 @@ public class OrderStatusTests : TestBase
 
         var ok = Assert.IsType<Ok<OrderStatusDto>>(await OrderStatusEndpoint.Get(Token, db, Ct));
 
-        Assert.Equal(new OrderStatusDto("Paid", "AID-000001-ABCDEF12", "Gaming-PC", 1_299_000, "Pickup", "gaming-pc"), ok.Value);
+        Assert.Equal(new OrderStatusDto("Paid", "AID-000001-ABCDEF12", "Gaming-PC", 1_299_000, "Pickup", "gaming-pc", 1_299_000), ok.Value);
         var json = JsonSerializer.Serialize(ok.Value);
         Assert.DoesNotContain("BuyerEmail", json);
         Assert.DoesNotContain("BuyerName", json);
@@ -61,8 +61,28 @@ public class OrderStatusTests : TestBase
         var json = JsonSerializer.Serialize(ok.Value, JsonSerializerOptions.Web);
         Assert.Contains("\"buildSlug\":\"stille-gaming-pc\"", json);
         using var doc = JsonDocument.Parse(json);
-        Assert.Equal(["status", "reference", "buildTitle", "totalInOre", "deliveryMethod", "buildSlug"],
+        Assert.Equal(["status", "reference", "buildTitle", "totalInOre", "deliveryMethod", "buildSlug", "buildPriceInOre"],
             doc.RootElement.EnumerateObject().Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task Get_ReturnsTheBuildPriceStoredOnTheOrder_WithoutDelivery()
+    {
+        await using var db = CreateDbContext();
+        var order = NewOrder();
+        order.DeliveryMethod = DeliveryMethod.HomeDelivery;
+        order.DeliveryLabel = "Levering";
+        order.DeliveryPriceInOre = 19_900;
+        order.TotalInOre = 1_299_000 + 19_900;
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(Ct);
+
+        var ok = Assert.IsType<Ok<OrderStatusDto>>(await OrderStatusEndpoint.Get(Token, db, Ct));
+
+        Assert.Equal(1_299_000, ok.Value!.BuildPriceInOre);
+        Assert.Equal(1_318_900, ok.Value.TotalInOre);
+        var json = JsonSerializer.Serialize(ok.Value, JsonSerializerOptions.Web);
+        Assert.Contains("\"buildPriceInOre\":1299000", json);
     }
 
     [Theory]
