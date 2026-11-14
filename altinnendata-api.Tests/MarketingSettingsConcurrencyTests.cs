@@ -63,11 +63,12 @@ public class MarketingSettingsConcurrencyTests(PostgresDatabase postgres)
             Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Ok<ShopSettingsDto>>(
                 await ShopSettingsEndpoints.Update(ShopUpdate("AdminsOnly", vippsTestMode: false), other, cache, Ct));
         }));
-        await MarketingSettingsEndpoints.Update(new UpdateMarketingSettingsDto { MetaPixelId = "1234567890" }, marketing, Ct);
+        await MarketingSettingsEndpoints.Update(new UpdateMarketingSettingsDto { MetaPixelId = "1234567890", TikTokPixelId = "BRU69P41M9ALI4R4B2QG" }, marketing, Ct);
 
         await using var check = postgres.NewContextOn(seed);
         var row = await check.ShopSettings.AsNoTracking().SingleAsync(Ct);
         Assert.Equal("1234567890", row.MetaPixelId);
+        Assert.Equal("BRU69P41M9ALI4R4B2QG", row.TikTokPixelId);
         Assert.Equal(BuyButtonMode.AdminsOnly, row.BuyButton);
         Assert.False(row.VippsTestMode);
     }
@@ -82,7 +83,7 @@ public class MarketingSettingsConcurrencyTests(PostgresDatabase postgres)
         await using var shop = With(seed, new BeforeSave(async () =>
         {
             await using var other = postgres.NewContextOn(seed);
-            await MarketingSettingsEndpoints.Update(new UpdateMarketingSettingsDto { MetaPixelId = "1234567890" }, other, Ct);
+            await MarketingSettingsEndpoints.Update(new UpdateMarketingSettingsDto { MetaPixelId = "1234567890", TikTokPixelId = "BRU69P41M9ALI4R4B2QG" }, other, Ct);
         }));
         Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Ok<ShopSettingsDto>>(
             await ShopSettingsEndpoints.Update(ShopUpdate("AdminsOnly", vippsTestMode: false), shop, cache, Ct));
@@ -90,6 +91,7 @@ public class MarketingSettingsConcurrencyTests(PostgresDatabase postgres)
         await using var check = postgres.NewContextOn(seed);
         var row = await check.ShopSettings.AsNoTracking().SingleAsync(Ct);
         Assert.Equal("1234567890", row.MetaPixelId);
+        Assert.Equal("BRU69P41M9ALI4R4B2QG", row.TikTokPixelId);
         Assert.Equal(BuyButtonMode.AdminsOnly, row.BuyButton);
         Assert.False(row.VippsTestMode);
     }

@@ -11,7 +11,7 @@ namespace altinnendata_api.Features.Marketing
         public static async Task<IResult> GetAdmin(ApplicationDbContext db, CancellationToken ct)
         {
             var settings = await db.ShopSettings.AsNoTracking().FirstAsync(s => s.Id == 1, ct);
-            return TypedResults.Ok(new MarketingSettingsDto(settings.MetaPixelId));
+            return TypedResults.Ok(new MarketingSettingsDto(settings.MetaPixelId, settings.TikTokPixelId));
         }
 
         public static async Task<IResult> Update(UpdateMarketingSettingsDto dto, ApplicationDbContext db, CancellationToken ct)
@@ -19,16 +19,17 @@ namespace altinnendata_api.Features.Marketing
             var settings = await db.ShopSettings.FirstAsync(s => s.Id == 1, ct);
 
             settings.MetaPixelId = UpdateMarketingSettingsDto.Normalize(dto.MetaPixelId);
+            settings.TikTokPixelId = UpdateMarketingSettingsDto.Normalize(dto.TikTokPixelId);
             settings.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
 
-            return TypedResults.Ok(new MarketingSettingsDto(settings.MetaPixelId));
+            return TypedResults.Ok(new MarketingSettingsDto(settings.MetaPixelId, settings.TikTokPixelId));
         }
 
         public static async Task<IResult> GetPublic(ApplicationDbContext db, CancellationToken ct)
         {
             var settings = await db.ShopSettings.AsNoTracking().FirstAsync(s => s.Id == 1, ct);
-            return TypedResults.Ok(new MarketingConfigDto(settings.MetaPixelId));
+            return TypedResults.Ok(new MarketingConfigDto(settings.MetaPixelId, settings.TikTokPixelId));
         }
 
         public class Endpoints : IEndpoint
