@@ -50,8 +50,11 @@ namespace altinnendata_api.Features.Marketing
                     && o.MarketingConsentId != null
                     && o.MarketingEventsDueBy > now
                     && o.AuthorizedAt > reservedAfter
-                    && ((o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts)
-                        || (o.TikTokEventSentAt == null && o.TikTokEventAttempts < MaxAttempts)))
+                    // Only orders with a platform that is set up and due, so orders waiting on a backoff never fill the batch.
+                    && ((metaReady && o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts
+                            && (o.MetaEventNextAttemptAt == null || o.MetaEventNextAttemptAt <= now))
+                        || (tikTokReady && o.TikTokEventSentAt == null && o.TikTokEventAttempts < MaxAttempts
+                            && (o.TikTokEventNextAttemptAt == null || o.TikTokEventNextAttemptAt <= now))))
                 .OrderBy(o => o.Id)
                 .Select(o => o.Id)
                 .Take(BatchSize)
@@ -61,8 +64,8 @@ namespace altinnendata_api.Features.Marketing
             foreach (var id in ids)
             {
                 var order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, ct);
-                var sendMeta = metaReady && IsDue(order.MetaEventSentAt, order.MetaEventAttempts, order.MetaEventAttemptedAt, now);
-                var sendTikTok = tikTokReady && IsDue(order.TikTokEventSentAt, order.TikTokEventAttempts, order.TikTokEventAttemptedAt, now);
+                var sendMeta = metaReady && IsDue(order.MetaEventSentAt, order.MetaEventAttempts, order.MetaEventNextAttemptAt, now);
+                var sendTikTok = tikTokReady && IsDue(order.TikTokEventSentAt, order.TikTokEventAttempts, order.TikTokEventNextAttemptAt, now);
                 if (!sendMeta && !sendTikTok) continue;
 
                 if (sendMeta && await TrySendAsync(MarketingPlatform.Meta, order, settings!, now, ct)) accepted++;
@@ -73,9 +76,8 @@ namespace altinnendata_api.Features.Marketing
             return accepted;
         }
 
-        private static bool IsDue(DateTime? sentAt, int attempts, DateTime? attemptedAt, DateTime now) =>
-            sentAt == null && attempts < MaxAttempts
-            && (attempts == 0 || attemptedAt == null || attemptedAt.Value + Backoff(attempts) <= now);
+        private static bool IsDue(DateTime? sentAt, int attempts, DateTime? nextAttemptAt, DateTime now) =>
+            sentAt == null && attempts < MaxAttempts && (nextAttemptAt == null || nextAttemptAt <= now);
 
         /// <summary>Claims and makes one try for <paramref name="platform"/>. Returns true when the platform accepted the event.</summary>
         private async Task<bool> TrySendAsync(MarketingPlatform platform, Order order, ShopSettings settings, DateTime now, CancellationToken ct)
@@ -84,11 +86,18 @@ namespace altinnendata_api.Features.Marketing
             var reservedAfter = now - MarketingCapture.SendDeadline;
             var claim = db.Orders.Where(o => o.Id == order.Id && o.AnonymisedAt == null && o.MarketingConsentId != null
                 && o.MarketingEventsDueBy > now && o.AuthorizedAt > reservedAfter);
+            var next = now + Backoff(seen + 1);
             var claimed = platform == MarketingPlatform.Meta
                 ? await claim.Where(o => o.MetaEventSentAt == null && o.MetaEventAttempts == seen)
-                    .ExecuteUpdateAsync(s => s.SetProperty(o => o.MetaEventAttempts, seen + 1).SetProperty(o => o.MetaEventAttemptedAt, now), ct)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(o => o.MetaEventAttempts, seen + 1)
+                        .SetProperty(o => o.MetaEventAttemptedAt, now)
+                        .SetProperty(o => o.MetaEventNextAttemptAt, next), ct)
                 : await claim.Where(o => o.TikTokEventSentAt == null && o.TikTokEventAttempts == seen)
-                    .ExecuteUpdateAsync(s => s.SetProperty(o => o.TikTokEventAttempts, seen + 1).SetProperty(o => o.TikTokEventAttemptedAt, now), ct);
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(o => o.TikTokEventAttempts, seen + 1)
+                        .SetProperty(o => o.TikTokEventAttemptedAt, now)
+                        .SetProperty(o => o.TikTokEventNextAttemptAt, next), ct);
             if (claimed == 0) return false;
             var attempt = seen + 1;
 

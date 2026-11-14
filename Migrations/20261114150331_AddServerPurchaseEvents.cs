@@ -94,6 +94,12 @@ namespace altinnendata_api.Migrations
                 defaultValue: 0);
 
             migrationBuilder.AddColumn<DateTime>(
+                name: "MetaEventNextAttemptAt",
+                table: "Orders",
+                type: "timestamp with time zone",
+                nullable: true);
+
+            migrationBuilder.AddColumn<DateTime>(
                 name: "MetaEventSentAt",
                 table: "Orders",
                 type: "timestamp with time zone",
@@ -111,6 +117,12 @@ namespace altinnendata_api.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
+
+            migrationBuilder.AddColumn<DateTime>(
+                name: "TikTokEventNextAttemptAt",
+                table: "Orders",
+                type: "timestamp with time zone",
+                nullable: true);
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "TikTokEventSentAt",
@@ -185,6 +197,10 @@ namespace altinnendata_api.Migrations
                 table: "Orders");
 
             migrationBuilder.DropColumn(
+                name: "MetaEventNextAttemptAt",
+                table: "Orders");
+
+            migrationBuilder.DropColumn(
                 name: "MetaEventSentAt",
                 table: "Orders");
 
@@ -194,6 +210,10 @@ namespace altinnendata_api.Migrations
 
             migrationBuilder.DropColumn(
                 name: "TikTokEventAttempts",
+                table: "Orders");
+
+            migrationBuilder.DropColumn(
+                name: "TikTokEventNextAttemptAt",
                 table: "Orders");
 
             migrationBuilder.DropColumn(

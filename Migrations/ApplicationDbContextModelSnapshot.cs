@@ -1268,6 +1268,9 @@ namespace altinnendata_api.Migrations
                     b.Property<int>("MetaEventAttempts")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("MetaEventNextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("MetaEventSentAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1364,6 +1367,9 @@ namespace altinnendata_api.Migrations
 
                     b.Property<int>("TikTokEventAttempts")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TikTokEventNextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("TikTokEventSentAt")
                         .HasColumnType("timestamp with time zone");

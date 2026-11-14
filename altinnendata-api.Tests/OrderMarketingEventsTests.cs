@@ -773,6 +773,84 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.Equal("203.0.113.7", open.ClientIp);
     }
 
+    private static async Task AddOrdersAsync(ApplicationDbContext db, int count, Action<Order> edit)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var reference = $"AID-{100 + i:D6}-BBBBBBBB";
+            var order = new Order
+            {
+                Reference = reference, VippsReference = reference,
+                PublicToken = Guid.NewGuid().ToString("N"),
+                Status = OrderStatus.Reserved, Locale = "no",
+                BuyerName = "Kari", BuyerEmail = "kari@example.no", BuyerPhone = "4798765432",
+                DeliveryLabel = "Henting", BuildTitle = "PC", BuildSlug = "pc",
+                AuthorizedAt = AuthorizedAt, MarketingConsentId = ConsentId, ClientUserAgent = UserAgent,
+                MarketingEventsDueBy = AuthorizedAt.AddDays(7),
+            };
+            edit(order);
+            db.Orders.Add(order);
+        }
+        await db.SaveChangesAsync(Ct);
+        db.ChangeTracker.Clear();
+    }
+
+    [Fact]
+    public async Task OrdersWaitingOnABackoff_DoNotCrowdOutADueOrder()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SettingsAsync(db);
+        await ConsentAsync(db, true, AuthorizedAt.AddDays(-3));
+        await AddOrdersAsync(db, OrderMarketingEvents.BatchSize + 10, o =>
+        {
+            o.MetaEventAttempts = 1;
+            o.MetaEventNextAttemptAt = Now.AddHours(1);
+            o.TikTokEventAttempts = 1;
+            o.TikTokEventNextAttemptAt = Now.AddHours(1);
+        });
+        db.Orders.Add(DueOrder());
+        await db.SaveChangesAsync(Ct);
+        await using var services = Services(db);
+
+        Assert.Equal(2, await RunAsync(services, Now));
+
+        Assert.All(_fake.Requests, r => Assert.Contains(Reference, r.Body));
+        Assert.Equal(2, _fake.Requests.Count);
+    }
+
+    [Fact]
+    public async Task OrdersWaitingOnAPlatformThatIsNotSetUp_DoNotCrowdOutADueOrder()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SettingsAsync(db, meta: false);
+        await ConsentAsync(db, true, AuthorizedAt.AddDays(-3));
+        await AddOrdersAsync(db, OrderMarketingEvents.BatchSize + 10, o =>
+        {
+            o.TikTokEventAttempts = 1;
+            o.TikTokEventSentAt = Now.AddMinutes(-30);
+        });
+        db.Orders.Add(DueOrder());
+        await db.SaveChangesAsync(Ct);
+        await using var services = Services(db);
+
+        Assert.Equal(1, await RunAsync(services, Now));
+
+        var request = Assert.Single(_fake.Requests);
+        Assert.Equal("tiktok.test", request.Uri.Host);
+        Assert.Contains(Reference, request.Body);
+    }
+
+    private static Order DueOrder() => new()
+    {
+        Reference = Reference, VippsReference = Reference,
+        PublicToken = Guid.NewGuid().ToString("N"),
+        Status = OrderStatus.Reserved, Locale = "no",
+        BuyerName = "Ola", BuyerEmail = Email, BuyerPhone = "4791234567",
+        DeliveryLabel = "Henting", BuildTitle = "PC", BuildSlug = "pc",
+        AuthorizedAt = AuthorizedAt, MarketingConsentId = ConsentId, ClientUserAgent = UserAgent,
+        MarketingEventsDueBy = AuthorizedAt.AddDays(7),
+    };
+
     private static async Task<int> SeedOpenAsync(ApplicationDbContext db)
     {
         var order = new Order

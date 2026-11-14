@@ -147,15 +147,23 @@ namespace altinnendata_api.Models.Shop
         /// </summary>
         public DateTime? MarketingEventsDueBy { get; set; }
 
-        /// <summary>When the Purchase event was accepted by Meta, and how many times and when last it was tried.</summary>
+        /// <summary>
+        /// When the Purchase event was accepted by Meta, how many times and when last it was tried, and the earliest
+        /// next try. A null next try means due now.
+        /// </summary>
         public DateTime? MetaEventSentAt { get; set; }
         public int MetaEventAttempts { get; set; }
         public DateTime? MetaEventAttemptedAt { get; set; }
+        public DateTime? MetaEventNextAttemptAt { get; set; }
 
-        /// <summary>When the Purchase event was accepted by TikTok, and how many times and when last it was tried.</summary>
+        /// <summary>
+        /// When the Purchase event was accepted by TikTok, how many times and when last it was tried, and the earliest
+        /// next try. A null next try means due now.
+        /// </summary>
         public DateTime? TikTokEventSentAt { get; set; }
         public int TikTokEventAttempts { get; set; }
         public DateTime? TikTokEventAttemptedAt { get; set; }
+        public DateTime? TikTokEventNextAttemptAt { get; set; }
 
         /// <summary>When the buyer's name, email, phone and address were removed, five years after the financial year of the sale.</summary>
         public DateTime? AnonymisedAt { get; set; }
