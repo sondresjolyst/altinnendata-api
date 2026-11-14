@@ -1,6 +1,7 @@
 using FluentValidation;
 using SjolystInnovation.AppKit.Vipps;
 using altinnendata_api.Constants;
+using altinnendata_api.Features.Marketing;
 using altinnendata_api.Models.Shop;
 
 namespace altinnendata_api.Features.Shop
@@ -18,7 +19,8 @@ namespace altinnendata_api.Features.Shop
         string? PickupNote,
         bool AcceptTerms,
         string Locale,
-        string TermsVersion);
+        string TermsVersion,
+        CheckoutMarketing? Marketing = null);
 
     public record CheckoutResponse(string RedirectUrl, string Token);
 

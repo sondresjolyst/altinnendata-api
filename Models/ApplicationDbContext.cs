@@ -76,6 +76,9 @@ namespace altinnendata_api.Models
                 .Property(s => s.TikTokPixelId)
                 .HasMaxLength(32);
 
+            modelBuilder.Entity<ShopSettings>().Property(s => s.MetaCapiToken).HasMaxLength(512);
+            modelBuilder.Entity<ShopSettings>().Property(s => s.TikTokEventsToken).HasMaxLength(512);
+
             modelBuilder.Entity<DeliveryOption>()
                 .Property(o => o.Method)
                 .HasConversion<string>()
@@ -120,6 +123,15 @@ namespace altinnendata_api.Models
                 order.Property(o => o.TermsTitle).HasMaxLength(200);
                 order.Property(o => o.TermsLocale).HasMaxLength(5);
                 order.Property(o => o.ShippingNote).HasMaxLength(500);
+                order.Property(o => o.MarketingConsentId).HasMaxLength(64);
+                order.Property(o => o.MarketingNoticeVersion).HasMaxLength(64);
+                order.Property(o => o.Fbp).HasMaxLength(256);
+                order.Property(o => o.Fbc).HasMaxLength(256);
+                order.Property(o => o.Ttp).HasMaxLength(256);
+                order.Property(o => o.Ttclid).HasMaxLength(1000);
+                order.Property(o => o.ClientIp).HasMaxLength(45);
+                order.Property(o => o.ClientUserAgent).HasMaxLength(512);
+                order.Property(o => o.EventSourceUrl).HasMaxLength(2048);
                 order.HasIndex(o => o.CreatedAt);
                 order.Property(o => o.Version).IsRowVersion();
 

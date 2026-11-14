@@ -121,6 +121,51 @@ namespace altinnendata_api.Models.Shop
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        /// <summary>
+        /// The browser's consent id and the notice version of the consent log entry that allowed marketing at checkout.
+        /// Null when the buyer did not consent. Kept after the events are sent, as the record of the consent.
+        /// </summary>
+        public string? MarketingConsentId { get; set; }
+        public string? MarketingNoticeVersion { get; set; }
+
+        /// <summary>The Meta and TikTok browser and click ids from checkout. Cleared once the Purchase events are done.</summary>
+        public string? Fbp { get; set; }
+        public string? Fbc { get; set; }
+        public string? Ttp { get; set; }
+        public string? Ttclid { get; set; }
+
+        /// <summary>The buyer's IP address and user agent at checkout, for the Purchase events. Cleared once the events are done.</summary>
+        public string? ClientIp { get; set; }
+        public string? ClientUserAgent { get; set; }
+
+        /// <summary>The site page the checkout started from. Cleared once the events are done.</summary>
+        public string? EventSourceUrl { get; set; }
+
+        /// <summary>
+        /// When the stored ids are cleared at the latest, 7 days after checkout. A Purchase event is also never sent
+        /// later than 47 hours after <see cref="AuthorizedAt"/>, inside the platforms' 48-hour deduplication window.
+        /// Set back to null when the ids are cleared, so a value means the order is still live.
+        /// </summary>
+        public DateTime? MarketingEventsDueBy { get; set; }
+
+        /// <summary>
+        /// When the Purchase event was accepted by Meta, how many times and when last it was tried, and the earliest
+        /// next try. A null next try means due now.
+        /// </summary>
+        public DateTime? MetaEventSentAt { get; set; }
+        public int MetaEventAttempts { get; set; }
+        public DateTime? MetaEventAttemptedAt { get; set; }
+        public DateTime? MetaEventNextAttemptAt { get; set; }
+
+        /// <summary>
+        /// When the Purchase event was accepted by TikTok, how many times and when last it was tried, and the earliest
+        /// next try. A null next try means due now.
+        /// </summary>
+        public DateTime? TikTokEventSentAt { get; set; }
+        public int TikTokEventAttempts { get; set; }
+        public DateTime? TikTokEventAttemptedAt { get; set; }
+        public DateTime? TikTokEventNextAttemptAt { get; set; }
+
         /// <summary>When the buyer's name, email, phone and address were removed, five years after the financial year of the sale.</summary>
         public DateTime? AnonymisedAt { get; set; }
 

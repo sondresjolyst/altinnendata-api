@@ -166,12 +166,12 @@ public class MarketingSettingsTests : TestBase
 
         var ok = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.Update(Dto(" 1234567890 ", $" {TikTokId} "), db, Ct));
 
-        Assert.Equal(new MarketingSettingsDto("1234567890", TikTokId), ok.Value);
+        Assert.Equal(new MarketingSettingsDto("1234567890", TikTokId, false, false), ok.Value);
         var stored = await db.ShopSettings.AsNoTracking().SingleAsync(Ct);
         Assert.Equal("1234567890", stored.MetaPixelId);
         Assert.Equal(TikTokId, stored.TikTokPixelId);
         var admin = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.GetAdmin(db, Ct));
-        Assert.Equal(new MarketingSettingsDto("1234567890", TikTokId), admin.Value);
+        Assert.Equal(new MarketingSettingsDto("1234567890", TikTokId, false, false), admin.Value);
         var config = Assert.IsType<Ok<MarketingConfigDto>>(await MarketingSettingsEndpoints.GetPublic(db, Ct));
         Assert.Equal(new MarketingConfigDto("1234567890", TikTokId), config.Value);
     }
@@ -203,7 +203,7 @@ public class MarketingSettingsTests : TestBase
 
         var ok = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.Update(Dto("1234567890", empty), db, Ct));
 
-        Assert.Equal(new MarketingSettingsDto("1234567890", null), ok.Value);
+        Assert.Equal(new MarketingSettingsDto("1234567890", null, false, false), ok.Value);
         var stored = await db.ShopSettings.AsNoTracking().SingleAsync(Ct);
         Assert.Null(stored.TikTokPixelId);
         Assert.Equal("1234567890", stored.MetaPixelId);
@@ -346,7 +346,7 @@ public class MarketingSettingsTests : TestBase
 
         var saved = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "1234567890", tikTokPixelId = TikTokId }), Ct);
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
-        Assert.Equal(both, await saved.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(both[..^1] + ",\"metaCapiTokenSet\":false,\"tikTokEventsTokenSet\":false}", await saved.Content.ReadAsStringAsync(Ct));
         Assert.Equal(both, await client.GetStringAsync("/api/marketing/config", Ct));
 
         foreach (var bad in new[] { "bru69p41m9ali4r4b2qg", "ABC123", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456", "<script>", "BRU69 P41M9ALI4R4B2QG", "BRU69P41M9ÆLI4R4B2QG" })
@@ -367,5 +367,94 @@ public class MarketingSettingsTests : TestBase
         var tikTokOnly = await client.SendAsync(Put(RoleNames.Admin, new { tikTokPixelId = TikTokId }), Ct);
         Assert.Equal(HttpStatusCode.OK, tikTokOnly.StatusCode);
         Assert.Equal("{\"metaPixelId\":null,\"tikTokPixelId\":\"" + TikTokId + "\"}", await client.GetStringAsync("/api/marketing/config", Ct));
+    }
+
+    private const string MetaToken = "EAAGm0PX4ZCpsBAMetaTokenForTests0123456789";
+    private const string TikTokToken = "tt-events-token-for-tests-0123456789abcdef";
+
+    [Theory]
+    [InlineData("abcdefghij0123456789")]
+    [InlineData(" abcdefghij0123456789 ")]
+    [InlineData(MetaToken)]
+    public void Validator_AcceptsATokenOf20To512PrintableCharacters(string token)
+    {
+        Assert.True(new UpdateMarketingSettingsValidator().Validate(new UpdateMarketingSettingsDto { MetaCapiToken = token, TikTokEventsToken = token }).IsValid);
+        Assert.True(new UpdateMarketingSettingsValidator().Validate(new UpdateMarketingSettingsDto { MetaCapiToken = new string('a', 512) }).IsValid);
+    }
+
+    [Theory]
+    [InlineData("abcdefghij012345678")]
+    [InlineData("   ")]
+    [InlineData("abcdefghij 0123456789")]
+    [InlineData("abcdefghij\t0123456789")]
+    [InlineData("abcdefghijæ0123456789")]
+    [InlineData("abcdefghij\00123456789")]
+    public void Validator_RefusesAnInvalidToken_UnderItsField_WithoutEchoingIt(string token)
+    {
+        var result = new UpdateMarketingSettingsValidator().Validate(new UpdateMarketingSettingsDto { MetaCapiToken = token, TikTokEventsToken = token });
+
+        Assert.Equal(["metaCapiToken", "tikTokEventsToken"], result.ToDictionary().Keys.Order());
+        if (token.Trim().Length > 0) Assert.All(result.Errors, e => Assert.DoesNotContain(token.Trim(), e.ErrorMessage));
+        Assert.False(new UpdateMarketingSettingsValidator().Validate(new UpdateMarketingSettingsDto { TikTokEventsToken = new string('a', 513) }).IsValid);
+    }
+
+    [Fact]
+    public async Task Update_StoresTheTrimmedTokens_KeepsThemWhenMissing_AndClearsThemWhenEmpty()
+    {
+        await using var db = await SeededDb();
+
+        var set = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.Update(
+            new UpdateMarketingSettingsDto { MetaPixelId = "1234567890", MetaCapiToken = $" {MetaToken} ", TikTokEventsToken = TikTokToken }, db, Ct));
+        Assert.Equal(new MarketingSettingsDto("1234567890", null, true, true), set.Value);
+        var stored = await db.ShopSettings.AsNoTracking().SingleAsync(Ct);
+        Assert.Equal(MetaToken, stored.MetaCapiToken);
+        Assert.Equal(TikTokToken, stored.TikTokEventsToken);
+
+        // The IDs keep their full-replace meaning, the tokens stay.
+        var kept = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.Update(new UpdateMarketingSettingsDto(), db, Ct));
+        Assert.Equal(new MarketingSettingsDto(null, null, true, true), kept.Value);
+        stored = await db.ShopSettings.AsNoTracking().SingleAsync(Ct);
+        Assert.Equal(MetaToken, stored.MetaCapiToken);
+        Assert.Equal(TikTokToken, stored.TikTokEventsToken);
+
+        var cleared = Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.Update(new UpdateMarketingSettingsDto { MetaCapiToken = "" }, db, Ct));
+        Assert.Equal(new MarketingSettingsDto(null, null, false, true), cleared.Value);
+        stored = await db.ShopSettings.AsNoTracking().SingleAsync(Ct);
+        Assert.Null(stored.MetaCapiToken);
+        Assert.Equal(TikTokToken, stored.TikTokEventsToken);
+        Assert.Equal(new MarketingSettingsDto(null, null, false, true),
+            Assert.IsType<Ok<MarketingSettingsDto>>(await MarketingSettingsEndpoints.GetAdmin(db, Ct)).Value);
+    }
+
+    [Fact]
+    public async Task Http_TheTokensAreWriteOnly_AndNeverInAnyAnswer()
+    {
+        var (app, client) = await StartAsync();
+        await using var _ = app;
+
+        var saved = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "1234567890", metaCapiToken = MetaToken, tikTokEventsToken = TikTokToken }), Ct);
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        const string adminBoth = "{\"metaPixelId\":\"1234567890\",\"tikTokPixelId\":null,\"metaCapiTokenSet\":true,\"tikTokEventsTokenSet\":true}";
+        Assert.Equal(adminBoth, await saved.Content.ReadAsStringAsync(Ct));
+
+        var get = new HttpRequestMessage(HttpMethod.Get, "/api/admin/marketing/settings");
+        get.Headers.Add("X-Role", RoleNames.Admin);
+        Assert.Equal(adminBoth, await (await client.SendAsync(get, Ct)).Content.ReadAsStringAsync(Ct));
+        Assert.Equal("{\"metaPixelId\":\"1234567890\",\"tikTokPixelId\":null}", await client.GetStringAsync("/api/marketing/config", Ct));
+
+        const string bad = "short token value";
+        var refused = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "1234567890", tikTokEventsToken = bad }), Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var refusedBody = await refused.Content.ReadAsStringAsync(Ct);
+        Assert.DoesNotContain(bad, refusedBody);
+        using (var problem = JsonDocument.Parse(refusedBody))
+            Assert.Equal(["tikTokEventsToken"], problem.RootElement.GetProperty("errors").EnumerateObject().Select(p => p.Name));
+
+        var kept = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "1234567890" }), Ct);
+        Assert.Equal(adminBoth, await kept.Content.ReadAsStringAsync(Ct));
+
+        var cleared = await client.SendAsync(Put(RoleNames.Admin, new { metaPixelId = "1234567890", metaCapiToken = "", tikTokEventsToken = (string?)null }), Ct);
+        Assert.Equal("{\"metaPixelId\":\"1234567890\",\"tikTokPixelId\":null,\"metaCapiTokenSet\":false,\"tikTokEventsTokenSet\":true}",
+            await cleared.Content.ReadAsStringAsync(Ct));
     }
 }

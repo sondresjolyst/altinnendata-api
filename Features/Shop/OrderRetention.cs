@@ -40,7 +40,7 @@ namespace altinnendata_api.Features.Shop
     }
 
     /// <summary>
-    /// Removes the buyer's name, email, phone and address from a sale five years after the end of the financial
+    /// Removes the buyer's name, email, phone, address and marketing ids from a sale five years after the end of the financial
     /// year it belongs to. The financial year is the calendar year in Oslo time of the latest money date of the
     /// order: the capture (or the creation when never captured), the last update of a partly captured order,
     /// and every refund. A sale in 2026 is anonymised from 1 January 2032, and one refunded in 2029 from 1 January 2035. The amounts, dates,
@@ -106,6 +106,15 @@ namespace altinnendata_api.Features.Shop
             order.PickupNote = null;
             order.ShippingNote = null;
             order.TermsAcceptedIp = null;
+            order.MarketingConsentId = null;
+            order.Fbp = null;
+            order.Fbc = null;
+            order.Ttp = null;
+            order.Ttclid = null;
+            order.ClientIp = null;
+            order.ClientUserAgent = null;
+            order.EventSourceUrl = null;
+            order.MarketingEventsDueBy = null;
             order.AnonymisedAt = now;
             order.UpdatedAt = now;
         }
