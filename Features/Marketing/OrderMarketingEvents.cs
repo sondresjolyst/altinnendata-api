@@ -22,6 +22,7 @@ namespace altinnendata_api.Features.Marketing
         MetaConversionsClient meta,
         TikTokEventsClient tikTok,
         IConfiguration config,
+        ConsentRecheckCursor cursor,
         ILogger<OrderMarketingEvents> log)
     {
         /// <summary>How many tries each platform gets, the first one included.</summary>
@@ -141,21 +142,32 @@ namespace altinnendata_api.Features.Marketing
         }
 
         /// <summary>The most orders one run checks for a withdrawn consent.</summary>
-        public const int ConsentBatchSize = 500;
+        public const int ConsentBatchSize = 50;
 
         /// <summary>
-        /// Reads the consent log for every order that can still send, due or not, and clears the ids of each order
-        /// whose consent no longer allows marketing or is older than <see cref="MarketingCapture.ConsentMaxAge"/>.
+        /// Reads the consent log for one page of live orders, due or not, and clears the ids of each order whose
+        /// consent no longer allows marketing or is older than <see cref="MarketingCapture.ConsentMaxAge"/>. Live means
+        /// the send window is open and the order still holds an id or can still send. Each run goes on after the last
+        /// order of the previous page, so every live order is reached.
         /// </summary>
         private async Task WithdrawRevokedAsync(DateTime now, CancellationToken ct)
         {
-            var open = await db.Orders.AsNoTracking()
-                .Where(o => o.MarketingConsentId != null && o.MarketingEventsDueBy != null)
+            var afterId = cursor.AfterId;
+            var page = await db.Orders.AsNoTracking()
+                .Where(o => o.Id > afterId
+                    && o.AnonymisedAt == null
+                    && o.MarketingConsentId != null
+                    && o.MarketingEventsDueBy > now
+                    && (o.Fbp != null || o.Fbc != null || o.Ttp != null || o.Ttclid != null
+                        || o.ClientIp != null || o.ClientUserAgent != null || o.EventSourceUrl != null
+                        || (o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts)
+                        || (o.TikTokEventSentAt == null && o.TikTokEventAttempts < MaxAttempts)))
                 .OrderBy(o => o.Id)
                 .Select(o => new { o.Id, o.MarketingConsentId })
                 .Take(ConsentBatchSize)
                 .ToListAsync(ct);
-            foreach (var o in open) await ConsentHoldsAsync(o.Id, o.MarketingConsentId!, now, ct);
+            cursor.AfterId = page.Count < ConsentBatchSize ? 0 : page[^1].Id;
+            foreach (var o in page) await ConsentHoldsAsync(o.Id, o.MarketingConsentId!, now, ct);
         }
 
         /// <summary>True when consent <paramref name="consentId"/> of order <paramref name="orderId"/> still allows marketing. Otherwise clears the order's ids.</summary>
@@ -181,21 +193,25 @@ namespace altinnendata_api.Features.Marketing
                     .SetProperty(o => o.MarketingEventsDueBy, (DateTime?)null), ct);
 
         /// <summary>
-        /// Clears the ids, IP address, user agent and page of every order whose send window has passed, whose send
-        /// deadline after the reservation has passed, or whose events are sent or out of tries on both platforms.
-        /// The consent id, notice version and sent times stay as the record.
+        /// Ends every order whose send window has passed, whose send deadline after the reservation has passed, or
+        /// whose events are sent or out of tries on both platforms: clears its ids, IP address, user agent and page, and
+        /// <see cref="Order.MarketingEventsDueBy"/>, so a set due-by always means a live order. The consent id, notice
+        /// version and sent times stay as the record.
         /// </summary>
         public Task<int> CleanUpAsync(DateTime now, CancellationToken ct)
         {
             var reservedAfter = now - MarketingCapture.SendDeadline;
             return db.Orders
-                .Where(o => (o.Fbp != null || o.Fbc != null || o.Ttp != null || o.Ttclid != null
-                        || o.ClientIp != null || o.ClientUserAgent != null || o.EventSourceUrl != null)
-                    && (o.MarketingEventsDueBy == null || o.MarketingEventsDueBy <= now
-                        || o.AuthorizedAt <= reservedAfter
-                        || ((o.MetaEventSentAt != null || o.MetaEventAttempts >= MaxAttempts)
-                            && (o.TikTokEventSentAt != null || o.TikTokEventAttempts >= MaxAttempts))))
+                .Where(o => (o.MarketingEventsDueBy != null
+                        && (o.MarketingEventsDueBy <= now
+                            || o.AuthorizedAt <= reservedAfter
+                            || ((o.MetaEventSentAt != null || o.MetaEventAttempts >= MaxAttempts)
+                                && (o.TikTokEventSentAt != null || o.TikTokEventAttempts >= MaxAttempts))))
+                    || (o.MarketingEventsDueBy == null
+                        && (o.Fbp != null || o.Fbc != null || o.Ttp != null || o.Ttclid != null
+                            || o.ClientIp != null || o.ClientUserAgent != null || o.EventSourceUrl != null)))
                 .ExecuteUpdateAsync(s => s
+                    .SetProperty(o => o.MarketingEventsDueBy, (DateTime?)null)
                     .SetProperty(o => o.Fbp, (string?)null)
                     .SetProperty(o => o.Fbc, (string?)null)
                     .SetProperty(o => o.Ttp, (string?)null)
@@ -206,6 +222,12 @@ namespace altinnendata_api.Features.Marketing
         }
 
         private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    /// <summary>Where the next consent recheck page starts. One per app, so it carries over from run to run.</summary>
+    public sealed class ConsentRecheckCursor
+    {
+        public int AfterId { get; set; }
     }
 
     /// <summary>Runs <see cref="OrderMarketingEvents"/> every <see cref="Interval"/>, after a first wait of the same length.</summary>
@@ -261,6 +283,7 @@ namespace altinnendata_api.Features.Marketing
                 })
                 .RemoveAllLoggers();
             services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<ConsentRecheckCursor>();
             services.AddScoped<OrderMarketingEvents>();
             services.AddHostedService<OrderMarketingEventsService>();
             return services;

@@ -601,7 +601,7 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
 
         Assert.Empty(_fake.Requests);
         var o = await ReadAsync(db);
-        Assert.True(o.MarketingEventsDueBy > Now);
+        Assert.Null(o.MarketingEventsDueBy);
         Assert.Equal(0, o.MetaEventAttempts);
         Assert.Equal(0, o.TikTokEventAttempts);
         Assert.Null(o.MetaEventSentAt);
@@ -713,6 +713,7 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.NotNull(o.MetaEventSentAt);
         Assert.Null(o.TikTokEventSentAt);
         Assert.Equal(1, o.TikTokEventAttempts);
+        Assert.NotNull(o.MarketingEventsDueBy);
 
         _fake.TikTok = () => FakePlatforms.Json(HttpStatusCode.OK, """{"code":0}""");
         Assert.Equal(1, await RunAsync(services, Now.AddMinutes(6)));
@@ -763,7 +764,7 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(Now, done.MetaEventSentAt);
         Assert.Equal(Now, done.TikTokEventSentAt);
         Assert.Equal(2, done.TikTokEventAttempts);
-        Assert.NotNull(done.MarketingEventsDueBy);
+        Assert.Null(done.MarketingEventsDueBy);
         Assert.Equal(Email, done.BuyerEmail);
         Assert.Equal("Oslo", done.City);
         Assert.Equal("0155", done.PostalCode);
@@ -777,7 +778,7 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
     {
         for (var i = 0; i < count; i++)
         {
-            var reference = $"AID-{100 + i:D6}-BBBBBBBB";
+            var reference = $"AID-{100 + i:D6}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
             var order = new Order
             {
                 Reference = reference, VippsReference = reference,
@@ -838,6 +839,71 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         var request = Assert.Single(_fake.Requests);
         Assert.Equal("tiktok.test", request.Uri.Host);
         Assert.Contains(Reference, request.Body);
+    }
+
+    [Fact]
+    public async Task FinishedAndExpiredOrders_DoNotCrowdOutTheConsentRecheckOfALiveOrder()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SettingsAsync(db);
+        await ConsentAsync(db, true, AuthorizedAt.AddDays(-3));
+        // Sent on both platforms with the ids cleared, but the due-by still set.
+        await AddOrdersAsync(db, OrderMarketingEvents.ConsentBatchSize + 5, o =>
+        {
+            o.ClientUserAgent = null;
+            o.MetaEventSentAt = AuthorizedAt;
+            o.TikTokEventSentAt = AuthorizedAt;
+        });
+        // Past the send window, with ids not yet cleaned up.
+        await AddOrdersAsync(db, OrderMarketingEvents.ConsentBatchSize + 5, o => o.MarketingEventsDueBy = Now.AddMinutes(-1));
+        // Live, both platforms waiting on a backoff, so only the recheck can notice the withdrawal.
+        var live = DueOrder();
+        live.Fbp = "fb.1.1.1";
+        live.MetaEventAttempts = 1;
+        live.MetaEventNextAttemptAt = Now.AddHours(1);
+        live.TikTokEventAttempts = 1;
+        live.TikTokEventNextAttemptAt = Now.AddHours(1);
+        db.Orders.Add(live);
+        await db.SaveChangesAsync(Ct);
+        db.ChangeTracker.Clear();
+        await ConsentAsync(db, false, Now.AddMinutes(-1));
+        await using var services = Services(db);
+
+        Assert.Equal(0, await RunAsync(services, Now));
+
+        Assert.Empty(_fake.Requests);
+        await using var fresh = postgres.NewContextOn(db);
+        var o = await fresh.Orders.AsNoTracking().SingleAsync(x => x.Reference == Reference, Ct);
+        AssertPersonalColumnsCleared(o);
+        Assert.Null(o.MarketingEventsDueBy);
+        Assert.Equal(0, await fresh.Orders.CountAsync(x => x.MarketingEventsDueBy != null, Ct));
+    }
+
+    [Fact]
+    public async Task TheConsentRecheck_PagesOnFromRunToRun_UntilEveryLiveOrderIsChecked()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SettingsAsync(db);
+        await ConsentAsync(db, true, AuthorizedAt.AddDays(-3));
+        await AddOrdersAsync(db, OrderMarketingEvents.ConsentBatchSize + 5, o =>
+        {
+            o.Fbp = "fb.1.1.1";
+            o.MetaEventAttempts = 1;
+            o.MetaEventNextAttemptAt = Now.AddHours(1);
+            o.TikTokEventAttempts = 1;
+            o.TikTokEventNextAttemptAt = Now.AddHours(1);
+        });
+        await ConsentAsync(db, false, Now.AddMinutes(-1));
+        await using var services = Services(db);
+
+        await RunAsync(services, Now);
+        await using (var fresh = postgres.NewContextOn(db))
+            Assert.Equal(5, await fresh.Orders.CountAsync(o => o.MarketingEventsDueBy != null, Ct));
+
+        await RunAsync(services, Now.AddMinutes(5));
+        await using (var fresh = postgres.NewContextOn(db))
+            Assert.Equal(0, await fresh.Orders.CountAsync(o => o.MarketingEventsDueBy != null || o.Fbp != null, Ct));
+        Assert.Empty(_fake.Requests);
     }
 
     private static Order DueOrder() => new()

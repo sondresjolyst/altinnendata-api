@@ -144,6 +144,7 @@ namespace altinnendata_api.Models.Shop
         /// <summary>
         /// When the stored ids are cleared at the latest, 7 days after checkout. A Purchase event is also never sent
         /// later than 47 hours after <see cref="AuthorizedAt"/>, inside the platforms' 48-hour deduplication window.
+        /// Set back to null when the ids are cleared, so a value means the order is still live.
         /// </summary>
         public DateTime? MarketingEventsDueBy { get; set; }
 
