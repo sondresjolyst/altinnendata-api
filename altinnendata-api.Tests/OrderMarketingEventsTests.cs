@@ -34,19 +34,35 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
 
     private sealed class FakePlatforms : HttpMessageHandler
     {
-        public List<(Uri Uri, string? AccessToken, string? ContentType, string Body)> Requests { get; } = [];
+        /// <summary>Each request. For a form body, <c>Form</c> holds its fields in order and <c>Body</c> holds them as JSON, with <c>data</c> parsed.</summary>
+        public List<(Uri Uri, string? AccessToken, string? ContentType, string Body, List<(string Name, string? ContentType, string Value)>? Form, string Raw)> Requests { get; } = [];
         public Func<HttpResponseMessage> Meta { get; set; } = () => Json(HttpStatusCode.OK, """{"events_received":1,"fbtrace_id":"x"}""");
         public Func<HttpResponseMessage> TikTok { get; set; } = () => Json(HttpStatusCode.OK, """{"code":0,"message":"OK","request_id":"r","data":{}}""");
         public Exception? Throw { get; set; }
 
-        public IEnumerable<(Uri Uri, string? AccessToken, string? ContentType, string Body)> To(string host) =>
+        public IEnumerable<(Uri Uri, string? AccessToken, string? ContentType, string Body, List<(string Name, string? ContentType, string Value)>? Form, string Raw)> To(string host) =>
             Requests.Where(r => r.Uri.Host == host);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            var body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var raw = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var body = raw;
+            List<(string Name, string? ContentType, string Value)>? form = null;
+            if (request.Content is MultipartFormDataContent multipart)
+            {
+                form = [];
+                var json = new JsonObject();
+                foreach (var part in multipart)
+                {
+                    var name = part.Headers.ContentDisposition!.Name!.Trim('"');
+                    var value = await part.ReadAsStringAsync(cancellationToken);
+                    form.Add((name, part.Headers.ContentType?.MediaType, value));
+                    json[name] = name == "data" ? JsonNode.Parse(value) : value;
+                }
+                body = json.ToJsonString();
+            }
             var token = request.Headers.TryGetValues("Access-Token", out var values) ? values.Single() : null;
-            lock (Requests) Requests.Add((request.RequestUri!, token, request.Content.Headers.ContentType?.MediaType, body));
+            lock (Requests) Requests.Add((request.RequestUri!, token, request.Content.Headers.ContentType?.MediaType, body, form, raw));
             if (Throw != null) throw Throw;
             return request.RequestUri!.Host == "meta.test" ? Meta() : TikTok();
         }
@@ -283,11 +299,16 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.Equal($"https://meta.test/v27.0/{MetaPixel}/events", meta.Uri.AbsoluteUri);
         Assert.Empty(meta.Uri.Query);
         Assert.DoesNotContain(MetaToken, meta.Uri.ToString());
-        Assert.Equal("application/json", meta.ContentType);
+        Assert.Equal("multipart/form-data", meta.ContentType);
         Assert.Null(meta.AccessToken);
+        Assert.Equal(["data", "access_token", "test_event_code"], meta.Form!.Select(f => f.Name));
+        Assert.All(meta.Form!, f => Assert.Null(f.ContentType));
+        Assert.Contains("name=\"data\"", meta.Raw);
+        Assert.Contains("name=\"access_token\"", meta.Raw);
+        Assert.Equal(MetaToken, meta.Form!.Single(f => f.Name == "access_token").Value);
+        Assert.Equal("TEST123", meta.Form!.Single(f => f.Name == "test_event_code").Value);
         AssertJson($$"""
-            {
-              "data": [{
+            [{
                 "event_name": "Purchase",
                 "event_time": 1794657600,
                 "action_source": "website",
@@ -311,11 +332,8 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
                   "content_type": "product",
                   "contents": [{ "id": "gaming-pc", "quantity": 1 }]
                 }
-              }],
-              "test_event_code": "TEST123",
-              "access_token": "{{MetaToken}}"
-            }
-            """, meta.Body);
+              }]
+            """, meta.Form!.Single(f => f.Name == "data").Value);
 
         var tikTok = Assert.Single(_fake.To("tiktok.test"));
         Assert.Equal("https://tiktok.test/open_api/v1.3/event/track/", tikTok.Uri.AbsoluteUri);

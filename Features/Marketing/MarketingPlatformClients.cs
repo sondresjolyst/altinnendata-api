@@ -14,22 +14,32 @@ namespace altinnendata_api.Features.Marketing
         public const string DefaultBaseUrl = "https://graph.facebook.com/v27.0/";
 
         /// <summary>
-        /// Posts <paramref name="body"/> to the events edge of <paramref name="pixelId"/>, with the token as the
-        /// <c>access_token</c> body parameter, so it never appears in the request address. Success is any 2xx answer.
+        /// Posts <paramref name="body"/> to the events edge of <paramref name="pixelId"/> as the form body the docs show,
+        /// <c>-F 'data=[...]' -F 'access_token=...'</c>: a <c>data</c> field with the events as a JSON array, the
+        /// <c>access_token</c> field, and <c>test_event_code</c> when set. The token never appears in the request
+        /// address. Success is any 2xx answer.
         /// </summary>
         public async Task<PlatformResult> SendAsync(string pixelId, string token, JsonObject body, CancellationToken ct)
         {
-            var payload = body.DeepClone().AsObject();
-            payload["access_token"] = token;
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{Uri.EscapeDataString(pixelId)}/events")
-            {
-                Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json")
-            };
+            var form = new MultipartFormDataContent();
+            AddField(form, "data", body["data"]!.ToJsonString());
+            AddField(form, "access_token", token);
+            if (body["test_event_code"] is JsonNode testEventCode) AddField(form, "test_event_code", testEventCode.GetValue<string>());
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{Uri.EscapeDataString(pixelId)}/events") { Content = form };
             using var response = await http.SendAsync(request, ct);
             if (response.IsSuccessStatusCode) return new PlatformResult(true, (int)response.StatusCode, null);
             // The error is {error:{message,type,code}}. Only the code is kept, since the message can echo the request.
             var code = await ErrorCodes.ReadAsync(response, ct, "error", "code");
             return new PlatformResult(false, (int)response.StatusCode, code);
+        }
+
+        /// <summary>A plain form field as curl <c>-F name=value</c> sends it: a quoted name and no content type of its own.</summary>
+        private static void AddField(MultipartFormDataContent form, string name, string value)
+        {
+            var field = new StringContent(value, Encoding.UTF8);
+            field.Headers.ContentType = null;
+            field.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data") { Name = $"\"{name}\"" };
+            form.Add(field);
         }
     }
 
