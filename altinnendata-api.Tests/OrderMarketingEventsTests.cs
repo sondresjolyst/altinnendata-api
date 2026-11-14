@@ -467,6 +467,30 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task WithoutAUserAgent_MetaIsDoneForGood_AndTikTokStillSends()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db, o => o.ClientUserAgent = null);
+        await using var services = Services(db);
+
+        Assert.Equal(1, await RunAsync(services, Now));
+
+        Assert.Empty(_fake.To("meta.test"));
+        var tikTok = JsonNode.Parse(Assert.Single(_fake.To("tiktok.test")).Body)!;
+        Assert.False(tikTok["data"]![0]!["user"]!.AsObject().ContainsKey("user_agent"));
+        var o = await ReadAsync(db);
+        Assert.Equal(0, o.MetaEventAttempts);
+        Assert.Null(o.MetaEventSentAt);
+        Assert.NotNull(o.TikTokEventSentAt);
+        // Meta can never send, so the order is finished and its ids are cleared at once.
+        AssertPersonalColumnsCleared(o);
+        Assert.Null(o.MarketingEventsDueBy);
+
+        Assert.Equal(0, await RunAsync(services, Now.AddHours(1)));
+        Assert.Single(_fake.Requests);
+    }
+
+    [Fact]
     public async Task APlatformWithoutAPixelId_IsSkipped()
     {
         await using var db = await postgres.NewContextAsync();

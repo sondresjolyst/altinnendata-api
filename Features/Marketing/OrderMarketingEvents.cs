@@ -52,7 +52,7 @@ namespace altinnendata_api.Features.Marketing
                     && o.MarketingEventsDueBy > now
                     && o.AuthorizedAt > reservedAfter
                     // Only orders with a platform that is set up and due, so orders waiting on a backoff never fill the batch.
-                    && ((metaReady && o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts
+                    && ((metaReady && o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts && o.ClientUserAgent != null
                             && (o.MetaEventNextAttemptAt == null || o.MetaEventNextAttemptAt <= now))
                         || (tikTokReady && o.TikTokEventSentAt == null && o.TikTokEventAttempts < MaxAttempts
                             && (o.TikTokEventNextAttemptAt == null || o.TikTokEventNextAttemptAt <= now))))
@@ -65,7 +65,8 @@ namespace altinnendata_api.Features.Marketing
             foreach (var id in ids)
             {
                 var order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, ct);
-                var sendMeta = metaReady && IsDue(order.MetaEventSentAt, order.MetaEventAttempts, order.MetaEventNextAttemptAt, now);
+                // Meta requires the user agent for website events, so an order without one is never sent to Meta.
+                var sendMeta = metaReady && order.ClientUserAgent != null && IsDue(order.MetaEventSentAt, order.MetaEventAttempts, order.MetaEventNextAttemptAt, now);
                 var sendTikTok = tikTokReady && IsDue(order.TikTokEventSentAt, order.TikTokEventAttempts, order.TikTokEventNextAttemptAt, now);
                 if (!sendMeta && !sendTikTok) continue;
 
@@ -89,7 +90,7 @@ namespace altinnendata_api.Features.Marketing
                 && o.MarketingEventsDueBy > now && o.AuthorizedAt > reservedAfter);
             var next = now + Backoff(seen + 1);
             var claimed = platform == MarketingPlatform.Meta
-                ? await claim.Where(o => o.MetaEventSentAt == null && o.MetaEventAttempts == seen)
+                ? await claim.Where(o => o.MetaEventSentAt == null && o.MetaEventAttempts == seen && o.ClientUserAgent != null)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(o => o.MetaEventAttempts, seen + 1)
                         .SetProperty(o => o.MetaEventAttemptedAt, now)
@@ -160,7 +161,7 @@ namespace altinnendata_api.Features.Marketing
                     && o.MarketingEventsDueBy > now
                     && (o.Fbp != null || o.Fbc != null || o.Ttp != null || o.Ttclid != null
                         || o.ClientIp != null || o.ClientUserAgent != null || o.EventSourceUrl != null
-                        || (o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts)
+                        || (o.MetaEventSentAt == null && o.MetaEventAttempts < MaxAttempts && o.ClientUserAgent != null)
                         || (o.TikTokEventSentAt == null && o.TikTokEventAttempts < MaxAttempts)))
                 .OrderBy(o => o.Id)
                 .Select(o => new { o.Id, o.MarketingConsentId })
@@ -194,7 +195,7 @@ namespace altinnendata_api.Features.Marketing
 
         /// <summary>
         /// Ends every order whose send window has passed, whose send deadline after the reservation has passed, or
-        /// whose events are sent or out of tries on both platforms: clears its ids, IP address, user agent and page, and
+        /// whose events are sent or out of tries on both platforms (Meta also counts as done without a user agent): clears its ids, IP address, user agent and page, and
         /// <see cref="Order.MarketingEventsDueBy"/>, so a set due-by always means a live order. The consent id, notice
         /// version and sent times stay as the record.
         /// </summary>
@@ -205,7 +206,7 @@ namespace altinnendata_api.Features.Marketing
                 .Where(o => (o.MarketingEventsDueBy != null
                         && (o.MarketingEventsDueBy <= now
                             || o.AuthorizedAt <= reservedAfter
-                            || ((o.MetaEventSentAt != null || o.MetaEventAttempts >= MaxAttempts)
+                            || ((o.MetaEventSentAt != null || o.MetaEventAttempts >= MaxAttempts || o.ClientUserAgent == null)
                                 && (o.TikTokEventSentAt != null || o.TikTokEventAttempts >= MaxAttempts))))
                     || (o.MarketingEventsDueBy == null
                         && (o.Fbp != null || o.Fbc != null || o.Ttp != null || o.Ttclid != null
