@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.15.0...v1.16.0) (2026-11-14)
+
+
+### Features
+
+* **marketing:** add a TikTok Pixel ID setting ([#169](https://github.com/sondresjolyst/altinnendata-api/issues/169)) ([f88a955](https://github.com/sondresjolyst/altinnendata-api/commit/f88a95501f71174ae2471a9079a257105d023ae2))
+
 ## [1.15.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.14.4...v1.15.0) (2026-11-11)
 
 
