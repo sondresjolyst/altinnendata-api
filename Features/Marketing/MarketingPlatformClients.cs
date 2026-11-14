@@ -13,13 +13,17 @@ namespace altinnendata_api.Features.Marketing
     {
         public const string DefaultBaseUrl = "https://graph.facebook.com/v27.0/";
 
-        /// <summary>Posts <paramref name="body"/> to the events edge of <paramref name="pixelId"/>. Success is any 2xx answer.</summary>
+        /// <summary>
+        /// Posts <paramref name="body"/> to the events edge of <paramref name="pixelId"/>, with the token as the
+        /// <c>access_token</c> body parameter, so it never appears in the request address. Success is any 2xx answer.
+        /// </summary>
         public async Task<PlatformResult> SendAsync(string pixelId, string token, JsonObject body, CancellationToken ct)
         {
-            var path = $"{Uri.EscapeDataString(pixelId)}/events?access_token={Uri.EscapeDataString(token)}";
-            using var request = new HttpRequestMessage(HttpMethod.Post, path)
+            var payload = body.DeepClone().AsObject();
+            payload["access_token"] = token;
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{Uri.EscapeDataString(pixelId)}/events")
             {
-                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+                Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json")
             };
             using var response = await http.SendAsync(request, ct);
             if (response.IsSuccessStatusCode) return new PlatformResult(true, (int)response.StatusCode, null);

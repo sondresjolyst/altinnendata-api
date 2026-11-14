@@ -252,7 +252,9 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
         Assert.Equal(2, await RunAsync(services, Now));
 
         var meta = Assert.Single(_fake.To("meta.test"));
-        Assert.Equal($"https://meta.test/v27.0/{MetaPixel}/events?access_token={MetaToken}", meta.Uri.AbsoluteUri);
+        Assert.Equal($"https://meta.test/v27.0/{MetaPixel}/events", meta.Uri.AbsoluteUri);
+        Assert.Empty(meta.Uri.Query);
+        Assert.DoesNotContain(MetaToken, meta.Uri.ToString());
         Assert.Equal("application/json", meta.ContentType);
         Assert.Null(meta.AccessToken);
         AssertJson($$"""
@@ -282,7 +284,8 @@ public class OrderMarketingEventsTests(PostgresDatabase postgres) : TestBase
                   "contents": [{ "id": "gaming-pc", "quantity": 1 }]
                 }
               }],
-              "test_event_code": "TEST123"
+              "test_event_code": "TEST123",
+              "access_token": "{{MetaToken}}"
             }
             """, meta.Body);
 

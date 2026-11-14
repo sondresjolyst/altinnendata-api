@@ -117,7 +117,7 @@ namespace altinnendata_api.Features.Marketing
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
-                // Only the exception type: its message can carry the request address, and the Meta address holds the token.
+                // Only the exception type, so no text from the HTTP stack or the platform reaches the logs.
                 log.LogWarning("Marketing: the {Platform} Purchase event of order {OrderId} failed on try {Attempt} with {Error}",
                     platform, order.Id, attempt, ex.GetType().Name);
                 return false;
@@ -266,8 +266,8 @@ namespace altinnendata_api.Features.Marketing
     {
         /// <summary>
         /// Registers the sender, its background service and the two platform clients. The base addresses come from
-        /// <c>Marketing:MetaBaseUrl</c> and <c>Marketing:TikTokBaseUrl</c>. The clients log nothing, since the Meta
-        /// request address holds the access token.
+        /// <c>Marketing:MetaBaseUrl</c> and <c>Marketing:TikTokBaseUrl</c>. The clients log nothing, so no request
+        /// detail reaches the logs.
         /// </summary>
         public static IServiceCollection AddOrderMarketingEvents(this IServiceCollection services, IConfiguration config)
         {
