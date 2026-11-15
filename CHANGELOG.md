@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.17.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.17.0...v1.17.1) (2026-11-15)
+
+
+### Dependencies
+
+* **docker:** update mcr.microsoft.com/dotnet/aspnet from 1a48394 to bfd912c ([43eb6cc](https://github.com/sondresjolyst/altinnendata-api/commit/43eb6cc441b12cdf7632ea1c97efdde9efe18b7d))
+* **docker:** update mcr.microsoft.com/dotnet/sdk from 212fe4c to fe0fd4e ([43eb6cc](https://github.com/sondresjolyst/altinnendata-api/commit/43eb6cc441b12cdf7632ea1c97efdde9efe18b7d))
+* **nuget:** update Mapster from 10.0.13 to 10.0.14 ([2a7c504](https://github.com/sondresjolyst/altinnendata-api/commit/2a7c504757a5bca64624f7706add92c954aa3c42))
+* **nuget:** update Mapster.DependencyInjection from 10.0.13 to 10.0.14 ([2a7c504](https://github.com/sondresjolyst/altinnendata-api/commit/2a7c504757a5bca64624f7706add92c954aa3c42))
+* **nuget:** update Markdig from 1.5.1 to 1.6.0 ([2a7c504](https://github.com/sondresjolyst/altinnendata-api/commit/2a7c504757a5bca64624f7706add92c954aa3c42))
+
 ## [1.17.0](https://github.com/sondresjolyst/altinnendata-api/compare/v1.16.0...v1.17.0) (2026-11-14)
 
 
