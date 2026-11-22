@@ -109,18 +109,49 @@ namespace altinnendata_api.Features.Shop
             {
                 order.IsTest = payment.IsTest;
                 await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                return await PaymentNotSavedAsync(vipps, order, payment, log, ex);
+            }
+
+            try
+            {
                 await tx.CommitAsync(ct);
             }
             catch (Exception ex)
             {
-                // The order and the hold are gone with the rollback, so the payment Vipps made belongs to no order. It is
-                // cancelled, and the buyer can check out again with a new order.
-                await tx.RollbackAsync(CancellationToken.None);
-                log.LogError(ex, "The order {Reference} could not be saved after Vipps made its payment, the payment is cancelled", order.Reference);
-                await CancelUnsavedPaymentAsync(vipps, order.Reference, payment.IsTest, log);
-                return PaymentNotSaved();
+                // The answer to the commit was lost. The server may still have committed, so the order is looked for once
+                // the transaction is closed, which rolls back whatever did not commit.
+                await tx.DisposeAsync();
+                db.ChangeTracker.Clear();
+                bool saved;
+                try
+                {
+                    saved = await db.Orders.AsNoTracking().AnyAsync(o => o.Id == order.Id, CancellationToken.None);
+                }
+                catch (Exception lookup)
+                {
+                    // Unknown either way, so the payment is left to end on its own. Polling ends a Pending order it finds.
+                    log.LogError(lookup, "The commit of order {Reference} failed and the order could not be looked up, the Vipps payment is left to expire", order.Reference);
+                    return PaymentNotSaved();
+                }
+                if (!saved) return await PaymentNotSavedAsync(vipps, order, payment, log, ex);
+                log.LogWarning(ex, "The commit of order {Reference} reported a failure, but the order was saved", order.Reference);
             }
             return TypedResults.Ok(new CheckoutResponse(payment.RedirectUrl, order.PublicToken));
+        }
+
+        /// <summary>
+        /// The order and the hold are gone with the rollback, so the payment Vipps made belongs to no order. It is
+        /// cancelled, and the buyer can check out again with a new order.
+        /// </summary>
+        private static async Task<IResult> PaymentNotSavedAsync(IVippsClient vipps, Order order, VippsCreatePaymentResponse payment, ILogger log, Exception ex)
+        {
+            log.LogError(ex, "The order {Reference} could not be saved after Vipps made its payment, the payment is cancelled", order.Reference);
+            await CancelUnsavedPaymentAsync(vipps, order.Reference, payment.IsTest, log);
+            return PaymentNotSaved();
         }
 
         /// <summary>
@@ -139,10 +170,13 @@ namespace altinnendata_api.Features.Shop
             }
         }
 
-        /// <summary>The shop could not save the payment Vipps made, and cancelled it. Nothing was charged.</summary>
+        /// <summary>
+        /// The shop could not save the payment Vipps made. Nothing was charged, since the buyer never got its link, whether
+        /// or not cancelling it worked.
+        /// </summary>
         internal static IResult PaymentNotSaved() =>
             ShopProblems.Code(StatusCodes.Status500InternalServerError, "paymentNotSaved",
-                "The payment could not be saved and was cancelled. Nothing was charged. Try again.");
+                "The payment could not be saved. Nothing was charged. Try again.");
 
         /// <summary>The order number, also the Vipps reference and idempotency key, <c>AID-000042-1A2B3C4D</c>.</summary>
         public static string NewReference(int orderId) =>

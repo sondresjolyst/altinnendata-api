@@ -400,6 +400,37 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task APendingOrderWhosePaymentVippsDoesNotKnow_FailsAsIfItExpired_AndLetsGoOfTheBuild()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        _vipps.Setup(v => v.GetPaymentAsync(Ref(1), true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Not Found", null, HttpStatusCode.NotFound));
+
+        await RunAsync(db);
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Failed, order.Status);
+        Assert.Equal(BuildAvailability.Available, build.Availability);
+        Assert.Null(build.HeldByOrderId);
+        _notifier.VerifyNoOtherCalls();
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("does not know"));
+    }
+
+    [Fact]
+    public async Task APendingOrderVippsRefusesToShowForAnotherReason_IsLeftPending()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        _vipps.Setup(v => v.GetPaymentAsync(Ref(1), true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Forbidden", null, HttpStatusCode.Forbidden));
+
+        await RunAsync(db);
+
+        Assert.Equal(OrderStatus.Pending, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
+    }
+
+    [Fact]
     public async Task ARun_ChecksOneBatch_AndTheNextRunGoesOnFromThere()
     {
         await using var db = await postgres.NewContextAsync();

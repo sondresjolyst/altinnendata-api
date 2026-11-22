@@ -390,6 +390,7 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
             result = await Run(failing, vipps);
 
         AssertProblem(result, StatusCodes.Status500InternalServerError, "paymentNotSaved");
+        Assert.Equal("The payment could not be saved. Nothing was charged. Try again.", Assert.IsType<ProblemHttpResult>(result).ProblemDetails.Detail);
         vipps.Verify(v => v.CancelPaymentAsync(created!, $"cancel-{created}", true, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(0, await CountOrdersAsync(db));
         Assert.Equal(BuildAvailability.Available, (await ReloadBuildAsync(db, build.Id)).Availability);
@@ -397,6 +398,57 @@ public class CheckoutTests(PostgresDatabase postgres) : TestBase
         await using var again = postgres.NewContextOn(db);
         Assert.IsType<Ok<CheckoutResponse>>(await Run(again, vipps));
         Assert.Equal(BuildAvailability.Reserved, (await ReloadBuildAsync(db, build.Id)).Availability);
+    }
+
+    [Fact]
+    public async Task Checkout_WhenTheCancelOfAnUnsavedPaymentFails_StillSaysNothingWasCharged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        await SeedAsync(db);
+        var vipps = Vipps();
+        vipps.Setup(v => v.CancelPaymentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("down"));
+
+        IResult result;
+        await using (var failing = FailingSave.On(db, 2))
+            result = await Run(failing, vipps);
+
+        AssertProblem(result, StatusCodes.Status500InternalServerError, "paymentNotSaved");
+        Assert.Equal("The payment could not be saved. Nothing was charged. Try again.", Assert.IsType<ProblemHttpResult>(result).ProblemDetails.Detail);
+    }
+
+    [Fact]
+    public async Task Checkout_WhenTheCommitAnswerIsLostButTheOrderWasSaved_AnswersWithThePayment_AndCancelsNothing()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var build = await SeedAsync(db);
+        var vipps = Vipps();
+
+        IResult result;
+        await using (var failing = FailingCommit.On(db, afterTheServerCommitted: true))
+            result = await Run(failing, vipps);
+
+        Assert.Equal(FakeUrl, Assert.IsType<Ok<CheckoutResponse>>(result).Value!.RedirectUrl);
+        vipps.Verify(v => v.CancelPaymentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(OrderStatus.Pending, (await OnlyOrderAsync(postgres, db)).Status);
+        Assert.Equal(BuildAvailability.Reserved, (await ReloadBuildAsync(db, build.Id)).Availability);
+    }
+
+    [Fact]
+    public async Task Checkout_WhenTheCommitFails_CancelsThePayment_AndSavesNothing()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var build = await SeedAsync(db);
+        var vipps = Vipps();
+
+        IResult result;
+        await using (var failing = FailingCommit.On(db, afterTheServerCommitted: false))
+            result = await Run(failing, vipps);
+
+        AssertProblem(result, StatusCodes.Status500InternalServerError, "paymentNotSaved");
+        vipps.Verify(v => v.CancelPaymentAsync(It.IsAny<string>(), It.IsAny<string>(), true, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(0, await CountOrdersAsync(db));
+        Assert.Equal(BuildAvailability.Available, (await ReloadBuildAsync(db, build.Id)).Availability);
     }
 
     [Fact]

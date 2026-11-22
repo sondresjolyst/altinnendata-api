@@ -114,6 +114,16 @@ namespace altinnendata_api.Features.Shop
             {
                 payment = await vipps.GetPaymentAsync(order.VippsReference, order.IsTest, ct);
             }
+            catch (HttpRequestException ex) when (order.Status == OrderStatus.Pending && ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Vipps never made the payment, for example when the shop stopped between saving a payment from a link and
+                // calling Vipps. The order has waited longer than PendingAfter, so it ends as if the payment expired.
+                log.LogWarning(ex, "Payment polling: Vipps does not know payment {VippsReference} of Pending order {OrderId}, it is ended as expired",
+                    order.VippsReference, order.Id);
+                var expired = new PaymentChange("EXPIRED", null, DateTime.UtcNow, $"poll:{order.VippsReference}:NOTFOUND", RefundSource.Polling);
+                await ApplyAsync(order, expired, null, ct);
+                return true;
+            }
             catch (HttpRequestException ex) when (VippsFailures.IsRefusal(ex))
             {
                 log.LogWarning(ex, "Payment polling: Vipps refused to show the payment of order {OrderId} with {Status}, it is tried again next run",
@@ -135,7 +145,7 @@ namespace altinnendata_api.Features.Shop
         }
 
         /// <summary>Applies and saves one change, then sends its emails. Returns false when nothing more should be applied.</summary>
-        private async Task<bool> ApplyAsync(Order order, PaymentChange change, VippsPayment payment, CancellationToken ct)
+        private async Task<bool> ApplyAsync(Order order, PaymentChange change, VippsPayment? payment, CancellationToken ct)
         {
             var outcome = await handler.ApplyAsync(order, change, payment, ct);
             if (outcome.Kind != VippsWebhookOutcomeKind.Applied)

@@ -228,9 +228,18 @@ namespace altinnendata_api.Features.Shop
             catch (Exception ex)
             {
                 log.LogError(ex, "Vipps could not create payment {VippsReference} for order {OrderId}.", reference, order.Id);
-                // Vipps may still have made the payment after a timeout. The next click then uses the same reference and
-                // key, and Vipps answers with that payment.
-                db.OrderPayments.Remove(attempt);
+                // The reference stays on the order's list, so the next click starts a new payment and never depends on
+                // how long Vipps replays a key, or on a reference Vipps already has. After an answer that is not a clear
+                // refusal Vipps may have made the payment, so it is cancelled. The buyer never got its link.
+                if (VippsFailures.IsRefusal(ex))
+                {
+                    attempt.State = OrderPayment.Refused;
+                }
+                else
+                {
+                    attempt.State = OrderPayment.Unknown;
+                    await Checkout.CancelUnsavedPaymentAsync(vipps, reference, before.IsTest, log);
+                }
                 await UndoStartAsync(db, order, before, log);
                 return ShopProblems.Code(StatusCodes.Status502BadGateway, "paymentProviderUnavailable",
                     "Vipps could not start the payment. Try again later.");
@@ -250,7 +259,7 @@ namespace altinnendata_api.Features.Shop
                     // Its reference stays on the order's list, so the next click starts a new one.
                     log.LogError(ex, "Order {OrderId} could not save the environment of payment {VippsReference}, the payment is cancelled", order.Id, reference);
                     await Checkout.CancelUnsavedPaymentAsync(vipps, reference, payment.IsTest, log);
-                    attempt.State = "TERMINATED";
+                    attempt.State = OrderPayment.Terminated;
                     await UndoStartAsync(db, order, before, log);
                     return Checkout.PaymentNotSaved();
                 }
@@ -275,7 +284,8 @@ namespace altinnendata_api.Features.Shop
             }
             catch (Exception ex)
             {
-                log.LogError(ex, "Order {OrderId} stays Pending with a payment Vipps did not start, check it before the buyer pays again", order.Id);
+                // Polling ends the payment once Vipps shows it as ended or does not know it, and the buyer can pay again.
+                log.LogError(ex, "Order {OrderId} stays Pending with a payment Vipps did not start until polling ends it", order.Id);
             }
         }
 
@@ -284,7 +294,7 @@ namespace altinnendata_api.Features.Shop
 
         private static IResult PaymentInProgress() =>
             ShopProblems.Code(StatusCodes.Status409Conflict, "paymentInProgress",
-                "A payment for this order is already open in Vipps. Finish it or wait a few minutes and try again.");
+                "The payment has already started. Finish it in Vipps, or try again in a few minutes.");
 
         public class Endpoints : IEndpoint
         {
