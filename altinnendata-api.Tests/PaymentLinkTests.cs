@@ -33,6 +33,7 @@ public class PaymentLinkTests : TestBase
     public PaymentLinkTests(PostgresDatabase postgres)
     {
         this.postgres = postgres;
+        _vipps.Setup(v => v.IsTestAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _vipps.Setup(v => v.CreatePaymentAsync(It.IsAny<VippsCreatePaymentRequest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Callback<VippsCreatePaymentRequest, string, CancellationToken>((r, key, _) => _created.Add((r, key)))
             .ReturnsAsync((VippsCreatePaymentRequest r, string _, CancellationToken _) =>
@@ -444,6 +445,22 @@ public class PaymentLinkTests : TestBase
     }
 
     [Fact]
+    public async Task Pay_AfterAnUnknownVippsOutcome_CancelsInTheEnvironmentTheCreateUsed()
+    {
+        await using var db = await postgres.NewContextAsync();
+        // The order is from before Vipps test mode was turned on, and the new payment goes to the test environment.
+        var (_, orderId) = await SeedLostAsync(db, o => o.IsTest = false);
+        var token = await SendAsync(db, orderId);
+        VippsFailsOnceWith(new TaskCanceledException("The request was canceled.", new TimeoutException()));
+        _vipps.Setup(v => v.CancelPaymentAsync(Reference + "-2", $"cancel-{Reference}-2", true, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        AssertProblem(await PayAsync(db, token), StatusCodes.Status502BadGateway, "paymentProviderUnavailable");
+
+        _vipps.Verify(v => v.CancelPaymentAsync(Reference + "-2", $"cancel-{Reference}-2", true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Pay_AfterVippsRefuses_TheNextClickUsesANewReference_AndNothingIsCancelled()
     {
         await using var db = await postgres.NewContextAsync();
@@ -488,10 +505,29 @@ public class PaymentLinkTests : TestBase
             await new ShopPaymentPolling(fresh, _vipps.Object, handler, _notifier.Object, NullLogger<ShopPaymentPolling>.Instance).RunAsync(0, now, Ct);
         }
 
+        // A paid order Vipps answers for shows the 404 is about this payment, not a wrong address.
+        await using (var other = postgres.NewContextOn(db))
+        {
+            var known = await other.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct);
+            other.Orders.Add(new Order
+            {
+                Reference = "AID-000002-KNOWN000", VippsReference = "AID-000002-KNOWN000", PublicToken = "fedcba9876543210fedcba9876543210",
+                Status = OrderStatus.Paid, Locale = "no", BuyerName = "Kari", BuyerEmail = "kari@example.com", BuyerPhone = "4791234568",
+                DeliveryMethod = DeliveryMethod.Pickup, DeliveryLabel = "Henting", BuildTitle = "PC", BuildSlug = "pc",
+                BuildPriceInOre = Total, TotalInOre = Total, CapturedInOre = Total, IsTest = known.IsTest, TermsAcceptedAt = DateTime.UtcNow
+            });
+            await other.SaveChangesAsync(Ct);
+        }
+        _vipps.Setup(v => v.GetPaymentAsync("AID-000002-KNOWN000", true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VippsPayment { Reference = "AID-000002-KNOWN000", State = "AUTHORIZED", CapturedAmountInOre = Total });
+
         await PollAsync(started.AddMinutes(14));
         Assert.Equal(OrderStatus.Pending, (await OrderAsync(db, orderId)).Status);
 
+        // Vipps must not know the payment on two runs before the order ends.
         await PollAsync(started.AddMinutes(16));
+        Assert.Equal(OrderStatus.Pending, (await OrderAsync(db, orderId)).Status);
+        await PollAsync(started.AddMinutes(19));
         var order = await OrderAsync(db, orderId);
         Assert.Equal(OrderStatus.Failed, order.Status);
         Assert.Equal(orderId, (await BuildAsync(db, buildId)).HeldByOrderId);

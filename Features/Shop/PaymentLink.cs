@@ -220,6 +220,8 @@ namespace altinnendata_api.Features.Shop
                 await tx.CommitAsync(ct);
             }
 
+            // The environment Vipps creates the payment in, so a payment with an unclear outcome is cancelled there.
+            var createIsTest = await vipps.IsTestAsync(ct);
             VippsCreatePaymentResponse payment;
             try
             {
@@ -238,7 +240,7 @@ namespace altinnendata_api.Features.Shop
                 else
                 {
                     attempt.State = OrderPayment.Unknown;
-                    await Checkout.CancelUnsavedPaymentAsync(vipps, reference, before.IsTest, log);
+                    await Checkout.CancelUnsavedPaymentAsync(vipps, reference, createIsTest, log);
                 }
                 await UndoStartAsync(db, order, before, log);
                 return ShopProblems.Code(StatusCodes.Status502BadGateway, "paymentProviderUnavailable",
