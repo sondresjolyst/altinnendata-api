@@ -16,5 +16,20 @@ namespace altinnendata_api.Models.Shop
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public const string Created = "CREATED";
+
+        /// <summary>Vipps refused to make the payment, so it was never made.</summary>
+        public const string Refused = "REFUSED";
+
+        /// <summary>The call to make the payment failed without a clear answer, so Vipps may have made it. It was cancelled.</summary>
+        public const string Unknown = "UNKNOWN";
+
+        /// <summary>The shop could not save the payment after Vipps made it, so it was cancelled.</summary>
+        public const string Terminated = "TERMINATED";
+
+        /// <summary>
+        /// Vipps answered that it does not know the payment on one polling run. A second answer like it on a later run
+        /// ends the order, so one wrong answer never does.
+        /// </summary>
+        public const string NotFound = "NOTFOUND";
     }
 }
