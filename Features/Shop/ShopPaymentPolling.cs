@@ -158,9 +158,12 @@ namespace altinnendata_api.Features.Shop
             }
             if (current.State != OrderPayment.NotFound)
             {
-                current.State = OrderPayment.NotFound;
-                await db.SaveChangesAsync(ct);
+                // Only while the state is still the one read, so a webhook that saved meanwhile is never overwritten.
+                var marked = await db.OrderPayments
+                    .Where(p => p.Id == current.Id && p.State == current.State)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.State, OrderPayment.NotFound), ct);
                 db.ChangeTracker.Clear();
+                if (marked == 0) return;
                 log.LogWarning(ex, "Payment polling: Vipps does not know payment {VippsReference} of Pending order {OrderId}, it is checked again next run",
                     order.VippsReference, order.Id);
                 return;
@@ -178,35 +181,44 @@ namespace altinnendata_api.Features.Shop
             await ApplyAsync(order, expired, null, ct);
         }
 
-        /// <summary>Whether Vipps shows the latest paid order of the same environment, so its 404 was about the payment itself.</summary>
+        /// <summary>
+        /// Whether Vipps shows a payment it is known to have in the same environment, so its 404 was about the payment
+        /// itself. That is the order's own first payment when the buyer authorized it, or else the latest paid order.
+        /// </summary>
         private async Task<bool> VippsAnswersForAKnownPaymentAsync(Order order, CancellationToken ct)
         {
-            var known = await db.Orders.AsNoTracking()
+            var known = new List<string>();
+            if (order.AuthorizedAt != null && order.Reference != order.VippsReference) known.Add(order.Reference);
+            var paid = await db.Orders.AsNoTracking()
                 .Where(o => o.Id != order.Id && o.IsTest == order.IsTest
                     && (o.Status == OrderStatus.Reserved || o.Status == OrderStatus.Paid || o.Status == OrderStatus.Refunded))
                 .OrderByDescending(o => o.Id)
                 .Select(o => o.VippsReference)
                 .FirstOrDefaultAsync(ct);
-            if (known == null) return false;
-            try
+            if (paid != null) known.Add(paid);
+
+            foreach (var reference in known)
             {
-                await vipps.GetPaymentAsync(known, order.IsTest, ct);
-                return true;
+                try
+                {
+                    await vipps.GetPaymentAsync(reference, order.IsTest, ct);
+                    return true;
+                }
+                catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, ct))
+                {
+                    // Tried with the next one.
+                }
             }
-            catch (Exception ex) when (VippsFailures.IsProviderFailure(ex, ct))
-            {
-                return false;
-            }
+            return false;
         }
 
         /// <summary>Vipps answered for the payment, so an earlier 404 no longer counts.</summary>
         private async Task ForgetNotFoundAsync(Order order, CancellationToken ct)
         {
-            var current = await db.OrderPayments.FirstOrDefaultAsync(
-                p => p.OrderId == order.Id && p.VippsReference == order.VippsReference && p.State == OrderPayment.NotFound, ct);
-            if (current == null) return;
-            current.State = OrderPayment.Created;
-            await db.SaveChangesAsync(ct);
+            // Only while the row still holds the mark, so a webhook that saved meanwhile is never overwritten.
+            await db.OrderPayments
+                .Where(p => p.OrderId == order.Id && p.VippsReference == order.VippsReference && p.State == OrderPayment.NotFound)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.State, OrderPayment.Created), ct);
         }
 
         /// <summary>Applies and saves one change, then sends its emails. Returns false when nothing more should be applied.</summary>

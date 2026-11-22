@@ -184,6 +184,9 @@ namespace altinnendata_api.Features.Shop
             var number = Math.Max(2, await db.OrderPayments.CountAsync(p => p.OrderId == order.Id, ct) + 1);
             var reference = VippsReferenceOf(order, number);
             var before = new StartUndo(order.Status, order.VippsReference, order.IsTest);
+            // The environment Vipps creates the payment in, so a payment with an unclear outcome is cancelled there. Read
+            // before anything is saved, so a failure here leaves the order as it was.
+            var createIsTest = await vipps.IsTestAsync(ct);
             var attempt = new OrderPayment { VippsReference = reference };
 
             await using (var tx = await db.Database.BeginTransactionAsync(ct))
@@ -220,8 +223,6 @@ namespace altinnendata_api.Features.Shop
                 await tx.CommitAsync(ct);
             }
 
-            // The environment Vipps creates the payment in, so a payment with an unclear outcome is cancelled there.
-            var createIsTest = await vipps.IsTestAsync(ct);
             VippsCreatePaymentResponse payment;
             try
             {

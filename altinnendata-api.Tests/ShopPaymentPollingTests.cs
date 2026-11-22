@@ -468,6 +468,70 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("known payment"));
     }
 
+    /// <summary>Runs <paramref name="webhook"/> once, just before the first UPDATE of a payment row, the way a webhook racing polling would.</summary>
+    private sealed class BeforePaymentRowUpdate(Func<Task> webhook) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        private async Task RunAsync(System.Data.Common.DbCommand command)
+        {
+            if (Fired || !command.CommandText.Contains("UPDATE \"OrderPayments\"")) return;
+            Fired = true;
+            await webhook();
+        }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await RunAsync(command);
+            return result;
+        }
+
+        public override async ValueTask<InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, CommandEventData eventData, InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            await RunAsync(command);
+            return result;
+        }
+    }
+
+    private BeforePaymentRowUpdate AuthorizedArrives(ApplicationDbContext db, int orderId) => new(async () =>
+    {
+        await using var other = postgres.NewContextOn(db);
+        await other.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, "AUTHORIZED"), Ct);
+    });
+
+    [Fact]
+    public async Task ANotFound_NeverOverwritesAStateAWebhookSavedMeanwhile()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsDoesNotKnow(1);
+        var webhook = AuthorizedArrives(db, orderId);
+
+        await RunAsync(db, interceptor: webhook);
+
+        Assert.True(webhook.Fired);
+        Assert.Equal("AUTHORIZED", await PaymentStateAsync(db, orderId));
+    }
+
+    [Fact]
+    public async Task AnAnswerAfterANotFound_NeverOverwritesAStateAWebhookSavedMeanwhile()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsDoesNotKnow(1);
+        await RunAsync(db);
+        Assert.Equal(OrderPayment.NotFound, await PaymentStateAsync(db, orderId));
+        VippsShows(1, "CREATED");
+        var webhook = AuthorizedArrives(db, orderId);
+
+        await RunAsync(db, interceptor: webhook);
+
+        Assert.True(webhook.Fired);
+        Assert.Equal("AUTHORIZED", await PaymentStateAsync(db, orderId));
+    }
+
     [Fact]
     public async Task ANotFoundThenAnAnswer_StartsTheCountAgain()
     {
