@@ -175,6 +175,22 @@ public class OrderRetentionPostgresTests(PostgresDatabase postgres)
     }
 
     [Fact]
+    public async Task Anonymise_AfterADeadlock_ReadsTheBatchAgain_AndAnonymises()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = await postgres.NewContextAsync();
+        var sale = OrderRetentionTests.NewOrder(OrderStatus.Paid, new DateTime(2026, 6, 1, 10, 0, 0, DateTimeKind.Utc));
+        db.Orders.Add(sale);
+        await db.SaveChangesAsync(ct);
+        db.ChangeTracker.Clear();
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, ct);
+
+        Assert.Equal(1, await OrderAnonymisation.AnonymiseAsync(db, new DateTime(2031, 12, 31, 23, 0, 0, DateTimeKind.Utc), ct));
+
+        Assert.NotNull((await db.Orders.AsNoTracking().SingleAsync(o => o.Id == sale.Id, ct)).AnonymisedAt);
+    }
+
+    [Fact]
     public async Task Purge_DeletesTheRefundsOfADeletedTestOrder()
     {
         var ct = TestContext.Current.CancellationToken;

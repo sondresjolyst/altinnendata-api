@@ -335,6 +335,26 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     }
 
     [Fact]
+    public async Task ADeadlockOnTheSave_IsLoggedAsOne_NotAsAChangeByAWebhook_AndTheNextRunAppliesIt()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsShows(1, "AUTHORIZED");
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+
+        await RunAsync(db);
+
+        Assert.Equal(OrderStatus.Pending, (await ReloadAsync(db, buildId, orderId)).Order.Status);
+        _notifier.VerifyNoOtherCalls();
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("database aborted"));
+        Assert.DoesNotContain(_log.Entries, e => e.Message.Contains("changed while"));
+
+        await RunAsync(db);
+
+        Assert.Equal(OrderStatus.Reserved, (await ReloadAsync(db, buildId, orderId)).Order.Status);
+    }
+
+    [Fact]
     public async Task AVippsOutage_StopsTheRun_AndTheNextRunStartsAtTheSameOrder()
     {
         await using var db = await postgres.NewContextAsync();

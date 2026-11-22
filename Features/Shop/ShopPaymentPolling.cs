@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SjolystInnovation.AppKit.Vipps;
+using altinnendata_api.Infrastructure;
 using altinnendata_api.Models;
 using altinnendata_api.Models.Shop;
 
@@ -76,9 +77,12 @@ namespace altinnendata_api.Features.Shop
                 {
                     await db.SaveChangesAsync(ct);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex))
                 {
-                    // The buyer started a payment or the admin sent a new link meanwhile. The next run looks again.
+                    // The buyer started a payment or the admin sent a new link meanwhile, or Postgres aborted the save.
+                    // The next run looks again.
+                    if (DatabaseAbort.Is(ex))
+                        log.LogWarning(ex, "Payment polling: the database aborted closing the payment link of order {OrderId}, it is tried again next run", id);
                     continue;
                 }
                 closed++;
@@ -145,11 +149,14 @@ namespace altinnendata_api.Features.Shop
             {
                 await db.SaveChangesAsync(ct);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex))
             {
-                // A webhook or an admin changed the order or its build meanwhile. Whoever saved sends the emails,
-                // and the next run reads the order again.
-                log.LogInformation("Payment polling: order {OrderId} changed while {Name} was applied, it is checked again next run", order.Id, change.Name);
+                // A webhook or an admin changed the order or its build meanwhile, or Postgres aborted the save. Whoever
+                // saved sends the emails, and the next run reads the order again.
+                if (DatabaseAbort.Is(ex))
+                    log.LogWarning(ex, "Payment polling: the database aborted saving {Name} on order {OrderId}, it is checked again next run", change.Name, order.Id);
+                else
+                    log.LogInformation("Payment polling: order {OrderId} changed while {Name} was applied, it is checked again next run", order.Id, change.Name);
                 db.ChangeTracker.Clear();
                 return false;
             }

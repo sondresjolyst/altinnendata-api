@@ -1160,6 +1160,115 @@ public class AdminOrdersTests(PostgresDatabase postgres) : TestBase
     private Task<IResult> Shipped(ApplicationDbContext db, int id, string? note = null) =>
         AdminOrders.MarkShipped(id, new ShippedRequest(note), db, _notifier.Object, _log, Ct);
 
+    // Postgres ending a save with a deadlock or a serialization failure saved nothing, and nobody else changed the order.
+
+    [Fact]
+    public async Task Cancel_AfterADeadlockOnTheMark_MarksAgain_AndCancels()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        SetupCancel();
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+
+        Assert.Equal("Cancelled", AssertOk(await Cancel(db, orderId)).Status);
+        Assert.Equal(OrderStatus.Cancelled, (await OrderAsync(db, orderId)).Status);
+    }
+
+    [Fact]
+    public async Task Cancel_WhenEveryMarkDeadlocks_Fails_WithoutCallingVipps_OrSayingTheOrderChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct);
+
+        await DatabaseAbortTrigger.AssertAbortAsync(() => Cancel(db, orderId));
+
+        _vipps.VerifyNoOtherCalls();
+        Assert.Equal(OrderStatus.Reserved, (await OrderAsync(db, orderId)).Status);
+    }
+
+    [Fact]
+    public async Task Refund_WhenEveryReserveDeadlocks_Fails_WithoutCallingVipps_OrSayingRefundChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct);
+
+        await DatabaseAbortTrigger.AssertAbortAsync(() => Refund(db, orderId, expected: 0));
+
+        _vipps.VerifyNoOtherCalls();
+        Assert.Null((await OrderAsync(db, orderId)).PendingRefundKey);
+    }
+
+    [Fact]
+    public async Task Capture_AfterADeadlockOnTheSave_SavesAgain_AndMarksPaid()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db);
+        SetupCapture();
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+
+        Assert.Equal("Paid", AssertOk(await Capture(db, orderId)).Status);
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(BuildAvailability.Sold, build.Availability);
+    }
+
+    [Fact]
+    public async Task Capture_WhenEverySaveDeadlocks_Fails_InsteadOfSayingTheOrderChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db);
+        SetupCapture();
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct);
+
+        await DatabaseAbortTrigger.AssertAbortAsync(() => Capture(db, orderId));
+
+        Assert.Equal(OrderStatus.Reserved, (await OrderAsync(db, orderId)).Status);
+        Assert.DoesNotContain(_log.Entries, e => e.Message.Contains("but the order is now"));
+    }
+
+    [Fact]
+    public async Task Refund_WhenEverySaveAfterVippsDeadlocks_Fails_InsteadOfSayingTheOrderChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, OrderStatus.Paid);
+        SetupRefund();
+        // The pending refund is saved before Vipps is called, every save after it fails.
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct, skip: 1);
+
+        await DatabaseAbortTrigger.AssertAbortAsync(() => Refund(db, orderId, expected: 0));
+
+        var order = await OrderAsync(db, orderId);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal("refund-AID-000001-ABCDEF12-0", order.PendingRefundKey);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Shipped_AfterADeadlock_MarksAgain_AndEmailsOnce()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+
+        Assert.NotNull(AssertOk(await Shipped(db, id)).ShippedAt);
+        _notifier.Verify(n => n.OrderShippedAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Shipped_WhenEverySaveDeadlocks_Fails_InsteadOfSayingTheOrderChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, id) = await SeedAsync(db);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct);
+
+        await DatabaseAbortTrigger.AssertAbortAsync(() => Shipped(db, id));
+
+        Assert.Null((await OrderAsync(db, id)).ShippedAt);
+        _notifier.VerifyNoOtherCalls();
+    }
+
     /// <summary>A context on the same database that runs <paramref name="beforeFirstSave"/> once, just before its first save.</summary>
     private ApplicationDbContext ContextWithRace(ApplicationDbContext existing, Func<Task> beforeFirstSave) =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
