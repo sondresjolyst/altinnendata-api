@@ -133,9 +133,11 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     return (order, null);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex))
                 {
-                    // A webhook changed the order after the read. Check it again on a fresh read.
+                    // A webhook changed the order after the read, or Postgres aborted the save. Check it again on a
+                    // fresh read. An abort on the last try is not a change by someone else, so it fails the request.
+                    if (attempt == MaxSaveAttempts && DatabaseAbort.Is(ex)) throw;
                     db.ChangeTracker.Clear();
                     order = await db.Orders.FirstAsync(o => o.Id == order.Id, ct);
                     if (order.Status != OrderStatus.Reserved || attempt == MaxSaveAttempts)
@@ -303,9 +305,11 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     return (order, null, amount, key);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex))
                 {
-                    // A webhook or another refund changed the order after the read. Check again on a fresh read.
+                    // A webhook or another refund changed the order after the read, or Postgres aborted the save.
+                    // Check again on a fresh read. An abort on the last try fails the request instead of refundChanged.
+                    if (attempt == MaxSaveAttempts && DatabaseAbort.Is(ex)) throw;
                     db.ChangeTracker.Clear();
                     if (attempt == MaxSaveAttempts) return (order, RefundChanged(), 0, "");
                 }
@@ -327,7 +331,7 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     return;
                 }
-                catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex) && attempt < MaxSaveAttempts)
                 {
                     db.ChangeTracker.Clear();
                     order = await db.Orders.FirstAsync(o => o.Id == order.Id, ct);
@@ -374,12 +378,12 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     break;
                 }
-                catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex) && attempt < MaxSaveAttempts)
                 {
                     db.ChangeTracker.Clear();
                     order = await db.Orders.FirstAsync(o => o.Id == id, ct);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (DbUpdateConcurrencyException ex) when (!DatabaseAbort.Is(ex))
                 {
                     db.ChangeTracker.Clear();
                     order = await db.Orders.AsNoTracking().FirstAsync(o => o.Id == id, ct);
@@ -448,8 +452,10 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     return (Saved.Applied, order);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex))
                 {
+                    // An abort on the last try is not a webhook's change, so it fails the request instead of Moved.
+                    if (attempt == MaxSaveAttempts && DatabaseAbort.Is(ex)) throw;
                     db.ChangeTracker.Clear();
                     order = await db.Orders.FirstAsync(o => o.Id == order.Id, ct);
                     if (order.Status == to) return (Saved.AlreadyThere, order);

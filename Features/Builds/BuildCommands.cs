@@ -11,6 +11,8 @@ namespace altinnendata_api.Features.Builds
     /// <summary>Admin create / update / delete for PC builds, including their per-locale text and parts list.</summary>
     public static class BuildCommands
     {
+        private const int MaxSaveAttempts = 3;
+
         public static async Task<IResult> Create(CreateBuildDto dto, ApplicationDbContext db, CancellationToken ct)
         {
             if (await UnknownClassAsync(dto.BuildClassId, db, ct))
@@ -119,17 +121,27 @@ namespace altinnendata_api.Features.Builds
             return TypedResults.NoContent();
         }
 
-        /// <summary>False when the build changed since it was read, for example by a checkout holding it.</summary>
+        /// <summary>
+        /// False when the build changed since it was read, for example by a checkout holding it. A deadlock or a
+        /// serialization failure saved nothing, so the same changes are saved again.
+        /// </summary>
         private static async Task<bool> TrySaveAsync(ApplicationDbContext db, CancellationToken ct)
         {
-            try
+            for (var attempt = 1; ; attempt++)
             {
-                await db.SaveChangesAsync(ct);
-                return true;
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                return false;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    return true;
+                }
+                catch (Exception ex) when (DatabaseAbort.Is(ex))
+                {
+                    if (attempt == MaxSaveAttempts) throw;
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    return false;
+                }
             }
         }
 

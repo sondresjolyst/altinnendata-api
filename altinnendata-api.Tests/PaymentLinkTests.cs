@@ -390,6 +390,66 @@ public class PaymentLinkTests : TestBase
         Assert.Empty(_created);
     }
 
+    [Fact]
+    public async Task Send_AfterADeadlock_SendsTheLink()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedLostAsync(db);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+
+        Assert.NotNull(await SendAsync(db, orderId));
+        Assert.NotNull((await OrderAsync(db, orderId)).PaymentLinkTokenHash);
+    }
+
+    [Fact]
+    public async Task Send_WhenEverySaveDeadlocks_Fails_InsteadOfSayingTheOrderChanged()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedLostAsync(db);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct);
+
+        await using var fresh = postgres.NewContextOn(db);
+        await DatabaseAbortTrigger.AssertAbortAsync(() => PaymentLink.Send(orderId, fresh, _notifier.Object, NullLogger<PayLinkDto>.Instance, Ct));
+
+        Assert.Null((await OrderAsync(db, orderId)).PaymentLinkTokenHash);
+        _notifier.Verify(n => n.PaymentLinkSentAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Pay_AfterADeadlock_StartsThePayment_InsteadOfSayingOneIsOpen()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedLostAsync(db);
+        var token = await SendAsync(db, orderId);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+
+        Assert.IsType<Ok<CheckoutResponse>>(await PayAsync(db, token));
+
+        var (request, _) = Assert.Single(_created);
+        Assert.Equal(Reference + "-2", request.Reference);
+        var order = await OrderAsync(db, orderId);
+        Assert.Equal(OrderStatus.Pending, order.Status);
+        Assert.Equal(Reference + "-2", order.VippsReference);
+        Assert.Equal(2, order.Payments.Count);
+    }
+
+    [Fact]
+    public async Task Pay_WhenEveryTryDeadlocks_Fails_WithoutCallingVipps_OrSayingAPaymentIsOpen()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedLostAsync(db);
+        var token = await SendAsync(db, orderId);
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", DatabaseAbortTrigger.Always, Ct);
+
+        await DatabaseAbortTrigger.AssertAbortAsync(() => PayAsync(db, token));
+
+        Assert.Empty(_created);
+        var order = await OrderAsync(db, orderId);
+        Assert.Equal(OrderStatus.Failed, order.Status);
+        Assert.Equal(Reference, order.VippsReference);
+        Assert.Single(order.Payments);
+    }
+
     // The payment's events.
 
     [Fact]
@@ -519,6 +579,27 @@ public class PaymentLinkTests : TestBase
         var handler = new ShopWebhookHandler(db, _vipps.Object, _notifier.Object, NullLogger<ShopWebhookHandler>.Instance);
         return await new ShopPaymentPolling(db, _vipps.Object, handler, _notifier.Object, NullLogger<ShopPaymentPolling>.Instance)
             .CloseExpiredLinksAsync(now, Ct);
+    }
+
+    [Fact]
+    public async Task Polling_LogsADeadlockOnClosingTheLinkAsOne_AndClosesItNextRun()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedLostAsync(db);
+        await SendAsync(db, orderId);
+        var expiresAt = (await OrderAsync(db, orderId)).PaymentLinkExpiresAt!.Value;
+        await DatabaseAbortTrigger.InstallAsync(db, "Orders", 1, Ct);
+        var log = new ListLogger<ShopPaymentPolling>();
+
+        await using (var first = postgres.NewContextOn(db))
+        {
+            var handler = new ShopWebhookHandler(first, _vipps.Object, _notifier.Object, NullLogger<ShopWebhookHandler>.Instance);
+            Assert.Equal(0, await new ShopPaymentPolling(first, _vipps.Object, handler, _notifier.Object, log).CloseExpiredLinksAsync(expiresAt, Ct));
+        }
+
+        Assert.Contains(log.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning && e.Message.Contains("database aborted"));
+        _notifier.Verify(n => n.PaymentLinkExpiredAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(1, await CloseExpiredAsync(db, expiresAt));
     }
 
     [Fact]

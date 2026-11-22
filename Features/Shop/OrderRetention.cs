@@ -87,9 +87,9 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     return due.Count;
                 }
-                catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex) && attempt < MaxSaveAttempts)
                 {
-                    // A webhook changed an order after the read. Read the batch again.
+                    // A webhook changed an order after the read, or Postgres aborted the save. Read the batch again.
                     db.ChangeTracker.Clear();
                 }
             }

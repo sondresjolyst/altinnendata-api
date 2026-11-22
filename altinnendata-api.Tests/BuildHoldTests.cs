@@ -241,6 +241,39 @@ public class BuildHoldTests(PostgresDatabase postgres) : TestBase
         Assert.True(ok.Value.UpdatedAt > stored);
     }
 
+    [Fact]
+    public async Task AdminUpdate_AfterADeadlock_SavesAgain_InsteadOfSayingTheBuildChanged()
+    {
+        await using var admin = await postgres.NewContextAsync();
+        var (build, _) = await SeedAsync(admin);
+        await DatabaseAbortTrigger.InstallAsync(admin, "PcBuilds", 1, Ct);
+
+        await using var request = postgres.NewContextOn(admin);
+        var result = await BuildCommands.Update(build.Id, FormDto("Ny tittel", "Available", null), request, CreateImageService(request), Ct);
+
+        var ok = Assert.IsType<Ok<BuildAdminDto>>(result);
+        Assert.Equal("Ny tittel", Assert.Single(ok.Value!.Translations).Title);
+        await using var fresh = postgres.NewContextOn(admin);
+        var reloaded = await fresh.PcBuilds.AsNoTracking().Include(b => b.Translations).SingleAsync(b => b.Id == build.Id, Ct);
+        Assert.Equal("Ny tittel", Assert.Single(reloaded.Translations).Title);
+    }
+
+    [Fact]
+    public async Task AdminUpdate_WhenEveryTryDeadlocks_Fails_InsteadOfSayingTheBuildChanged()
+    {
+        await using var admin = await postgres.NewContextAsync();
+        var (build, _) = await SeedAsync(admin);
+        await DatabaseAbortTrigger.InstallAsync(admin, "PcBuilds", DatabaseAbortTrigger.Always, Ct);
+
+        await using var request = postgres.NewContextOn(admin);
+        await DatabaseAbortTrigger.AssertAbortAsync(() =>
+            BuildCommands.Update(build.Id, FormDto("Ny tittel", "Available", null), request, CreateImageService(request), Ct));
+
+        await using var fresh = postgres.NewContextOn(admin);
+        var reloaded = await fresh.PcBuilds.AsNoTracking().Include(b => b.Translations).SingleAsync(b => b.Id == build.Id, Ct);
+        Assert.Empty(reloaded.Translations);
+    }
+
     private static async Task WaitForALockWaiterAsync(string connectionString)
     {
         await using var connection = new NpgsqlConnection(connectionString);

@@ -122,13 +122,14 @@ namespace altinnendata_api.Features.Shop
                     await db.SaveChangesAsync(ct);
                     break;
                 }
-                catch (DbUpdateConcurrencyException) when (attempt < 3)
+                catch (Exception ex) when (DatabaseAbort.IsConflictOrAbort(ex) && attempt < 3)
                 {
-                    // A webhook or the buyer changed the order after the read. Check it again on a fresh read.
+                    // A webhook or the buyer changed the order after the read, or Postgres aborted the save. Check it
+                    // again on a fresh read.
                     db.ChangeTracker.Clear();
                     order = await db.Orders.FirstAsync(o => o.Id == id, ct);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (DbUpdateConcurrencyException ex) when (!DatabaseAbort.Is(ex))
                 {
                     db.ChangeTracker.Clear();
                     return ShopProblems.Code(StatusCodes.Status409Conflict, "wrongStatus", "The order changed while the payment link was being sent.");
@@ -157,6 +158,22 @@ namespace altinnendata_api.Features.Shop
         /// </summary>
         public static async Task<IResult> Pay(string token, ApplicationDbContext db, IVippsClient vipps, IConfiguration config, ILogger<PayLinkDto> log, CancellationToken ct)
         {
+            for (var attempt = 1; ; attempt++)
+            {
+                var result = await TryPayAsync(token, db, vipps, config, log, attempt < MaxPayAttempts, ct);
+                if (result != null) return result;
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        private const int MaxPayAttempts = 3;
+
+        /// <summary>
+        /// One try of <see cref="Pay"/>. Null when Postgres ended the transaction with a deadlock or a serialization
+        /// failure before Vipps was called and <paramref name="mayRetry"/> is set, so the whole try runs again.
+        /// </summary>
+        private static async Task<IResult?> TryPayAsync(string token, ApplicationDbContext db, IVippsClient vipps, IConfiguration config, ILogger<PayLinkDto> log, bool mayRetry, CancellationToken ct)
+        {
             var order = await FindOpenAsync(db, token, DateTime.UtcNow, true, ct);
             if (order == null) return NotValid();
             if (order.Status == OrderStatus.Pending) return PaymentInProgress();
@@ -176,6 +193,13 @@ namespace altinnendata_api.Features.Shop
             {
                 // Locks the order row until the commit, so a release of the build or a second click waits for this one.
                 await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (DatabaseAbort.Is(ex))
+            {
+                // Nothing was saved and nobody else won, so this is no payment in progress.
+                await tx.RollbackAsync(CancellationToken.None);
+                if (mayRetry) return null;
+                throw;
             }
             catch (DbUpdateException)
             {
