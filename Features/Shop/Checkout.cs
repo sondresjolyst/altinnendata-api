@@ -92,13 +92,10 @@ namespace altinnendata_api.Features.Shop
 
             // The Vipps call sits inside the transaction so a crash can never leave a hold behind
             // without a Vipps payment, whose webhook is the only thing that releases it.
+            VippsCreatePaymentResponse payment;
             try
             {
-                var payment = await vipps.CreatePaymentAsync(PaymentRequest(order, config), order.Reference, ct);
-                order.IsTest = payment.IsTest;
-                await db.SaveChangesAsync(ct);
-                await tx.CommitAsync(ct);
-                return TypedResults.Ok(new CheckoutResponse(payment.RedirectUrl, order.PublicToken));
+                payment = await vipps.CreatePaymentAsync(PaymentRequest(order, config), order.Reference, ct);
             }
             catch (Exception ex)
             {
@@ -107,7 +104,45 @@ namespace altinnendata_api.Features.Shop
                 return ShopProblems.Code(StatusCodes.Status502BadGateway, "paymentProviderUnavailable",
                     "Vipps could not start the payment. Try again later.");
             }
+
+            try
+            {
+                order.IsTest = payment.IsTest;
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                // The order and the hold are gone with the rollback, so the payment Vipps made belongs to no order. It is
+                // cancelled, and the buyer can check out again with a new order.
+                await tx.RollbackAsync(CancellationToken.None);
+                log.LogError(ex, "The order {Reference} could not be saved after Vipps made its payment, the payment is cancelled", order.Reference);
+                await CancelUnsavedPaymentAsync(vipps, order.Reference, payment.IsTest, log);
+                return PaymentNotSaved();
+            }
+            return TypedResults.Ok(new CheckoutResponse(payment.RedirectUrl, order.PublicToken));
         }
+
+        /// <summary>
+        /// Cancels a Vipps payment the shop could not save. The buyer never got its link, so it is still CREATED and
+        /// cancelling ends it as TERMINATED. A failure is only logged, since an unused payment also expires on its own.
+        /// </summary>
+        internal static async Task CancelUnsavedPaymentAsync(IVippsClient vipps, string reference, bool isTest, ILogger log)
+        {
+            try
+            {
+                await vipps.CancelPaymentAsync(reference, $"cancel-{reference}", isTest, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Vipps payment {VippsReference} was not saved and could not be cancelled, it expires unused", reference);
+            }
+        }
+
+        /// <summary>The shop could not save the payment Vipps made, and cancelled it. Nothing was charged.</summary>
+        internal static IResult PaymentNotSaved() =>
+            ShopProblems.Code(StatusCodes.Status500InternalServerError, "paymentNotSaved",
+                "The payment could not be saved and was cancelled. Nothing was charged. Try again.");
 
         /// <summary>The order number, also the Vipps reference and idempotency key, <c>AID-000042-1A2B3C4D</c>.</summary>
         public static string NewReference(int orderId) =>

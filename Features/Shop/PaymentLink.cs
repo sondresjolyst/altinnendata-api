@@ -154,7 +154,8 @@ namespace altinnendata_api.Features.Shop
         /// <summary>
         /// Starts a new Vipps payment for the order, with the next Vipps reference and the same amount and lines. The
         /// order is Pending until Vipps reports the payment. One that ends unpaid leaves the order as it was before, so the
-        /// buyer can try again while the link is valid.
+        /// buyer can try again while the link is valid. The order and its new reference are saved before Vipps is called,
+        /// so a save that fails afterwards can never leave a Vipps payment the order does not know about.
         /// </summary>
         public static async Task<IResult> Pay(string token, ApplicationDbContext db, IVippsClient vipps, IConfiguration config, ILogger<PayLinkDto> log, CancellationToken ct)
         {
@@ -182,53 +183,99 @@ namespace altinnendata_api.Features.Shop
 
             var number = Math.Max(2, await db.OrderPayments.CountAsync(p => p.OrderId == order.Id, ct) + 1);
             var reference = VippsReferenceOf(order, number);
+            var before = new StartUndo(order.Status, order.VippsReference, order.IsTest);
+            var attempt = new OrderPayment { VippsReference = reference };
 
-            await using var tx = await db.Database.BeginTransactionAsync(ct);
-            var statusBefore = order.Status;
-            order.Status = OrderStatus.Pending;
-            order.VippsReference = reference;
-            order.UpdatedAt = DateTime.UtcNow;
-            order.Payments.Add(new OrderPayment { VippsReference = reference });
-            try
+            await using (var tx = await db.Database.BeginTransactionAsync(ct))
             {
-                // Locks the order row until the commit, so a release of the build or a second click waits for this one.
-                await db.SaveChangesAsync(ct);
-            }
-            catch (Exception ex) when (DatabaseAbort.Is(ex))
-            {
-                // Nothing was saved and nobody else won, so this is no payment in progress.
-                await tx.RollbackAsync(CancellationToken.None);
-                if (mayRetry) return null;
-                throw;
-            }
-            catch (DbUpdateException)
-            {
-                // A second click, a webhook or the admin changed the order after the read.
-                await tx.RollbackAsync(CancellationToken.None);
-                return PaymentInProgress();
-            }
+                order.Status = OrderStatus.Pending;
+                order.VippsReference = reference;
+                order.UpdatedAt = DateTime.UtcNow;
+                order.Payments.Add(attempt);
+                try
+                {
+                    // Locks the order row until the commit, so a release of the build or a second click waits for this
+                    // one. After the commit the order is Pending, which keeps both away until the payment ends.
+                    await db.SaveChangesAsync(ct);
+                }
+                catch (Exception ex) when (DatabaseAbort.Is(ex))
+                {
+                    // Nothing was saved and nobody else won, so this is no payment in progress.
+                    await tx.RollbackAsync(CancellationToken.None);
+                    if (mayRetry) return null;
+                    throw;
+                }
+                catch (DbUpdateException)
+                {
+                    // A second click, a webhook or the admin changed the order after the read.
+                    await tx.RollbackAsync(CancellationToken.None);
+                    return PaymentInProgress();
+                }
 
-            if (!await HoldsBuildAsync(db, order, ct))
-            {
-                await tx.RollbackAsync(CancellationToken.None);
-                return NotValid();
-            }
-
-            try
-            {
-                var payment = await vipps.CreatePaymentAsync(Checkout.PaymentRequest(order, config), $"payment-{reference}", ct);
-                order.IsTest = payment.IsTest;
-                await db.SaveChangesAsync(ct);
+                if (!await HoldsBuildAsync(db, order, ct))
+                {
+                    await tx.RollbackAsync(CancellationToken.None);
+                    return NotValid();
+                }
                 await tx.CommitAsync(ct);
-                log.LogInformation("Order {OrderId} started payment {VippsReference} from its payment link, it was {Status}", order.Id, reference, statusBefore);
-                return TypedResults.Ok(new CheckoutResponse(payment.RedirectUrl, order.PublicToken));
+            }
+
+            VippsCreatePaymentResponse payment;
+            try
+            {
+                payment = await vipps.CreatePaymentAsync(Checkout.PaymentRequest(order, config), $"payment-{reference}", ct);
             }
             catch (Exception ex)
             {
-                await tx.RollbackAsync(CancellationToken.None);
                 log.LogError(ex, "Vipps could not create payment {VippsReference} for order {OrderId}.", reference, order.Id);
+                // Vipps may still have made the payment after a timeout. The next click then uses the same reference and
+                // key, and Vipps answers with that payment.
+                db.OrderPayments.Remove(attempt);
+                await UndoStartAsync(db, order, before, log);
                 return ShopProblems.Code(StatusCodes.Status502BadGateway, "paymentProviderUnavailable",
                     "Vipps could not start the payment. Try again later.");
+            }
+
+            if (order.IsTest != payment.IsTest)
+            {
+                order.IsTest = payment.IsTest;
+                try
+                {
+                    // Vipps has made the payment, so an aborted request must not stop the save.
+                    await db.SaveChangesAsync(CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    // Without the environment the order would refuse the payment's events, so the payment is cancelled.
+                    // Its reference stays on the order's list, so the next click starts a new one.
+                    log.LogError(ex, "Order {OrderId} could not save the environment of payment {VippsReference}, the payment is cancelled", order.Id, reference);
+                    await Checkout.CancelUnsavedPaymentAsync(vipps, reference, payment.IsTest, log);
+                    attempt.State = "TERMINATED";
+                    await UndoStartAsync(db, order, before, log);
+                    return Checkout.PaymentNotSaved();
+                }
+            }
+
+            log.LogInformation("Order {OrderId} started payment {VippsReference} from its payment link, it was {Status}", order.Id, reference, before.Status);
+            return TypedResults.Ok(new CheckoutResponse(payment.RedirectUrl, order.PublicToken));
+        }
+
+        private sealed record StartUndo(OrderStatus Status, string VippsReference, bool IsTest);
+
+        /// <summary>Puts the order back as it was before the payment started, so the buyer can try again.</summary>
+        private static async Task UndoStartAsync(ApplicationDbContext db, Order order, StartUndo before, ILogger log)
+        {
+            order.Status = before.Status;
+            order.VippsReference = before.VippsReference;
+            order.IsTest = before.IsTest;
+            order.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Order {OrderId} stays Pending with a payment Vipps did not start, check it before the buyer pays again", order.Id);
             }
         }
 
