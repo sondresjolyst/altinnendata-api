@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.17.2](https://github.com/sondresjolyst/altinnendata-api/compare/v1.17.1...v1.17.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **db:** retry saves that postgres aborts ([#189](https://github.com/sondresjolyst/altinnendata-api/issues/189)) ([e3e089c](https://github.com/sondresjolyst/altinnendata-api/commit/e3e089cee177d00a5e6eab3495fc1677ba08d4ff))
+* **shop:** end a pending order when vipps answers error code 5090 ([#192](https://github.com/sondresjolyst/altinnendata-api/issues/192)) ([9a6c870](https://github.com/sondresjolyst/altinnendata-api/commit/9a6c87030daf82681fb0fa1d01a0b5db0f769baa))
+* **shop:** tell the truth when a started payment cannot be saved ([#190](https://github.com/sondresjolyst/altinnendata-api/issues/190)) ([ffddb40](https://github.com/sondresjolyst/altinnendata-api/commit/ffddb403d1b9468073f9f5fd6ecbbab5a574e5a7))
+
+
+### Dependencies
+
+* **docker:** update mcr.microsoft.com/dotnet/aspnet from bfd912c to 12b1135 ([6409f27](https://github.com/sondresjolyst/altinnendata-api/commit/6409f276cda246efc72c1ada9494754317e899f1))
+* **docker:** update mcr.microsoft.com/dotnet/sdk from fe0fd4e to bef136a ([6409f27](https://github.com/sondresjolyst/altinnendata-api/commit/6409f276cda246efc72c1ada9494754317e899f1))
+* **dotnet:** upgrade to .net 11 ([#188](https://github.com/sondresjolyst/altinnendata-api/issues/188)) ([61ce979](https://github.com/sondresjolyst/altinnendata-api/commit/61ce9791f6d2d33c49dc1effcaf3433ed68338ea))
+* **nuget:** update Microsoft.AspNetCore.DataProtection.EntityFrameworkCore from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.AspNetCore.Identity.EntityFrameworkCore from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.AspNetCore.Mvc.Testing from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.AspNetCore.OpenApi from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.EntityFrameworkCore from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.EntityFrameworkCore.Design from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.EntityFrameworkCore.InMemory from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update Microsoft.EntityFrameworkCore.Tools from 10.0.14 to 10.0.15 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+* **nuget:** update SjolystInnovation.AppKit.AdminStats from 1.0.1 to 1.0.2 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.Auth from 1.1.1 to 1.1.2 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.Consent from 1.0.1 to 1.0.2 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.Hosting from 1.1.1 to 1.1.2 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.Pdf from 1.1.1 to 1.1.2 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.SiteSettings from 1.2.0 to 1.2.1 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.Storage.Images from 1.0.1 to 1.0.2 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update SjolystInnovation.AppKit.Vipps from 1.4.0 to 1.4.1 ([420f5f2](https://github.com/sondresjolyst/altinnendata-api/commit/420f5f204543395292ff25a6ef48bb9c7bb07d57))
+* **nuget:** update xunit.v3 from 4.0.2 to 4.0.3 ([8a8ffdc](https://github.com/sondresjolyst/altinnendata-api/commit/8a8ffdce88caa3fb96d476828dbb36e974b5df48))
+
 ## [1.17.1](https://github.com/sondresjolyst/altinnendata-api/compare/v1.17.0...v1.17.1) (2026-11-15)
 
 
