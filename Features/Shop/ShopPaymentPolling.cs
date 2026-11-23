@@ -26,16 +26,27 @@ namespace altinnendata_api.Features.Shop
         /// <summary>The most orders one run reads from Vipps. The next run goes on after the last one.</summary>
         public const int BatchSize = 25;
 
-        /// <summary>The ePayment error code for a reference Vipps does not know.</summary>
+        /// <summary>The ePayment error code for a reference that does not exist for the merchant serial number asked with.</summary>
         public const string ReferenceNotFound = "5090";
+
+        /// <summary>
+        /// The most Pending orders one run ends on <see cref="ReferenceNotFound"/>. When more answer it, the merchant
+        /// serial number or keys are more likely wrong than the payments missing, so the run ends none of them.
+        /// </summary>
+        public const int MostUnknownPerRun = 3;
+
+        private readonly List<(int OrderId, string VippsReference)> _unknown = [];
 
         /// <summary>
         /// Checks one batch of open orders with an id above <paramref name="afterId"/>, oldest first. Returns the id of
         /// the last order checked, or 0 when the batch reached the end, so the next run starts from the beginning.
         /// A Vipps failure other than a refusal for one payment ends the run, and the next run tries again.
+        /// Pending orders whose payment reference does not exist for the merchant are ended only after the whole batch
+        /// is read, see <see cref="EndUnknownAsync"/>.
         /// </summary>
         public async Task<int> RunAsync(int afterId, DateTime now, CancellationToken ct)
         {
+            _unknown.Clear();
             var pendingBefore = now - PendingAfter;
             var ids = await db.Orders.AsNoTracking()
                 .Where(o => o.Id > afterId
@@ -49,8 +60,10 @@ namespace altinnendata_api.Features.Shop
 
             foreach (var id in ids)
             {
+                // The orders kept for EndUnknownAsync are left Pending, since the batch was not read in full.
                 if (!await CheckAsync(id, ct)) return id - 1;
             }
+            await EndUnknownAsync(ct);
             return ids.Count < BatchSize ? 0 : ids[^1];
         }
 
@@ -120,7 +133,7 @@ namespace altinnendata_api.Features.Shop
             catch (HttpRequestException ex) when (order.Status == OrderStatus.Pending && ex is not VippsAccessTokenException
                 && ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                await PaymentNotFoundAsync(order, ex, ct);
+                PaymentNotFound(order, ex);
                 return true;
             }
             catch (HttpRequestException ex) when (VippsFailures.IsRefusal(ex))
@@ -145,12 +158,13 @@ namespace altinnendata_api.Features.Shop
 
         /// <summary>
         /// Vipps answered 404 for the current payment of a Pending order that has waited longer than
-        /// <see cref="PendingAfter"/>. With error code 5090 Vipps does not know the reference, so it never made the
-        /// payment, for example when the shop stopped between saving a payment from a link and calling Vipps. The order
-        /// then ends as if the payment expired. A 404 without that code may come from a wrong Vipps address or a proxy,
-        /// so the order is left Pending.
+        /// <see cref="PendingAfter"/>. With error code 5090 the reference does not exist for the merchant serial number
+        /// the shop asked with, so the order is kept for <see cref="EndUnknownAsync"/>. That happens when the shop
+        /// stopped between saving a payment from a link and calling Vipps, but also when the merchant serial number or
+        /// keys are wrong. A 404 without that code may come from a wrong Vipps address or a proxy, so the order is left
+        /// Pending.
         /// </summary>
-        private async Task PaymentNotFoundAsync(Order order, HttpRequestException ex, CancellationToken ct)
+        private void PaymentNotFound(Order order, HttpRequestException ex)
         {
             if (!VippsFailures.HasErrorCode(ex, ReferenceNotFound))
             {
@@ -158,11 +172,37 @@ namespace altinnendata_api.Features.Shop
                     ReferenceNotFound, order.VippsReference, order.Id);
                 return;
             }
+            _unknown.Add((order.Id, order.VippsReference));
+        }
 
-            log.LogWarning(ex, "Payment polling: Vipps does not know payment {VippsReference} of Pending order {OrderId}, it is ended as expired",
-                order.VippsReference, order.Id);
-            var expired = new PaymentChange("EXPIRED", null, DateTime.UtcNow, $"poll:{order.VippsReference}:NOTFOUND", RefundSource.Polling);
-            await ApplyAsync(order, expired, null, ct);
+        /// <summary>
+        /// Ends each Pending order of this run whose payment reference does not exist for the merchant, as if the payment
+        /// expired, when there are at most <see cref="MostUnknownPerRun"/> of them. With more, the run ends none and
+        /// logs one error, so a wrong merchant serial number or wrong keys never end an order. They are read again
+        /// next run. An order that changed since it was read is left alone.
+        /// </summary>
+        private async Task EndUnknownAsync(CancellationToken ct)
+        {
+            if (_unknown.Count == 0) return;
+            if (_unknown.Count > MostUnknownPerRun)
+            {
+                log.LogError("Payment polling: Vipps says {Count} payment references do not exist for this merchant, check the Vipps merchant serial number and keys. No order is ended and they are checked again next run",
+                    _unknown.Count);
+                return;
+            }
+
+            foreach (var (id, reference) in _unknown)
+            {
+                db.ChangeTracker.Clear();
+                var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+                // Only while the order still waits on the payment Vipps did not know.
+                if (order is not { Status: OrderStatus.Pending } || order.VippsReference != reference) continue;
+                log.LogWarning("Payment polling: payment {VippsReference} of Pending order {OrderId} does not exist for this merchant at Vipps, it is ended as expired",
+                    order.VippsReference, order.Id);
+                var expired = new PaymentChange("EXPIRED", null, DateTime.UtcNow, $"poll:{order.VippsReference}:NOTFOUND", RefundSource.Polling);
+                await ApplyAsync(order, expired, null, ct);
+            }
+            db.ChangeTracker.Clear();
         }
 
         /// <summary>Applies and saves one change, then sends its emails. Returns false when nothing more should be applied.</summary>

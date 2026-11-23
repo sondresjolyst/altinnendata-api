@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Moq;
 using SjolystInnovation.AppKit.Vipps;
@@ -433,30 +434,112 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("ended as expired"));
     }
 
+    private async Task<OrderStatus> StatusAsync(ApplicationDbContext db, int orderId) =>
+        (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status;
+
     [Fact]
-    public async Task APaymentLeftMarkedNotFound_StillEndsWhenVippsDoesNotKnowIt()
+    public async Task ThreePendingOrdersVippsDoesNotKnowInOneRun_AllEnd()
     {
+        Assert.Equal(3, ShopPaymentPolling.MostUnknownPerRun);
         await using var db = await postgres.NewContextAsync();
-        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        await db.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, OrderPayment.NotFound), Ct);
-        VippsAnswers404(1, ReferenceNotFound());
+        var ids = new List<int>();
+        for (var n = 1; n <= ShopPaymentPolling.MostUnknownPerRun; n++)
+        {
+            ids.Add((await SeedAsync(db, n, OrderStatus.Pending)).OrderId);
+            VippsAnswers404(n, ReferenceNotFound());
+        }
 
         await RunAsync(db);
 
-        Assert.Equal(OrderStatus.Failed, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
-        Assert.Equal("EXPIRED", await PaymentStateAsync(db, orderId));
+        foreach (var id in ids) Assert.Equal(OrderStatus.Failed, await StatusAsync(db, id));
+        Assert.DoesNotContain(_log.Entries, e => e.Level == LogLevel.Error);
     }
 
     [Fact]
-    public async Task APaymentLeftMarkedNotFound_IsShownAsCreatedToTheAdmin()
+    public async Task MorePendingOrdersVippsDoesNotKnowInOneRun_EndNone_AndOneErrorAsksToCheckTheMerchant()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var ids = new List<int>();
+        for (var n = 1; n <= ShopPaymentPolling.MostUnknownPerRun + 1; n++)
+        {
+            ids.Add((await SeedAsync(db, n, OrderStatus.Pending)).OrderId);
+            VippsAnswers404(n, ReferenceNotFound());
+        }
+
+        await RunAsync(db);
+
+        foreach (var id in ids) Assert.Equal(OrderStatus.Pending, await StatusAsync(db, id));
+        var error = Assert.Single(_log.Entries, e => e.Level == LogLevel.Error);
+        Assert.Contains($"{ShopPaymentPolling.MostUnknownPerRun + 1} payment references", error.Message);
+        Assert.Contains("check the Vipps merchant serial number and keys", error.Message);
+        _notifier.VerifyNoOtherCalls();
+
+        // A lasting wrong merchant never ends them. Each run reads them again and logs the error once.
+        await RunAsync(db);
+        foreach (var id in ids) Assert.Equal(OrderStatus.Pending, await StatusAsync(db, id));
+        Assert.Equal(2, _log.Entries.Count(e => e.Level == LogLevel.Error));
+        _vipps.Verify(v => v.GetPaymentAsync(Ref(1), true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task WhenTooManyPaymentsAreUnknown_OtherOrdersInTheRunStillGetTheirChanges()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, paid) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsShows(1, "AUTHORIZED");
+        var unknown = new List<int>();
+        for (var n = 2; n <= ShopPaymentPolling.MostUnknownPerRun + 2; n++)
+        {
+            unknown.Add((await SeedAsync(db, n, OrderStatus.Pending)).OrderId);
+            VippsAnswers404(n, ReferenceNotFound());
+        }
+
+        await RunAsync(db);
+
+        Assert.Equal(OrderStatus.Reserved, await StatusAsync(db, paid));
+        _notifier.Verify(n => n.OrderReservedAsync(paid, CancellationToken.None), Times.Once);
+        foreach (var id in unknown) Assert.Equal(OrderStatus.Pending, await StatusAsync(db, id));
+        Assert.Single(_log.Entries, e => e.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task AnUnknownPayment_IsNotEndedWhenAWebhookReservedTheOrderMeanwhile()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsAnswers404(1, ReferenceNotFound());
+        var webhook = new BeforeFirstSave(async () =>
+        {
+            await using var other = postgres.NewContextOn(db);
+            var order = await other.Orders.SingleAsync(o => o.Id == orderId, Ct);
+            order.Status = OrderStatus.Reserved;
+            order.AuthorizedAt = Now;
+            await other.SaveChangesAsync(Ct);
+        });
+
+        await RunAsync(db, interceptor: webhook);
+
+        Assert.True(webhook.Fired);
+        var (build, saved) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, saved.Status);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        Assert.Equal(BuildAvailability.Reserved, build.Availability);
+        _notifier.VerifyNoOtherCalls();
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Information && e.Message.Contains("changed while"));
+    }
+
+    [Fact]
+    public async Task TheMigration_SetsPaymentsLeftAsNotFoundBackToCreated()
     {
         await using var db = await postgres.NewContextAsync();
         var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        await db.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, OrderPayment.NotFound), Ct);
+        var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync("20261114150331_AddServerPurchaseEvents", Ct);
+        await db.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, "NOTFOUND"), Ct);
 
-        var dto = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminOrderDto>>(await AdminOrders.Get(orderId, db, Ct)).Value!;
+        await migrator.MigrateAsync(cancellationToken: Ct);
 
-        Assert.Equal([(Ref(1), OrderPayment.Created)], dto.VippsReferences.Select(r => (r.Reference, r.State)));
+        Assert.Equal(OrderPayment.Created, await PaymentStateAsync(db, orderId));
     }
 
     public static TheoryData<string> NotFoundsWithoutTheCode => ["bare", "no code", "other code"];

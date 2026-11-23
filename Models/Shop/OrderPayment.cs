@@ -25,11 +25,5 @@ namespace altinnendata_api.Models.Shop
 
         /// <summary>The shop could not save the payment after Vipps made it, so it was cancelled.</summary>
         public const string Terminated = "TERMINATED";
-
-        /// <summary>
-        /// Vipps answered 404 for the payment on one polling run. Polling no longer sets it, but older rows may still
-        /// hold it until the next Vipps event or state is applied. It is shown as <see cref="Created"/>.
-        /// </summary>
-        public const string NotFound = "NOTFOUND";
     }
 }
