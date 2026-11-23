@@ -101,7 +101,8 @@ namespace altinnendata_api.Features.Shop
             var payments = await db.OrderPayments.AsNoTracking()
                 .Where(p => p.OrderId == o.Id)
                 .OrderBy(p => p.CreatedAt).ThenBy(p => p.Id)
-                .Select(p => new VippsReferenceDto(p.VippsReference, p.State, p.CreatedAt))
+                // A row left as NOTFOUND by polling had no Vipps event applied, so it is shown as CREATED.
+                .Select(p => new VippsReferenceDto(p.VippsReference, p.State == OrderPayment.NotFound ? OrderPayment.Created : p.State, p.CreatedAt))
                 .ToListAsync(ct);
             return From(o, refunds, seller, holdsBuild, payments);
         }

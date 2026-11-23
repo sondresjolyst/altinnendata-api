@@ -478,37 +478,6 @@ public class PaymentLinkTests : TestBase
     }
 
     [Fact]
-    public async Task Pay_StuckPending_InAShopWithNoOtherPaidOrder_IsEndedByPolling_ThroughTheOrdersFirstPayment()
-    {
-        await using var db = await postgres.NewContextAsync();
-        var (_, orderId) = await SeedLostAsync(db);
-        var token = await SendAsync(db, orderId);
-        VippsFailsOnceWith(new HttpRequestException("bad", null, System.Net.HttpStatusCode.BadRequest));
-        await using (var failing = FailingSave.On(db, 2))
-            await PaymentLink.Pay(token, failing, _vipps.Object, Config, NullLogger<PayLinkDto>.Instance, Ct);
-        Assert.Equal(OrderStatus.Pending, (await OrderAsync(db, orderId)).Status);
-
-        _vipps.Setup(v => v.GetPaymentAsync(Reference + "-2", true, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Not Found", null, System.Net.HttpStatusCode.NotFound));
-        // The order's first payment, which the buyer authorized before Vipps ended the reservation.
-        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VippsPayment { Reference = Reference, State = "AUTHORIZED" });
-        var started = (await OrderAsync(db, orderId)).Payments.Single(p => p.VippsReference == Reference + "-2").CreatedAt;
-        async Task PollAsync(DateTime now)
-        {
-            await using var fresh = postgres.NewContextOn(db);
-            var handler = new ShopWebhookHandler(fresh, _vipps.Object, _notifier.Object, NullLogger<ShopWebhookHandler>.Instance);
-            await new ShopPaymentPolling(fresh, _vipps.Object, handler, _notifier.Object, NullLogger<ShopPaymentPolling>.Instance).RunAsync(0, now, Ct);
-        }
-
-        await PollAsync(started.AddMinutes(16));
-        await PollAsync(started.AddMinutes(19));
-
-        Assert.Equal(OrderStatus.Failed, (await OrderAsync(db, orderId)).Status);
-        Assert.IsType<Ok<CheckoutResponse>>(await PayAsync(db, token));
-    }
-
-    [Fact]
     public async Task Pay_AfterVippsRefuses_TheNextClickUsesANewReference_AndNothingIsCancelled()
     {
         await using var db = await postgres.NewContextAsync();
@@ -544,7 +513,10 @@ public class PaymentLinkTests : TestBase
 
         // Vipps never made the payment, so it does not know the reference.
         _vipps.Setup(v => v.GetPaymentAsync(Reference + "-2", true, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Not Found", null, System.Net.HttpStatusCode.NotFound));
+            .ThrowsAsync(new VippsApiException("Vipps get-payment failed with status 404, error code 5090 (Reference not found).", null, System.Net.HttpStatusCode.NotFound)
+            {
+                Operation = "get-payment", ErrorCode = "5090"
+            });
         var started = (await OrderAsync(db, orderId)).Payments.Single(p => p.VippsReference == Reference + "-2").CreatedAt;
         async Task PollAsync(DateTime now)
         {
@@ -553,32 +525,10 @@ public class PaymentLinkTests : TestBase
             await new ShopPaymentPolling(fresh, _vipps.Object, handler, _notifier.Object, NullLogger<ShopPaymentPolling>.Instance).RunAsync(0, now, Ct);
         }
 
-        // A paid order Vipps answers for shows the 404 is about this payment, not a wrong address.
-        await using (var other = postgres.NewContextOn(db))
-        {
-            var known = await other.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct);
-            other.Orders.Add(new Order
-            {
-                Reference = "AID-000002-KNOWN000", VippsReference = "AID-000002-KNOWN000", PublicToken = "fedcba9876543210fedcba9876543210",
-                Status = OrderStatus.Paid, Locale = "no", BuyerName = "Kari", BuyerEmail = "kari@example.com", BuyerPhone = "4791234568",
-                DeliveryMethod = DeliveryMethod.Pickup, DeliveryLabel = "Henting", BuildTitle = "PC", BuildSlug = "pc",
-                BuildPriceInOre = Total, TotalInOre = Total, CapturedInOre = Total, IsTest = known.IsTest, TermsAcceptedAt = DateTime.UtcNow
-            });
-            await other.SaveChangesAsync(Ct);
-        }
-        _vipps.Setup(v => v.GetPaymentAsync("AID-000002-KNOWN000", true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VippsPayment { Reference = "AID-000002-KNOWN000", State = "AUTHORIZED", CapturedAmountInOre = Total });
-        // The order's own first payment does not answer here, so the paid order is the one that shows Vipps works.
-        _vipps.Setup(v => v.GetPaymentAsync(Reference, true, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Not Found", null, System.Net.HttpStatusCode.NotFound));
-
         await PollAsync(started.AddMinutes(14));
         Assert.Equal(OrderStatus.Pending, (await OrderAsync(db, orderId)).Status);
 
-        // Vipps must not know the payment on two runs before the order ends.
         await PollAsync(started.AddMinutes(16));
-        Assert.Equal(OrderStatus.Pending, (await OrderAsync(db, orderId)).Status);
-        await PollAsync(started.AddMinutes(19));
         var order = await OrderAsync(db, orderId);
         Assert.Equal(OrderStatus.Failed, order.Status);
         Assert.Equal(orderId, (await BuildAsync(db, buildId)).HeldByOrderId);

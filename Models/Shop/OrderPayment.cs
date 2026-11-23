@@ -27,8 +27,8 @@ namespace altinnendata_api.Models.Shop
         public const string Terminated = "TERMINATED";
 
         /// <summary>
-        /// Vipps answered that it does not know the payment on one polling run. A second answer like it on a later run
-        /// ends the order, so one wrong answer never does.
+        /// Vipps answered 404 for the payment on one polling run. Polling no longer sets it, but older rows may still
+        /// hold it until the next Vipps event or state is applied. It is shown as <see cref="Created"/>.
         /// </summary>
         public const string NotFound = "NOTFOUND";
     }

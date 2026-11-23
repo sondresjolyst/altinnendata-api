@@ -401,40 +401,117 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("refused"));
     }
 
-    private void VippsDoesNotKnow(int n, HttpRequestException? error = null) =>
-        _vipps.Setup(v => v.GetPaymentAsync(Ref(n), true, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(error ?? new HttpRequestException("Not Found", null, HttpStatusCode.NotFound));
+    private void VippsAnswers404(int n, HttpRequestException error) =>
+        _vipps.Setup(v => v.GetPaymentAsync(Ref(n), true, It.IsAny<CancellationToken>())).ThrowsAsync(error);
 
-    /// <summary>A paid order Vipps knows, which tells a payment Vipps does not know apart from a wrong address.</summary>
-    private async Task SeedAKnownPaymentAsync(ApplicationDbContext db, int n, bool vippsAnswers)
-    {
-        await SeedAsync(db, n, OrderStatus.Paid);
-        if (vippsAnswers) VippsShows(n, "AUTHORIZED", captured: Total);
-        else VippsDoesNotKnow(n);
-    }
+    /// <summary>The 404 the ePayment API answers for a reference it does not know.</summary>
+    private static VippsApiException ReferenceNotFound() =>
+        new("Vipps get-payment failed with status 404, error code 5090 (Reference not found).", null, HttpStatusCode.NotFound)
+        {
+            Operation = "get-payment", ErrorCode = "5090", Title = "Reference not found"
+        };
 
     private async Task<string> PaymentStateAsync(ApplicationDbContext db, int orderId) =>
         (await db.OrderPayments.AsNoTracking().SingleAsync(p => p.OrderId == orderId, Ct)).State;
 
     [Fact]
-    public async Task APendingOrderVippsDoesNotKnowOnTwoRuns_FailsAsIfItExpired_AndLetsGoOfTheBuild()
+    public async Task APendingOrderVippsDoesNotKnow_FailsAsIfItExpiredOnTheFirstRun_AndLetsGoOfTheBuild()
     {
         await using var db = await postgres.NewContextAsync();
         var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        await SeedAKnownPaymentAsync(db, 2, vippsAnswers: true);
-        VippsDoesNotKnow(1);
+        VippsAnswers404(1, ReferenceNotFound());
 
         await RunAsync(db);
-        Assert.Equal(OrderStatus.Pending, (await ReloadAsync(db, buildId, orderId)).Order.Status);
-        Assert.Equal(OrderPayment.NotFound, await PaymentStateAsync(db, orderId));
 
-        await RunAsync(db);
         var (build, order) = await ReloadAsync(db, buildId, orderId);
         Assert.Equal(OrderStatus.Failed, order.Status);
         Assert.Equal(BuildAvailability.Available, build.Availability);
         Assert.Null(build.HeldByOrderId);
+        Assert.Equal("EXPIRED", await PaymentStateAsync(db, orderId));
         _notifier.VerifyNoOtherCalls();
+        _vipps.Verify(v => v.GetPaymentAsync(It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>()), Times.Once);
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("ended as expired"));
+    }
+
+    [Fact]
+    public async Task APaymentLeftMarkedNotFound_StillEndsWhenVippsDoesNotKnowIt()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        await db.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, OrderPayment.NotFound), Ct);
+        VippsAnswers404(1, ReferenceNotFound());
+
+        await RunAsync(db);
+
+        Assert.Equal(OrderStatus.Failed, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
+        Assert.Equal("EXPIRED", await PaymentStateAsync(db, orderId));
+    }
+
+    [Fact]
+    public async Task APaymentLeftMarkedNotFound_IsShownAsCreatedToTheAdmin()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        await db.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, OrderPayment.NotFound), Ct);
+
+        var dto = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminOrderDto>>(await AdminOrders.Get(orderId, db, Ct)).Value!;
+
+        Assert.Equal([(Ref(1), OrderPayment.Created)], dto.VippsReferences.Select(r => (r.Reference, r.State)));
+    }
+
+    public static TheoryData<string> NotFoundsWithoutTheCode => ["bare", "no code", "other code"];
+
+    private static HttpRequestException NotFoundWithout5090(string kind) => kind switch
+    {
+        "bare" => new HttpRequestException("Not Found", null, HttpStatusCode.NotFound),
+        "no code" => new VippsApiException("Vipps get-payment failed with status 404.", null, HttpStatusCode.NotFound) { Operation = "get-payment" },
+        _ => new VippsApiException("Vipps get-payment failed with status 404, error code 5091.", null, HttpStatusCode.NotFound) { Operation = "get-payment", ErrorCode = "5091" },
+    };
+
+    [Theory]
+    [MemberData(nameof(NotFoundsWithoutTheCode))]
+    public async Task ANotFoundWithoutCode5090_AsFromAWrongAddress_LeavesTheOrderPending(string kind)
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsAnswers404(1, NotFoundWithout5090(kind));
+
+        await RunAsync(db);
+        await RunAsync(db);
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Pending, order.Status);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        Assert.Equal(OrderPayment.Created, await PaymentStateAsync(db, orderId));
+        _notifier.VerifyNoOtherCalls();
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("check the Vipps address"));
+    }
+
+    [Fact]
+    public async Task Code5090WithAnotherStatus_LeavesTheOrderPending()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
+        VippsAnswers404(1, new VippsApiException("Vipps get-payment failed with status 400, error code 5090.", null, HttpStatusCode.BadRequest) { ErrorCode = "5090" });
+
+        await RunAsync(db);
+
+        Assert.Equal(OrderStatus.Pending, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
+    }
+
+    [Fact]
+    public async Task AReservedOrderVippsDoesNotKnow_IsNotEnded()
+    {
+        await using var db = await postgres.NewContextAsync();
+        var (buildId, orderId) = await SeedAsync(db, 1, OrderStatus.Reserved);
+        VippsAnswers404(1, ReferenceNotFound());
+
+        await RunAsync(db);
+
+        var (build, order) = await ReloadAsync(db, buildId, orderId);
+        Assert.Equal(OrderStatus.Reserved, order.Status);
+        Assert.Equal(orderId, build.HeldByOrderId);
+        _notifier.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -442,112 +519,13 @@ public class ShopPaymentPollingTests(PostgresDatabase postgres) : TestBase
     {
         await using var db = await postgres.NewContextAsync();
         var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        await SeedAKnownPaymentAsync(db, 2, vippsAnswers: true);
-        VippsDoesNotKnow(1, new VippsAccessTokenException("Vipps did not issue an access token.", null, HttpStatusCode.NotFound));
+        VippsAnswers404(1, new VippsAccessTokenException("Vipps did not issue an access token.", null, HttpStatusCode.NotFound));
 
         await RunAsync(db);
         await RunAsync(db);
 
         Assert.Equal(OrderStatus.Pending, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
         Assert.Equal(OrderPayment.Created, await PaymentStateAsync(db, orderId));
-    }
-
-    [Fact]
-    public async Task ANotFoundForEveryPayment_AsFromAWrongAddress_LeavesTheOrderPending()
-    {
-        await using var db = await postgres.NewContextAsync();
-        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        await SeedAKnownPaymentAsync(db, 2, vippsAnswers: false);
-        VippsDoesNotKnow(1);
-
-        await RunAsync(db);
-        await RunAsync(db);
-        await RunAsync(db);
-
-        Assert.Equal(OrderStatus.Pending, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
-        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("known payment"));
-    }
-
-    /// <summary>Runs <paramref name="webhook"/> once, just before the first UPDATE of a payment row, the way a webhook racing polling would.</summary>
-    private sealed class BeforePaymentRowUpdate(Func<Task> webhook) : DbCommandInterceptor
-    {
-        public bool Fired { get; private set; }
-
-        private async Task RunAsync(System.Data.Common.DbCommand command)
-        {
-            if (Fired || !command.CommandText.Contains("UPDATE \"OrderPayments\"")) return;
-            Fired = true;
-            await webhook();
-        }
-
-        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
-            System.Data.Common.DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
-        {
-            await RunAsync(command);
-            return result;
-        }
-
-        public override async ValueTask<InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
-            System.Data.Common.DbCommand command, CommandEventData eventData, InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
-        {
-            await RunAsync(command);
-            return result;
-        }
-    }
-
-    private BeforePaymentRowUpdate AuthorizedArrives(ApplicationDbContext db, int orderId) => new(async () =>
-    {
-        await using var other = postgres.NewContextOn(db);
-        await other.OrderPayments.Where(p => p.OrderId == orderId).ExecuteUpdateAsync(s => s.SetProperty(p => p.State, "AUTHORIZED"), Ct);
-    });
-
-    [Fact]
-    public async Task ANotFound_NeverOverwritesAStateAWebhookSavedMeanwhile()
-    {
-        await using var db = await postgres.NewContextAsync();
-        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        VippsDoesNotKnow(1);
-        var webhook = AuthorizedArrives(db, orderId);
-
-        await RunAsync(db, interceptor: webhook);
-
-        Assert.True(webhook.Fired);
-        Assert.Equal("AUTHORIZED", await PaymentStateAsync(db, orderId));
-    }
-
-    [Fact]
-    public async Task AnAnswerAfterANotFound_NeverOverwritesAStateAWebhookSavedMeanwhile()
-    {
-        await using var db = await postgres.NewContextAsync();
-        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        VippsDoesNotKnow(1);
-        await RunAsync(db);
-        Assert.Equal(OrderPayment.NotFound, await PaymentStateAsync(db, orderId));
-        VippsShows(1, "CREATED");
-        var webhook = AuthorizedArrives(db, orderId);
-
-        await RunAsync(db, interceptor: webhook);
-
-        Assert.True(webhook.Fired);
-        Assert.Equal("AUTHORIZED", await PaymentStateAsync(db, orderId));
-    }
-
-    [Fact]
-    public async Task ANotFoundThenAnAnswer_StartsTheCountAgain()
-    {
-        await using var db = await postgres.NewContextAsync();
-        var (_, orderId) = await SeedAsync(db, 1, OrderStatus.Pending);
-        await SeedAKnownPaymentAsync(db, 2, vippsAnswers: true);
-
-        VippsDoesNotKnow(1);
-        await RunAsync(db);
-        VippsShows(1, "CREATED");
-        await RunAsync(db);
-        Assert.Equal(OrderPayment.Created, await PaymentStateAsync(db, orderId));
-        VippsDoesNotKnow(1);
-        await RunAsync(db);
-
-        Assert.Equal(OrderStatus.Pending, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == orderId, Ct)).Status);
     }
 
     [Fact]
